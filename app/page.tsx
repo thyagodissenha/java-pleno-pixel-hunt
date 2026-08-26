@@ -38,6 +38,7 @@ type Particle = {
 type GameState = "menu" | "playing" | "paused" | "over" | "won" | "promotion" | "choice";
 type MenuPanel = "home" | "scores" | "help";
 type EnemyKind = "user" | "boss" | "data" | "qa" | "vip" | "incident" | "legacy";
+type ObstacleKind = "desk" | "server" | "firewall" | "board";
 type PowerUpKind =
   | "coffee"
   | "refactor"
@@ -64,6 +65,15 @@ type PowerUp = {
   kind: PowerUpKind;
   ttl: number;
   pulse: number;
+};
+
+type Obstacle = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  kind: ObstacleKind;
+  label: string;
 };
 
 const WORLD = { width: 960, height: 540 };
@@ -98,6 +108,8 @@ const BURST_STAMINA_MAX = 100;
 const BURST_STAMINA_RECHARGE = 8;
 const BURST_STAMINA_COST = 32;
 const STAMINA_POWER_UP_GAIN = 5;
+const MAX_OBSTACLES = 5;
+const OBSTACLE_MARGIN = 48;
 const FINAL_CHOICE_OFFSET_X = 104;
 const FINAL_CHOICE_OFFSET_Y = 76;
 const FINAL_CHOICE_PICKUP_RADIUS = 68;
@@ -111,6 +123,10 @@ function scaledEnemyHp(baseHp: number, resets: number) {
   return Math.ceil(baseHp * (1 + resets * 0.25));
 }
 
+function obstacleCount(resets: number) {
+  return Math.min(MAX_OBSTACLES, 1 + resets);
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
@@ -121,6 +137,19 @@ function distance(a: { x: number; y: number }, b: { x: number; y: number }) {
 
 function isFinalChoicePowerUp(kind: PowerUpKind) {
   return kind === "promotion" || kind === "call";
+}
+
+function circleIntersectsRect(
+  circle: { x: number; y: number; radius: number },
+  rect: { x: number; y: number; width: number; height: number },
+) {
+  const closestX = clamp(circle.x, rect.x, rect.x + rect.width);
+  const closestY = clamp(circle.y, rect.y, rect.y + rect.height);
+  return Math.hypot(circle.x - closestX, circle.y - closestY) < circle.radius;
+}
+
+function pointInRect(point: { x: number; y: number }, rect: { x: number; y: number; width: number; height: number }) {
+  return point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
 }
 
 function normalize(x: number, y: number) {
@@ -481,6 +510,7 @@ export default function Home() {
     const shots: Shot[] = [];
     const particles: Particle[] = [];
     const powerUps: PowerUp[] = [];
+    const obstacles: Obstacle[] = [];
 
     function syncHud() {
       setScore(localScore);
@@ -518,6 +548,67 @@ export default function Home() {
       return 210 + phase * 48 + localWave * 22;
     }
 
+    function obstacleTemplates(): Array<Omit<Obstacle, "x" | "y">> {
+      const theme = Math.min(bossIndex, biomeNames.length - 1);
+      const templates: Array<Array<Omit<Obstacle, "x" | "y">>> = [
+        [
+          { kind: "desk", label: "Mesa", width: 92, height: 34 },
+          { kind: "board", label: "Kanban", width: 74, height: 44 },
+          { kind: "server", label: "Impressora", width: 48, height: 62 },
+        ],
+        [
+          { kind: "server", label: "Rack", width: 58, height: 76 },
+          { kind: "firewall", label: "Firewall", width: 82, height: 42 },
+          { kind: "desk", label: "Cabo", width: 118, height: 24 },
+        ],
+        [
+          { kind: "firewall", label: "Bucket", width: 76, height: 48 },
+          { kind: "server", label: "Pipeline", width: 104, height: 30 },
+          { kind: "board", label: "Cloud", width: 64, height: 58 },
+        ],
+        [
+          { kind: "board", label: "Post-its", width: 86, height: 50 },
+          { kind: "desk", label: "Mesa call", width: 118, height: 36 },
+          { kind: "server", label: "Telão", width: 92, height: 56 },
+        ],
+      ];
+
+      return templates[theme] ?? templates[0];
+    }
+
+    function obstacleBlocksCircle(x: number, y: number, radius: number) {
+      return obstacles.some((obstacle) => circleIntersectsRect({ x, y, radius }, obstacle));
+    }
+
+    function spawnObstacles() {
+      obstacles.length = 0;
+      const templates = obstacleTemplates();
+      const amount = obstacleCount(callLoops);
+      let attempts = 0;
+
+      while (obstacles.length < amount && attempts < 140) {
+        attempts += 1;
+        const template = templates[Math.floor(Math.random() * templates.length)];
+        const x = OBSTACLE_MARGIN + Math.random() * (WORLD.width - template.width - OBSTACLE_MARGIN * 2);
+        const y = OBSTACLE_MARGIN + Math.random() * (WORLD.height - template.height - OBSTACLE_MARGIN * 2);
+        const obstacle = { ...template, x, y };
+        const center = { x: x + template.width / 2, y: y + template.height / 2 };
+        const overlapsPlayer = circleIntersectsRect({ x: player.x, y: player.y, radius: 86 }, obstacle);
+        const overlapsStart = circleIntersectsRect({ x: WORLD.width / 2, y: WORLD.height / 2, radius: 96 }, obstacle);
+        const overlapsExisting = obstacles.some((existing) => (
+          x < existing.x + existing.width + 26 &&
+          x + template.width + 26 > existing.x &&
+          y < existing.y + existing.height + 26 &&
+          y + template.height + 26 > existing.y
+        ));
+        const tooCloseToEdges = center.x < 120 || center.x > WORLD.width - 120 || center.y < 100 || center.y > WORLD.height - 86;
+
+        if (!overlapsPlayer && !overlapsStart && !overlapsExisting && !tooCloseToEdges) {
+          obstacles.push(obstacle);
+        }
+      }
+    }
+
     function resetWaveOne(keepScore = false) {
       if (!keepScore) {
         localScore = 0;
@@ -551,6 +642,7 @@ export default function Home() {
       shots.length = 0;
       particles.length = 0;
       powerUps.length = 0;
+      spawnObstacles();
       for (let i = 0; i < 5; i += 1) spawnEnemy("user");
       syncHud();
     }
@@ -564,6 +656,7 @@ export default function Home() {
       enemies.length = 0;
       shots.length = 0;
       powerUps.length = 0;
+      obstacles.length = 0;
       const choiceCenterX = clamp(player.x, FINAL_CHOICE_OFFSET_X + 40, WORLD.width - FINAL_CHOICE_OFFSET_X - 40);
       const choiceY = clamp(player.y - FINAL_CHOICE_OFFSET_Y, 120, WORLD.height - 110);
       const choices: Array<{ kind: PowerUpKind; x: number; y: number }> = [
@@ -649,13 +742,19 @@ export default function Home() {
 
     function spawnPowerUp() {
       const kinds: PowerUpKind[] = ["coffee", "refactor", "rollback", "hotfix", "review", "stamina"];
-      powerUps.push({
-        x: 70 + Math.random() * (WORLD.width - 140),
-        y: 70 + Math.random() * (WORLD.height - 140),
-        kind: kinds[Math.floor(Math.random() * kinds.length)],
-        ttl: 780,
-        pulse: Math.random() * Math.PI * 2,
-      });
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const powerUp = {
+          x: 70 + Math.random() * (WORLD.width - 140),
+          y: 70 + Math.random() * (WORLD.height - 140),
+          kind: kinds[Math.floor(Math.random() * kinds.length)],
+          ttl: 780,
+          pulse: Math.random() * Math.PI * 2,
+        };
+        if (!obstacleBlocksCircle(powerUp.x, powerUp.y, 26)) {
+          powerUps.push(powerUp);
+          return;
+        }
+      }
     }
 
     function announceEffect(message: string) {
@@ -888,8 +987,11 @@ export default function Home() {
       const move = normalize(moveX, moveY);
       if (moveX || moveY) {
         const currentSpeed = player.speed * (player.haste > 0 ? 1.34 : 1);
-        player.x = clamp(player.x + move.x * currentSpeed * delta, 28, WORLD.width - 28);
-        player.y = clamp(player.y + move.y * currentSpeed * delta, 36, WORLD.height - 28);
+        const nextX = clamp(player.x + move.x * currentSpeed * delta, 28, WORLD.width - 28);
+        const nextY = clamp(player.y + move.y * currentSpeed * delta, 36, WORLD.height - 28);
+        const radius = player.size * 0.48;
+        if (!obstacleBlocksCircle(nextX, player.y, radius)) player.x = nextX;
+        if (!obstacleBlocksCircle(player.x, nextY, radius)) player.y = nextY;
       }
 
       if (choosingFinalReward) {
@@ -999,13 +1101,14 @@ export default function Home() {
                 : pattern === 3
                   ? aimed + (i - 2) * 0.24
                   : aimed + (i - 1) * 0.34;
+              const minionHp = scaledEnemyHp(pattern === 2 ? 24 : 16, callLoops);
               enemies.push({
                 x: enemy.x + Math.cos(base) * 30,
                 y: enemy.y + Math.sin(base) * 30,
                 vx: 0,
                 vy: 0,
-                hp: pattern === 2 ? 24 : 16,
-                maxHp: pattern === 2 ? 24 : 16,
+                hp: minionHp,
+                maxHp: minionHp,
                 speed: pattern === 3 ? 126 : 96 + Math.min(localWave, 5) * 4,
                 size: pattern === 2 ? 22 : 18,
                 kind: pattern === 2 ? "qa" : pattern === 3 ? "incident" : "data",
@@ -1033,6 +1136,10 @@ export default function Home() {
         shot.x += shot.vx * delta;
         shot.y += shot.vy * delta;
         shot.ttl -= delta * 60;
+        if (obstacles.some((obstacle) => pointInRect(shot, obstacle))) {
+          shot.ttl = 0;
+          burst(shot.x, shot.y, "#94a3b8", 3);
+        }
       }
 
       for (let i = enemies.length - 1; i >= 0; i -= 1) {
@@ -1112,6 +1219,7 @@ export default function Home() {
                 localWave += 1;
                 bossKills = 0;
                 bossSpawned = false;
+                spawnObstacles();
                 burst(enemy.x, enemy.y, "#ffd166", 28);
                 if (finalBoss) {
                   spawnFinalChoices(enemy.x, enemy.y);
@@ -1233,6 +1341,52 @@ export default function Home() {
         pixelRect(ctx, actor.x - bar / 2, actor.y + actor.size / 2 + 5, bar, 4, "#111827");
         pixelRect(ctx, actor.x - bar / 2, actor.y + actor.size / 2 + 5, bar * (actor.hp / actor.maxHp), 4, "#84cc16");
       }
+    }
+
+    function drawObstacle(obstacle: Obstacle) {
+      const x = Math.round(obstacle.x);
+      const y = Math.round(obstacle.y);
+      const width = Math.round(obstacle.width);
+      const height = Math.round(obstacle.height);
+      const palette: Record<ObstacleKind, { base: string; edge: string; accent: string; text: string }> = {
+        desk: { base: "#78350f", edge: "#451a03", accent: "#f59e0b", text: "#fef3c7" },
+        server: { base: "#334155", edge: "#0f172a", accent: "#38bdf8", text: "#e2e8f0" },
+        firewall: { base: "#7f1d1d", edge: "#450a0a", accent: "#f97316", text: "#fee2e2" },
+        board: { base: "#164e63", edge: "#083344", accent: "#facc15", text: "#ecfeff" },
+      };
+      const colors = palette[obstacle.kind];
+
+      pixelRect(ctx, x + 6, y + height - 2, width - 4, 8, "rgba(0, 0, 0, 0.28)");
+      pixelRect(ctx, x, y, width, height, colors.edge);
+      pixelRect(ctx, x + 4, y + 4, width - 8, height - 8, colors.base);
+      pixelRect(ctx, x + 8, y + 8, width - 16, 4, colors.accent);
+
+      if (obstacle.kind === "server") {
+        for (let row = 0; row < 3; row += 1) {
+          pixelRect(ctx, x + 10, y + 18 + row * 12, width - 20, 4, "#94a3b8");
+          pixelRect(ctx, x + width - 18, y + 17 + row * 12, 5, 5, row % 2 ? "#facc15" : "#22c55e");
+        }
+      } else if (obstacle.kind === "firewall") {
+        for (let brickY = y + 18; brickY < y + height - 8; brickY += 12) {
+          for (let brickX = x + 8 + ((brickY / 12) % 2) * 12; brickX < x + width - 10; brickX += 24) {
+            pixelRect(ctx, brickX, brickY, 16, 4, "#fca5a5");
+          }
+        }
+      } else if (obstacle.kind === "board") {
+        const notes = ["#facc15", "#38bdf8", "#fb7185", "#22c55e"];
+        for (let i = 0; i < 4; i += 1) {
+          pixelRect(ctx, x + 12 + i * 14, y + 19 + (i % 2) * 10, 9, 8, notes[i]);
+        }
+      } else {
+        pixelRect(ctx, x + 10, y + height - 12, 12, 8, "#451a03");
+        pixelRect(ctx, x + width - 22, y + height - 12, 12, 8, "#451a03");
+        pixelRect(ctx, x + width / 2 - 12, y + 16, 24, 8, "#fef3c7");
+      }
+
+      ctx.fillStyle = colors.text;
+      ctx.font = "9px 'Courier New', monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(obstacle.label, x + width / 2, y - 5);
     }
 
     function drawPowerUp(powerUp: PowerUp) {
@@ -1450,6 +1604,7 @@ export default function Home() {
       ctx.translate(shakeX, shakeY);
       drawGrid();
       if (choosingFinalReward) drawFinalChoiceScene();
+      if (!choosingFinalReward) obstacles.forEach(drawObstacle);
       for (const particle of particles) {
         const size = Math.max(2, Math.min(8, particle.ttl / 6));
         pixelRect(ctx, particle.x, particle.y, size, size, particle.color);
