@@ -53,6 +53,7 @@ type HighScore = {
   name: string;
   score: number;
   wave: number;
+  resets?: number;
   outcome: "over" | "won";
   createdAt: string;
 };
@@ -102,8 +103,12 @@ const FINAL_CHOICE_OFFSET_Y = 76;
 const FINAL_CHOICE_PICKUP_RADIUS = 68;
 const FINAL_CHOICE_CLICK_RADIUS = 52;
 
-function bossKillTarget(wave: number) {
-  return 10 + wave * 4;
+function bossKillTarget(wave: number, resets = 0) {
+  return 10 + wave * 4 + resets * 5;
+}
+
+function scaledEnemyHp(baseHp: number, resets: number) {
+  return Math.ceil(baseHp * (1 + resets * 0.25));
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -193,6 +198,7 @@ export default function Home() {
   const [gameState, setGameState] = useState<GameState>("menu");
   const [score, setScore] = useState(0);
   const [wave, setWave] = useState(1);
+  const [resetCount, setResetCount] = useState(0);
   const [hp, setHp] = useState(100);
   const [boss, setBoss] = useState("Gerente de Sprint");
   const [highScores, setHighScores] = useState<HighScore[]>(() => loadHighScores());
@@ -349,6 +355,7 @@ export default function Home() {
     setMenuPanel("home");
     setScore(0);
     setWave(1);
+    setResetCount(0);
     setHp(100);
     setBoss("Gerente de Sprint");
     setBiome(biomeNames[0]);
@@ -396,6 +403,7 @@ export default function Home() {
       name: cleanName.toUpperCase(),
       score,
       wave,
+      resets: resetCount,
       outcome: lastOutcome,
       createdAt: new Date().toISOString(),
     };
@@ -416,7 +424,7 @@ export default function Home() {
       setScoreSaved(true);
     } catch {
       const nextScores = [entry, ...highScores]
-        .sort((a, b) => b.score - a.score || b.wave - a.wave)
+        .sort((a, b) => b.score - a.score || b.wave - a.wave || (b.resets ?? 0) - (a.resets ?? 0))
         .slice(0, 10);
       saveHighScores(nextScores);
       setHighScores(nextScores);
@@ -477,6 +485,7 @@ export default function Home() {
     function syncHud() {
       setScore(localScore);
       setWave(localWave);
+      setResetCount(callLoops);
       setHp(Math.max(0, Math.round(player.hp)));
       setBoss(finalChoicePending ? "Diretoria caída" : bossNames[bossIndex] ?? "Comitê Executivo");
       setBiome(biomeNames[Math.min(bossIndex, biomeNames.length - 1)] ?? "War Room");
@@ -487,14 +496,14 @@ export default function Home() {
           ? "Escolha final"
           : bossSpawned
           ? "Chefe em combate"
-          : `${Math.min(bossKills, bossKillTarget(localWave))}/${bossKillTarget(localWave)} mobs`,
+          : `${Math.min(bossKills, bossKillTarget(localWave, callLoops))}/${bossKillTarget(localWave, callLoops)} mobs`,
       );
     }
 
     function countBossProgress() {
       if (bossSpawned || finalChoicePending) return;
       bossKills += 1;
-      if (bossKills >= bossKillTarget(localWave)) {
+      if (bossKills >= bossKillTarget(localWave, callLoops)) {
         bossSpawned = true;
         announceEffect("CHEFE LIBERADO: entra na call");
         spawnEnemy("boss");
@@ -612,13 +621,14 @@ export default function Home() {
           : { hp: 160 + localWave * 28, speed: 52 + wavePressure * 2, size: 38 },
       };
       const selected = stats[kind];
+      const hp = scaledEnemyHp(selected.hp, callLoops);
       enemies.push({
         x,
         y,
         vx: 0,
         vy: 0,
-        hp: selected.hp,
-        maxHp: selected.hp,
+        hp,
+        maxHp: hp,
         speed: selected.speed,
         size: selected.size,
         kind,
@@ -1087,7 +1097,7 @@ export default function Home() {
                 player.hp = clamp(player.hp + 22, 0, player.maxHp);
                 if (finalBoss && currentBossPhase < 3) {
                   enemy.bossPhase = currentBossPhase + 1;
-                  enemy.maxHp = finalBossHp(enemy.bossPhase);
+                  enemy.maxHp = scaledEnemyHp(finalBossHp(enemy.bossPhase), callLoops);
                   enemy.hp = enemy.maxHp;
                   enemy.size = 62 + enemy.bossPhase * 6;
                   enemy.speed += 7;
@@ -1531,6 +1541,7 @@ export default function Home() {
           <span>HP {hp}</span>
           <span>Onda {wave}</span>
           <span>{score} pts</span>
+          <span>Resets {resetCount}</span>
           <span className="stamina-meter">
             <strong>Rajada</strong>
             <i style={{ "--stamina": `${burstStaminaPct}%` } as CSSProperties} />
@@ -1678,7 +1689,7 @@ export default function Home() {
                         <li key={`${entry.createdAt}-${entry.name}`}>
                           <span>{String(index + 1).padStart(2, "0")}</span>
                           <strong>{entry.name}</strong>
-                          <em>{entry.score}<small>Onda {entry.wave}</small></em>
+                          <em>{entry.score}<small>Onda {entry.wave} · Resets {entry.resets ?? 0}</small></em>
                         </li>
                       ))
                     ) : (
@@ -1703,7 +1714,7 @@ export default function Home() {
                     <li><strong>Atirar</strong><span>Automático no inimigo mais próximo.</span></li>
                     <li><strong>Rajada</strong><span>Espaço acelera os tiros enquanto houver estamina.</span></li>
                     <li><strong>Power-ups</strong><span>Café, Refactor, Rollback, Hotfix, Code Review e Sprint ajudam na partida.</span></li>
-                    <li><strong>Final</strong><span>A promoção é uma cilada. Novo chamado mantém o score e recomeça a firma.</span></li>
+                    <li><strong>Final</strong><span>A promoção é uma cilada. Novo chamado mantém o score e recomeça a firma mais difícil.</span></li>
                     <li><strong>Objetivo</strong><span>Sobreviva, derrube chefes e salve seu score.</span></li>
                   </ul>
                   <div className="menu-actions two">
@@ -1748,7 +1759,7 @@ export default function Home() {
                     />
                     <button type="submit">Salvar</button>
                   </div>
-                  <span>{score} pts · onda {wave}</span>
+                  <span>{score} pts · onda {wave} · resets {resetCount}</span>
                 </form>
               ) : (
                 <div className="menu-actions two">
@@ -1769,7 +1780,7 @@ export default function Home() {
                     <li key={`${entry.createdAt}-${entry.name}`}>
                       <span>{String(index + 1).padStart(2, "0")}</span>
                       <strong>{entry.name}</strong>
-                      <em>{entry.score}<small>Onda {entry.wave}</small></em>
+                      <em>{entry.score}<small>Onda {entry.wave} · Resets {entry.resets ?? 0}</small></em>
                     </li>
                   ))
                 ) : (

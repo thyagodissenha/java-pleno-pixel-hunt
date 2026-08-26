@@ -6,6 +6,7 @@ export type HighScore = {
   name: string;
   score: number;
   wave: number;
+  resets?: number;
   outcome: "over" | "won";
   createdAt: string;
 };
@@ -16,7 +17,7 @@ const LOCAL_SCORE_FILE = path.join(process.cwd(), "data", "high-scores.json");
 function cleanScores(scores: HighScore[]) {
   return scores
     .filter((score) => Number.isFinite(score.score) && Number.isFinite(score.wave))
-    .sort((a, b) => b.score - a.score || b.wave - a.wave || a.createdAt.localeCompare(b.createdAt))
+    .sort((a, b) => b.score - a.score || b.wave - a.wave || (b.resets ?? 0) - (a.resets ?? 0) || a.createdAt.localeCompare(b.createdAt))
     .slice(0, 10);
 }
 
@@ -26,12 +27,14 @@ export function sanitizeScore(input: unknown): HighScore {
   const name = rawName.trim().replace(/\s+/g, " ").slice(0, 14).toUpperCase() || "DEV ANON";
   const score = Math.max(0, Math.min(999999, Math.floor(Number(body.score) || 0)));
   const wave = Math.max(1, Math.min(99, Math.floor(Number(body.wave) || 1)));
+  const resets = Math.max(0, Math.min(99, Math.floor(Number(body.resets) || 0)));
   const outcome = body.outcome === "won" ? "won" : "over";
 
   return {
     name,
     score,
     wave,
+    resets,
     outcome,
     createdAt: new Date().toISOString(),
   };
