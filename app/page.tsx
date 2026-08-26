@@ -1185,26 +1185,78 @@ export default function Home() {
         <canvas ref={canvasRef} width={WORLD.width} height={WORLD.height} aria-label="Arena pixel art" />
         {menuScreen && (
           <div className="menu-overlay" role="dialog" aria-label="Menu inicial">
-            <div className="menu-panel">
+            <div className={`menu-panel ${menuPanel === "home" ? "title-menu-panel" : ""}`}>
               <p className="menu-kicker">Build instavel detectada</p>
-              <h2>Java Pleno Pixel Hunt</h2>
 
               {menuPanel === "home" && (
                 <>
-                  <div className="title-screen-art" role="img" aria-label="Arte pixel art do Java Pleno Pixel Hunt com heroi, chefes, usuarios e elementos de cloud" />
+                  <div className="retro-title-screen" aria-label="Tela inicial pixel art do Java Pleno Pixel Hunt">
+                    <div className="retro-scene hero-scene" aria-hidden="true">
+                      <div className="pixel-dev">
+                        <span className="hair" />
+                        <span className="head" />
+                        <span className="body" />
+                        <span className="arm mug" />
+                        <span className="arm keyboard" />
+                        <span className="leg left" />
+                        <span className="leg right" />
+                      </div>
+                      <span className="java-mug">JAVA</span>
+                      <span className="code-shot" />
+                    </div>
+
+                    <div className="retro-scene call-scene" aria-hidden="true">
+                      <span className="window-title">MEETING CALL</span>
+                      <span className="boss-face" />
+                      <span className="speech">PRA ONTEM!</span>
+                    </div>
+
+                    <div className="retro-logo" aria-label="Java Pleno Pixel Hunt">
+                      <span>Java</span>
+                      <span>Pleno</span>
+                      <span>Pixel Hunt</span>
+                    </div>
+
+                    <div className="retro-scene users-scene" aria-hidden="true">
+                      <span className="speech">USUARIOS!</span>
+                      <span className="user u1" />
+                      <span className="user u2" />
+                      <span className="user u3" />
+                    </div>
+
+                    <div className="retro-scene cloud-scene" aria-hidden="true">
+                      <span className="cloud" />
+                      <span className="cube c1" />
+                      <span className="cube c2" />
+                      <span className="binary">101<br />010</span>
+                    </div>
+
+                    <div className="retro-scene deploy-scene" aria-hidden="true">
+                      <span className="terminal">$ deploy --prod<br />tests...<br />success!</span>
+                      <span className="rocket">DEPLOY</span>
+                    </div>
+
+                    <div className="retro-scene incident-scene" aria-hidden="true">
+                      <span className="incident-title">PROD INCIDENT</span>
+                      <span className="explosion" />
+                      <span className="alert-sign">!</span>
+                    </div>
+
+                    <div className="title-menu-actions" aria-label="Opcoes do jogo">
+                      <button type="button" onClick={startNewGame}>&gt; Jogar</button>
+                      <button type="button" onClick={() => { setMenuPanel("scores"); refreshHighScores(); }}>High Scores</button>
+                      <button type="button" onClick={() => setMenuPanel("help")}>Como Jogar</button>
+                    </div>
+                  </div>
                   <p className="menu-copy">
                     Sobreviva aos usuarios, derrote os chefes e tente entrar no ranking global antes que alguem peca um deploy em sexta-feira.
                   </p>
-                  <div className="menu-actions">
-                    <button type="button" onClick={startNewGame}>Jogar</button>
-                    <button type="button" onClick={() => { setMenuPanel("scores"); refreshHighScores(); }}>High Scores</button>
-                    <button type="button" onClick={() => setMenuPanel("help")}>Como jogar</button>
-                  </div>
                 </>
               )}
 
               {menuPanel === "scores" && (
                 <>
+                  <h2>High Scores</h2>
                   <p className="score-mode">{scoreMessage}</p>
                   <ol className="score-list menu-score-list">
                     {highScores.length ? (
@@ -1231,6 +1283,7 @@ export default function Home() {
 
               {menuPanel === "help" && (
                 <>
+                  <h2>Como jogar</h2>
                   <ul className="help-list">
                     <li><strong>Mover</strong><span>WASD, setas ou arraste no celular.</span></li>
                     <li><strong>Atirar</strong><span>Automatico no inimigo mais proximo.</span></li>

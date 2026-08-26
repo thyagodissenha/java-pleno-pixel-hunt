@@ -37,6 +37,7 @@ Este roadmap organiza as proximas melhorias do jogo, saindo de um prototipo joga
 - [x] Adicionar efeitos sonoros para tiro, hit, boss, game over e vitoria.
 - [x] Criar tela de vitoria mais marcante.
 - [x] Criar arte base de capa/tela inicial do jogo.
+- [x] Transformar a tela inicial em um menu pixel art funcional.
 - Criar thumbnail em formatos especificos para Itch.io e redes sociais.
 
 ## Fase 5: Identidade e publicacao
