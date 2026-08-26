@@ -32,6 +32,7 @@ O jogo mistura humor de desenvolvimento, correria de go-live e aquele leve deses
 - Botao de mute/volume com efeitos sonoros via Web Audio
 - Musica chiptune gerada no navegador durante a partida
 - Visual pixel art desenhado em Canvas, com animacoes simples e tela de vitoria arcade
+- Arte de tela inicial em pixel art integrada ao menu
 - Suporte a teclado e toque
 
 ## Controles

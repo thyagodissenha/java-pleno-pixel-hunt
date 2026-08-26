@@ -36,7 +36,8 @@ Este roadmap organiza as proximas melhorias do jogo, saindo de um prototipo joga
 - [x] Criar musica chiptune.
 - [x] Adicionar efeitos sonoros para tiro, hit, boss, game over e vitoria.
 - [x] Criar tela de vitoria mais marcante.
-- Criar capa e thumbnail do jogo.
+- [x] Criar arte base de capa/tela inicial do jogo.
+- Criar thumbnail em formatos especificos para Itch.io e redes sociais.
 
 ## Fase 5: Identidade e publicacao
 
@@ -76,7 +77,7 @@ Este roadmap organiza as proximas melhorias do jogo, saindo de um prototipo joga
 1. Tela inicial e menus.
 2. Melhorias mobile.
 3. Protecao anti-spam para o ranking.
-4. Capa e thumbnail do jogo.
+4. Thumbnail do jogo.
 5. Publicacao no Itch.io.
 6. Compartilhamento de score.
 7. Cosmeticos e patrocinio dev.
@@ -86,7 +87,7 @@ Este roadmap organiza as proximas melhorias do jogo, saindo de um prototipo joga
 
 ## Proxima entrega sugerida
 
-Criar capa, thumbnail e screenshots para preparar a publicacao do jogo no Itch.io e redes sociais.
+Criar thumbnails e screenshots em formatos especificos para preparar a publicacao do jogo no Itch.io e redes sociais.
 
 ## Aposta de monetizacao recomendada
 

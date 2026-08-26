@@ -1191,6 +1191,7 @@ export default function Home() {
 
               {menuPanel === "home" && (
                 <>
+                  <div className="title-screen-art" role="img" aria-label="Arte pixel art do Java Pleno Pixel Hunt com heroi, chefes, usuarios e elementos de cloud" />
                   <p className="menu-copy">
                     Sobreviva aos usuarios, derrote os chefes e tente entrar no ranking global antes que alguem peca um deploy em sexta-feira.
                   </p>

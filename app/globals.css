@@ -238,6 +238,18 @@ canvas {
   line-height: 1.45;
 }
 
+.title-screen-art {
+  width: min(100%, 420px);
+  aspect-ratio: 1 / 1;
+  margin: 16px auto 0;
+  border: 3px solid #facc15;
+  background: #fef3c7 url("/images/title-screen-concept.png") center / cover no-repeat;
+  box-shadow:
+    0 0 0 4px #020617,
+    inset 0 0 0 3px rgba(2, 6, 23, 0.24);
+  image-rendering: pixelated;
+}
+
 .menu-actions {
   display: grid;
   gap: 10px;
@@ -495,6 +507,10 @@ canvas {
   .sound-controls {
     grid-template-columns: auto minmax(0, 1fr);
     width: 100%;
+  }
+
+  .title-screen-art {
+    width: min(100%, 300px);
   }
 
   canvas {
