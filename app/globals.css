@@ -95,7 +95,7 @@ canvas {
   flex-wrap: wrap;
 }
 
-.hud span {
+.hud > span {
   min-width: 88px;
   border: 2px solid #475569;
   background: #111827;
@@ -103,6 +103,55 @@ canvas {
   padding: 8px 10px;
   text-align: center;
   box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.35);
+}
+
+.sound-controls {
+  display: grid;
+  grid-template-columns: auto minmax(118px, 160px);
+  align-items: center;
+  gap: 8px;
+  border: 2px solid #475569;
+  background: #111827;
+  padding: 6px;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.35);
+}
+
+.sound-controls button {
+  min-height: 34px;
+  border: 2px solid #facc15;
+  background: #facc15;
+  color: #111827;
+  padding: 0 10px;
+  font-family: inherit;
+  font-size: 11px;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.18);
+}
+
+.sound-controls button[aria-pressed="true"] {
+  border-color: #94a3b8;
+  background: #334155;
+  color: #f8fafc;
+}
+
+.sound-controls label {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.sound-controls label span {
+  color: #7dd3fc;
+  font-size: 9px;
+  line-height: 1;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.sound-controls input {
+  width: 100%;
+  accent-color: #facc15;
 }
 
 .game-stage {
@@ -439,8 +488,13 @@ canvas {
     justify-content: stretch;
   }
 
-  .hud span {
+  .hud > span {
     flex: 1 1 94px;
+  }
+
+  .sound-controls {
+    grid-template-columns: auto minmax(0, 1fr);
+    width: 100%;
   }
 
   canvas {

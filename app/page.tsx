@@ -35,6 +35,7 @@ type Particle = {
 
 type GameState = "menu" | "playing" | "paused" | "over" | "won";
 type MenuPanel = "home" | "scores" | "help";
+type SoundName = "shoot" | "hit" | "hurt" | "boss" | "over" | "save" | "start" | "won";
 type HighScore = {
   name: string;
   score: number;
@@ -45,6 +46,7 @@ type HighScore = {
 
 const WORLD = { width: 960, height: 540 };
 const HIGH_SCORE_KEY = "java-pleno-pixel-hunt-high-scores";
+const SOUND_KEY = "java-pleno-pixel-hunt-sound";
 const bossNames = [
   "Gerente de Sprint",
   "Dono do Roadmap",
@@ -94,12 +96,40 @@ function saveHighScores(scores: HighScore[]) {
   window.localStorage.setItem(HIGH_SCORE_KEY, JSON.stringify(scores.slice(0, 10)));
 }
 
+function loadSoundSettings() {
+  if (typeof window === "undefined") return { muted: false, volume: 0.35 };
+  try {
+    const stored = window.localStorage.getItem(SOUND_KEY);
+    if (!stored) return { muted: false, volume: 0.35 };
+    const parsed = JSON.parse(stored) as { muted?: boolean; volume?: number };
+    return {
+      muted: Boolean(parsed.muted),
+      volume: clamp(Number(parsed.volume) || 0.35, 0, 1),
+    };
+  } catch {
+    return { muted: false, volume: 0.35 };
+  }
+}
+
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const keys = useRef(new Set<string>());
   const pointer = useRef({ active: false, x: WORLD.width / 2, y: WORLD.height / 2 });
   const stateRef = useRef<GameState>("menu");
   const startGameRef = useRef<() => void>(() => undefined);
+  const audioRef = useRef<AudioContext | null>(null);
+  const mutedRef = useRef(false);
+  const volumeRef = useRef(0.35);
+  const lastSoundRef = useRef<Record<SoundName, number>>({
+    shoot: 0,
+    hit: 0,
+    hurt: 0,
+    boss: 0,
+    over: 0,
+    save: 0,
+    start: 0,
+    won: 0,
+  });
   const [gameState, setGameState] = useState<GameState>("menu");
   const [score, setScore] = useState(0);
   const [wave, setWave] = useState(1);
@@ -111,6 +141,8 @@ export default function Home() {
   const [scoreMessage, setScoreMessage] = useState("Ranking global carregando...");
   const [lastOutcome, setLastOutcome] = useState<"over" | "won">("over");
   const [menuPanel, setMenuPanel] = useState<MenuPanel>("home");
+  const [muted, setMuted] = useState(false);
+  const [volume, setVolume] = useState(0.35);
 
   useEffect(() => {
     stateRef.current = gameState;
@@ -118,8 +150,63 @@ export default function Home() {
 
   useEffect(() => {
     setHighScores(loadHighScores());
+    const sound = loadSoundSettings();
+    mutedRef.current = sound.muted;
+    volumeRef.current = sound.volume;
+    setMuted(sound.muted);
+    setVolume(sound.volume);
     refreshHighScores();
   }, []);
+
+  useEffect(() => {
+    mutedRef.current = muted;
+    volumeRef.current = volume;
+    window.localStorage.setItem(SOUND_KEY, JSON.stringify({ muted, volume }));
+  }, [muted, volume]);
+
+  function playSound(sound: SoundName) {
+    if (mutedRef.current || volumeRef.current <= 0) return;
+    const now = performance.now();
+    const minGap = sound === "shoot" ? 70 : sound === "hit" ? 45 : 120;
+    if (now - lastSoundRef.current[sound] < minGap) return;
+    lastSoundRef.current[sound] = now;
+
+    const AudioContextClass =
+      window.AudioContext ||
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const audio = audioRef.current ?? new AudioContextClass();
+    audioRef.current = audio;
+    if (audio.state === "suspended") void audio.resume();
+
+    const gain = audio.createGain();
+    gain.connect(audio.destination);
+    gain.gain.setValueAtTime(0.0001, audio.currentTime);
+    gain.gain.exponentialRampToValueAtTime(volumeRef.current * 0.16, audio.currentTime + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.2);
+
+    const notes: Record<SoundName, [number, number, OscillatorType][]> = {
+      shoot: [[720, 0.055, "square"], [480, 0.05, "square"]],
+      hit: [[210, 0.08, "sawtooth"]],
+      hurt: [[140, 0.18, "sawtooth"], [90, 0.16, "square"]],
+      boss: [[196, 0.16, "square"], [147, 0.18, "square"], [110, 0.22, "square"]],
+      over: [[110, 0.18, "sawtooth"], [82, 0.28, "sawtooth"]],
+      save: [[523, 0.08, "square"], [659, 0.08, "square"], [784, 0.12, "square"]],
+      start: [[330, 0.07, "square"], [494, 0.09, "square"], [660, 0.12, "square"]],
+      won: [[523, 0.1, "square"], [659, 0.1, "square"], [784, 0.1, "square"], [1047, 0.16, "square"]],
+    };
+
+    let offset = 0;
+    for (const [frequency, duration, type] of notes[sound]) {
+      const oscillator = audio.createOscillator();
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(frequency, audio.currentTime + offset);
+      oscillator.connect(gain);
+      oscillator.start(audio.currentTime + offset);
+      oscillator.stop(audio.currentTime + offset + duration);
+      offset += duration * 0.72;
+    }
+  }
 
   function refreshHighScores() {
     setScoreMessage("Ranking global carregando...");
@@ -141,6 +228,7 @@ export default function Home() {
     setScoreSaved(true);
     setPlayerName("");
     setMenuPanel("home");
+    playSound("start");
     startGameRef.current();
   }
 
@@ -167,6 +255,7 @@ export default function Home() {
       setHighScores(payload.scores);
       saveHighScores(payload.scores);
       setScoreMessage("Ranking global atualizado");
+      playSound("save");
       setScoreSaved(true);
     } catch {
       const nextScores = [entry, ...highScores]
@@ -175,6 +264,7 @@ export default function Home() {
       saveHighScores(nextScores);
       setHighScores(nextScores);
       setScoreMessage("Ranking local salvo. Global indisponivel.");
+      playSound("save");
       setScoreSaved(true);
     }
   }
@@ -256,7 +346,10 @@ export default function Home() {
         label: isBoss ? bossNames[bossIndex] : isData ? cloudLabels[Math.floor(Math.random() * cloudLabels.length)] : "Usuario",
         cooldown: isBoss ? 118 : 90,
       });
-      if (isBoss) bossBanner = 120;
+      if (isBoss) {
+        bossBanner = 120;
+        if (stateRef.current === "playing") playSound("boss");
+      }
     }
 
     function resetGame() {
@@ -377,6 +470,7 @@ export default function Home() {
 
       if (shotTimer <= 0 || keys.current.has(" ")) {
         shoot();
+        playSound("shoot");
         shotTimer = player.fury > 0 ? 0.11 : 0.24;
       }
 
@@ -444,6 +538,7 @@ export default function Home() {
             player.invincible = 0.92;
             damageFlash = 16;
             shake = 14;
+            playSound("hurt");
             burst(player.x, player.y, "#ff5353", 16);
             if (enemy.kind !== "boss") enemies.splice(i, 1);
           }
@@ -461,6 +556,7 @@ export default function Home() {
           if (distance(shot, enemy) < enemy.size * 0.55 + 7) {
             enemy.hp -= player.fury > 0 ? 26 : 18;
             shots.splice(s, 1);
+            playSound("hit");
             burst(shot.x, shot.y, enemy.kind === "boss" ? "#f9c74f" : "#65d6ad", 4);
             if (enemy.hp <= 0) {
               localScore += enemy.kind === "boss" ? 500 : enemy.kind === "data" ? 80 : 45;
@@ -476,6 +572,7 @@ export default function Home() {
                   setWave(localWave);
                   setLastOutcome("won");
                   setScoreSaved(false);
+                  playSound("won");
                   setGameState("won");
                 } else {
                   setTimeout(() => {
@@ -510,6 +607,7 @@ export default function Home() {
         setWave(localWave);
         setLastOutcome("over");
         setScoreSaved(false);
+        playSound("over");
         setGameState("over");
       }
       if (frame % 18 === 0) syncHud();
@@ -682,6 +780,31 @@ export default function Home() {
           <span>HP {hp}</span>
           <span>Onda {wave}</span>
           <span>{score} pts</span>
+          <div className="sound-controls" aria-label="Controles de som">
+            <button
+              type="button"
+              aria-pressed={muted}
+              aria-label={muted ? "Ativar som" : "Mutar som"}
+              onClick={() => setMuted((current) => !current)}
+            >
+              {muted ? "Som off" : "Som on"}
+            </button>
+            <label>
+              <span>Volume</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={volume}
+                onChange={(event) => {
+                  const nextVolume = Number(event.target.value);
+                  setVolume(nextVolume);
+                  setMuted(nextVolume <= 0);
+                }}
+              />
+            </label>
+          </div>
         </div>
       </section>
 

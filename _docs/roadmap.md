@@ -7,7 +7,7 @@ Este roadmap organiza as proximas melhorias do jogo, saindo de um prototipo joga
 - [x] Criar uma tela inicial mais bonita, com botoes para jogar, ver high scores e abrir instrucoes.
 - [x] Ajustar a curva de dificuldade das ondas.
 - [x] Melhorar colisao e feedback visual de dano.
-- Adicionar botao de mute/volume.
+- [x] Adicionar botao de mute/volume.
 - Melhorar a experiencia em dispositivos moveis.
 - Revisar textos e acentos em portugues.
 
@@ -34,7 +34,7 @@ Este roadmap organiza as proximas melhorias do jogo, saindo de um prototipo joga
 - Melhorar os sprites pixel art do jogador, inimigos e chefes.
 - Adicionar animacoes de caminhada, tiro, explosao e dano.
 - Criar musica chiptune.
-- Adicionar efeitos sonoros para tiro, hit, boss, game over e vitoria.
+- [x] Adicionar efeitos sonoros para tiro, hit, boss, game over e vitoria.
 - Criar tela de vitoria mais marcante.
 - Criar capa e thumbnail do jogo.
 
@@ -74,19 +74,19 @@ Este roadmap organiza as proximas melhorias do jogo, saindo de um prototipo joga
 ## Prioridade recomendada
 
 1. Tela inicial e menus.
-2. Botao de mute/volume.
-3. Melhorias mobile.
-4. Protecao anti-spam para o ranking.
-5. Power-ups.
-6. Som.
-7. Sprites melhores.
-8. Publicacao no Itch.io.
-9. Compartilhamento de score.
-10. Cosmeticos e patrocinio dev.
+2. Melhorias mobile.
+3. Protecao anti-spam para o ranking.
+4. Power-ups.
+5. Sprites melhores.
+6. Publicacao no Itch.io.
+7. Compartilhamento de score.
+8. Cosmeticos e patrocinio dev.
+9. Musica chiptune.
+10. Ranking por temporada.
 
 ## Proxima entrega sugerida
 
-Adicionar botao de mute/volume e preparar a base para efeitos sonoros.
+Melhorar a experiencia mobile com controles mais confortaveis, HUD compacto e ajustes de layout para telas pequenas.
 
 ## Aposta de monetizacao recomendada
 

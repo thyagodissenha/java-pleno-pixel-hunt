@@ -2,7 +2,7 @@
 
 Um mini jogo pixel art de arena sobre um programador Java pleno que finalmente estourou a build, pegou sua caneca de cafe e foi sobreviver ao caos corporativo: usuarios correndo atras, chefes surgindo por onda e lancamentos de dados voando pela tela como se a producao dependesse disso.
 
-Jogue aqui: https://java-pleno-pixel-hunt.thyago-dissenha.chatgpt.site
+Jogue aqui: https://java-pleno-pixel-hunt.vercel.app
 
 ## Ideia
 
@@ -24,6 +24,7 @@ O jogo mistura humor de desenvolvimento, correria de go-live e aquele leve deses
 - Menu inicial com acesso ao ranking e instrucoes
 - Curva de ondas balanceada para reduzir picos injustos
 - Feedback visual de dano, tremida de tela e aviso de chefe
+- Botao de mute/volume com efeitos sonoros via Web Audio
 - Visual pixel art desenhado em Canvas
 - Suporte a teclado e toque
 
@@ -56,6 +57,7 @@ Em desenvolvimento local, o ranking usa `data/high-scores.json`. Se a API global
 - Next.js
 - TypeScript
 - HTML5 Canvas
+- Web Audio API
 - Tailwind CSS
 - Vercel Blob
 - Vinext / Sites
