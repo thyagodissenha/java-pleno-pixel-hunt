@@ -48,7 +48,21 @@ Este roadmap organiza as proximas melhorias do jogo, saindo de um prototipo joga
 - Adicionar licenca.
 - Marcar uma versao `v1.0.0`.
 
-## Fase 6: Modos avancados
+## Fase 6: Monetizacao e crescimento
+
+- Manter uma versao web gratuita como porta de entrada.
+- Testar anuncios leves apenas entre partidas ou no pos-jogo, nunca durante o gameplay.
+- Criar cosmeticos pagos sem vantagem competitiva, como skins de estagiario, pleno, senior, tech lead e arquiteto.
+- Criar temas visuais alternativos, como startup, banco legado, hackathon e escritorio remoto.
+- Avaliar um pacote premium com jogo sem anuncios, skins exclusivas, modos extras e ranking customizado.
+- Criar ranking semanal ou temporadas com recompensas cosmeticas.
+- Adicionar tela final compartilhavel com meme, tempo sobrevivido, onda e pontuacao.
+- Adicionar botoes de compartilhamento para LinkedIn, X e WhatsApp.
+- Avaliar patrocinio ou product placement com marcas dev, bootcamps, plataformas de vagas e ferramentas de desenvolvimento.
+- Explorar uma versao corporativa/branded para eventos, recrutamento, onboarding e hackathons.
+- Oferecer ranking privado, assets customizados e desafios personalizados na versao corporativa.
+
+## Fase 7: Modos avancados
 
 - Criar modo infinito.
 - Adicionar conquistas.
@@ -65,7 +79,13 @@ Este roadmap organiza as proximas melhorias do jogo, saindo de um prototipo joga
 4. Som.
 5. Sprites melhores.
 6. Publicacao no Itch.io.
+7. Compartilhamento de score.
+8. Cosmeticos e patrocinio dev.
 
 ## Proxima entrega sugerida
 
 Criar uma tela inicial completa com acesso direto ao ranking, instrucoes e inicio de partida.
+
+## Aposta de monetizacao recomendada
+
+Comecar com web gratis, ranking semanal, compartilhamento de score e cosmeticos. Depois testar patrocinio dev e uma versao branded para empresas. Essa rota preserva a vibe do jogo e evita depender apenas de anuncios, que tendem a pagar pouco no inicio.
