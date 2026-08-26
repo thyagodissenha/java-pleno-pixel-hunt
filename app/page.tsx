@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 type Actor = {
   x: number;
@@ -34,8 +34,16 @@ type Particle = {
 };
 
 type GameState = "menu" | "playing" | "paused" | "over" | "won";
+type HighScore = {
+  name: string;
+  score: number;
+  wave: number;
+  outcome: "over" | "won";
+  createdAt: string;
+};
 
 const WORLD = { width: 960, height: 540 };
+const HIGH_SCORE_KEY = "java-pleno-pixel-hunt-high-scores";
 const bossNames = [
   "Gerente de Sprint",
   "Dono do Roadmap",
@@ -69,20 +77,75 @@ function pixelRect(
   ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
 }
 
+function loadHighScores(): HighScore[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const stored = window.localStorage.getItem(HIGH_SCORE_KEY);
+    if (!stored) return [];
+    const parsed = JSON.parse(stored) as HighScore[];
+    return Array.isArray(parsed) ? parsed.slice(0, 10) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHighScores(scores: HighScore[]) {
+  window.localStorage.setItem(HIGH_SCORE_KEY, JSON.stringify(scores.slice(0, 10)));
+}
+
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const keys = useRef(new Set<string>());
   const pointer = useRef({ active: false, x: WORLD.width / 2, y: WORLD.height / 2 });
   const stateRef = useRef<GameState>("menu");
+  const startGameRef = useRef<() => void>(() => undefined);
   const [gameState, setGameState] = useState<GameState>("menu");
   const [score, setScore] = useState(0);
   const [wave, setWave] = useState(1);
   const [hp, setHp] = useState(100);
   const [boss, setBoss] = useState("Gerente de Sprint");
+  const [highScores, setHighScores] = useState<HighScore[]>([]);
+  const [playerName, setPlayerName] = useState("");
+  const [scoreSaved, setScoreSaved] = useState(true);
+  const [lastOutcome, setLastOutcome] = useState<"over" | "won">("over");
 
   useEffect(() => {
     stateRef.current = gameState;
   }, [gameState]);
+
+  useEffect(() => {
+    setHighScores(loadHighScores());
+  }, []);
+
+  function startNewGame() {
+    setScoreSaved(true);
+    setPlayerName("");
+    startGameRef.current();
+  }
+
+  function submitScore(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const cleanName = playerName.trim().replace(/\s+/g, " ").slice(0, 14) || "DEV ANON";
+    const nextScores = [
+      {
+        name: cleanName.toUpperCase(),
+        score,
+        wave,
+        outcome: lastOutcome,
+        createdAt: new Date().toISOString(),
+      },
+      ...highScores,
+    ].sort((a, b) => b.score - a.score || b.wave - a.wave).slice(0, 10);
+
+    saveHighScores(nextScores);
+    setHighScores(nextScores);
+    setScoreSaved(true);
+  }
+
+  function clearHighScores() {
+    window.localStorage.removeItem(HIGH_SCORE_KEY);
+    setHighScores([]);
+  }
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -183,12 +246,13 @@ export default function Home() {
       resetGame();
       setGameState("playing");
     }
+    startGameRef.current = start;
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "w", "a", "s", "d", "W", "A", "S", "D", "Enter", "Escape"].includes(event.key)) {
         event.preventDefault();
       }
-      if (event.key === "Enter" && (stateRef.current === "menu" || stateRef.current === "over" || stateRef.current === "won")) start();
+      if (event.key === "Enter" && stateRef.current === "menu") start();
       if (event.key === "Escape" && stateRef.current === "playing") setGameState("paused");
       else if (event.key === "Escape" && stateRef.current === "paused") setGameState("playing");
       keys.current.add(event.key.toLowerCase());
@@ -202,7 +266,7 @@ export default function Home() {
     const onPointerDown = (event: PointerEvent) => {
       pointer.current.active = true;
       onPointerMove(event);
-      if (stateRef.current === "menu" || stateRef.current === "over" || stateRef.current === "won") start();
+      if (stateRef.current === "menu") start();
       if (stateRef.current === "paused") setGameState("playing");
     };
     const onPointerUp = () => {
@@ -349,6 +413,10 @@ export default function Home() {
                 burst(enemy.x, enemy.y, "#ffd166", 28);
                 if (bossIndex >= bossNames.length) {
                   syncHud();
+                  setScore(localScore);
+                  setWave(localWave);
+                  setLastOutcome("won");
+                  setScoreSaved(false);
                   setGameState("won");
                 } else {
                   setTimeout(() => {
@@ -379,6 +447,10 @@ export default function Home() {
       if (player.hp <= 0) {
         player.hp = 0;
         syncHud();
+        setScore(localScore);
+        setWave(localWave);
+        setLastOutcome("over");
+        setScoreSaved(false);
         setGameState("over");
       }
       if (frame % 18 === 0) syncHud();
@@ -518,6 +590,7 @@ export default function Home() {
   }, []);
 
   const status = gameState === "playing" ? "Em combate" : gameState === "paused" ? "Pausado" : gameState === "won" ? "Vitoria" : gameState === "over" ? "Fim de jogo" : "Pronto";
+  const finalScreen = gameState === "over" || gameState === "won";
 
   return (
     <main className="game-shell">
@@ -535,6 +608,55 @@ export default function Home() {
 
       <section className="game-stage" aria-label="Arena do jogo">
         <canvas ref={canvasRef} width={WORLD.width} height={WORLD.height} aria-label="Arena pixel art" />
+        {finalScreen && (
+          <div className="score-overlay" role="dialog" aria-modal="true" aria-label="Ranking de maiores pontuacoes">
+            <div className="score-panel">
+              <p className="score-kicker">{gameState === "won" ? "Missao completa" : "Producao caiu"}</p>
+              <h2>HIGH SCORES</h2>
+              {!scoreSaved ? (
+                <form className="score-form" onSubmit={submitScore}>
+                  <label htmlFor="player-name">Digite seu nome</label>
+                  <div>
+                    <input
+                      id="player-name"
+                      maxLength={14}
+                      value={playerName}
+                      onChange={(event) => setPlayerName(event.target.value)}
+                      placeholder="DEV ANON"
+                      autoFocus
+                    />
+                    <button type="submit">Salvar</button>
+                  </div>
+                  <span>{score} pts · onda {wave}</span>
+                </form>
+              ) : (
+                <button className="play-again" type="button" onClick={startNewGame}>
+                  Jogar de novo
+                </button>
+              )}
+
+              <ol className="score-list">
+                {highScores.length ? (
+                  highScores.map((entry, index) => (
+                    <li key={`${entry.createdAt}-${entry.name}`}>
+                      <span>{String(index + 1).padStart(2, "0")}</span>
+                      <strong>{entry.name}</strong>
+                      <em>{entry.score}</em>
+                    </li>
+                  ))
+                ) : (
+                  <li className="empty-score">
+                    <strong>NENHUM SCORE AINDA</strong>
+                    <em>{score}</em>
+                  </li>
+                )}
+              </ol>
+              <button className="clear-scores" type="button" onClick={clearHighScores}>
+                Limpar ranking local
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="bottombar" aria-label="Controles e alvo">
@@ -544,7 +666,7 @@ export default function Home() {
         </div>
         <div>
           <strong>Controles</strong>
-          <span>WASD ou setas para mover, espaco para rajada, Esc pausa. No celular, arraste na arena.</span>
+          <span>WASD ou setas para mover, espaco para rajada, Esc pausa. Ao final, salve seu nome no HIGH SCORES.</span>
         </div>
       </section>
     </main>

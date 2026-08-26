@@ -18,6 +18,8 @@ O jogo mistura humor de desenvolvimento, correria de go-live e aquele leve deses
 - Chefes com mais vida e ataques especiais
 - Projetis/obstaculos inspirados em Azure, SQL, CI/CD, Kafka, BI e deploys
 - Sistema de vida, pontuacao, ondas e vitoria
+- Tela HIGH SCORES com nome do jogador
+- Ranking local salvo no navegador
 - Visual pixel art desenhado em Canvas
 - Suporte a teclado e toque
 
@@ -31,6 +33,12 @@ O jogo mistura humor de desenvolvimento, correria de go-live e aquele leve deses
 | Iniciar/reiniciar | `Enter` ou toque na arena |
 
 No celular ou tablet, arraste na arena para mover o personagem.
+
+## Ranking
+
+Ao final da partida, o jogo solicita o nome do jogador e salva o resultado em uma tela **HIGH SCORES** inspirada em arcades classicos.
+
+Nesta versao, o ranking fica gravado no `localStorage` do navegador. Isso significa que cada aparelho/navegador mantem sua propria lista de pontuacoes.
 
 ## Stack
 
