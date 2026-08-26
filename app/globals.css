@@ -8,8 +8,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: Arial, Helvetica, sans-serif;
+  --font-mono: "Courier New", monospace;
 }
 
 * {
@@ -30,7 +30,7 @@ body {
     #090d18;
   background-size: 24px 24px;
   color: var(--foreground);
-  font-family: var(--font-geist-mono), "Courier New", monospace;
+  font-family: "Courier New", monospace;
 }
 
 button,
