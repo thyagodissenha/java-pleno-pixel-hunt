@@ -16,7 +16,12 @@ O jogo mistura humor de desenvolvimento, correria de go-live e aquele leve deses
 - Tiro automatico contra o inimigo mais proximo
 - Usuarios perseguindo o jogador
 - Chefes com mais vida e ataques especiais
+- Padroes de ataque diferentes por chefe
+- Inimigos especiais: QA nervoso, usuario VIP, incidente P1 e legado sem teste
 - Projetis/obstaculos inspirados em Azure, SQL, CI/CD, Kafka, BI e deploys
+- Power-ups: cafe, refactor, rollback, hotfix e code review
+- Progressao de arma por onda, indo de JDK 8 para JDK 17 e JDK 21
+- Biomas por fase: Escritorio, Producao, Cloud e War Room
 - Sistema de vida, pontuacao, ondas e vitoria
 - Tela HIGH SCORES com nome do jogador
 - Ranking global via API
@@ -38,6 +43,14 @@ O jogo mistura humor de desenvolvimento, correria de go-live e aquele leve deses
 | Iniciar/reiniciar | `Enter` ou toque na arena |
 
 No celular ou tablet, arraste na arena para mover o personagem.
+
+## Power-ups
+
+- **Cafe** aumenta a velocidade por alguns segundos.
+- **Refactor** acelera os tiros.
+- **Rollback** remove ameacas proximas que nao sejam chefes.
+- **Hotfix** recupera vida.
+- **Code Review** cria uma janela de protecao e melhora o dano.
 
 ## Menu inicial
 

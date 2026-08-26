@@ -22,12 +22,12 @@ Este roadmap organiza as proximas melhorias do jogo, saindo de um prototipo joga
 
 ## Fase 3: Gameplay
 
-- Adicionar power-ups, como cafe, refactor, rollback, hotfix e code review.
-- Criar novos inimigos, como QA nervoso, usuario VIP, incidente P1 e legado sem teste.
-- Dar padroes de ataque diferentes para cada chefe.
-- Criar fases ou biomas, como Escritorio, Producao, Cloud e War Room.
-- Adicionar progressao de armas ou upgrades durante a partida.
-- Balancear vida, dano, velocidade e pontuacao.
+- [x] Adicionar power-ups, como cafe, refactor, rollback, hotfix e code review.
+- [x] Criar novos inimigos, como QA nervoso, usuario VIP, incidente P1 e legado sem teste.
+- [x] Dar padroes de ataque diferentes para cada chefe.
+- [x] Criar fases ou biomas, como Escritorio, Producao, Cloud e War Room.
+- [x] Adicionar progressao de armas ou upgrades durante a partida.
+- [x] Balancear vida, dano, velocidade e pontuacao.
 
 ## Fase 4: Arte e som
 
@@ -76,17 +76,17 @@ Este roadmap organiza as proximas melhorias do jogo, saindo de um prototipo joga
 1. Tela inicial e menus.
 2. Melhorias mobile.
 3. Protecao anti-spam para o ranking.
-4. Power-ups.
-5. Sprites melhores.
-6. Publicacao no Itch.io.
-7. Compartilhamento de score.
-8. Cosmeticos e patrocinio dev.
-9. Musica chiptune.
-10. Ranking por temporada.
+4. Sprites melhores.
+5. Publicacao no Itch.io.
+6. Compartilhamento de score.
+7. Cosmeticos e patrocinio dev.
+8. Musica chiptune.
+9. Ranking por temporada.
+10. Tela de vitoria mais marcante.
 
 ## Proxima entrega sugerida
 
-Melhorar a experiencia mobile com controles mais confortaveis, HUD compacto e ajustes de layout para telas pequenas.
+Melhorar sprites e animacoes para deixar os novos inimigos, power-ups e biomas mais expressivos.
 
 ## Aposta de monetizacao recomendada
 

@@ -11,9 +11,10 @@ type Actor = {
   maxHp: number;
   speed: number;
   size: number;
-  kind: "user" | "boss" | "data";
+  kind: EnemyKind;
   label: string;
   cooldown?: number;
+  phase?: number;
 };
 
 type Shot = {
@@ -35,6 +36,8 @@ type Particle = {
 
 type GameState = "menu" | "playing" | "paused" | "over" | "won";
 type MenuPanel = "home" | "scores" | "help";
+type EnemyKind = "user" | "boss" | "data" | "qa" | "vip" | "incident" | "legacy";
+type PowerUpKind = "coffee" | "refactor" | "rollback" | "hotfix" | "review";
 type SoundName = "shoot" | "hit" | "hurt" | "boss" | "over" | "save" | "start" | "won";
 type HighScore = {
   name: string;
@@ -42,6 +45,14 @@ type HighScore = {
   wave: number;
   outcome: "over" | "won";
   createdAt: string;
+};
+
+type PowerUp = {
+  x: number;
+  y: number;
+  kind: PowerUpKind;
+  ttl: number;
+  pulse: number;
 };
 
 const WORLD = { width: 960, height: 540 };
@@ -54,6 +65,21 @@ const bossNames = [
   "Diretor do Go-Live",
 ];
 const cloudLabels = ["Azure", "SQL", "Blob", "CI/CD", "Kafka", "BI"];
+const enemyLabels: Record<Exclude<EnemyKind, "boss" | "data">, string> = {
+  user: "Usuario",
+  qa: "QA nervoso",
+  vip: "Usuario VIP",
+  incident: "Incidente P1",
+  legacy: "Legado",
+};
+const powerUpLabels: Record<PowerUpKind, string> = {
+  coffee: "Cafe",
+  refactor: "Refactor",
+  rollback: "Rollback",
+  hotfix: "Hotfix",
+  review: "Code Review",
+};
+const biomeNames = ["Escritorio", "Producao", "Cloud", "War Room"];
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -112,14 +138,15 @@ function loadSoundSettings() {
 }
 
 export default function Home() {
+  const [initialSound] = useState(() => loadSoundSettings());
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const keys = useRef(new Set<string>());
   const pointer = useRef({ active: false, x: WORLD.width / 2, y: WORLD.height / 2 });
   const stateRef = useRef<GameState>("menu");
   const startGameRef = useRef<() => void>(() => undefined);
   const audioRef = useRef<AudioContext | null>(null);
-  const mutedRef = useRef(false);
-  const volumeRef = useRef(0.35);
+  const mutedRef = useRef(initialSound.muted);
+  const volumeRef = useRef(initialSound.volume);
   const lastSoundRef = useRef<Record<SoundName, number>>({
     shoot: 0,
     hit: 0,
@@ -135,26 +162,22 @@ export default function Home() {
   const [wave, setWave] = useState(1);
   const [hp, setHp] = useState(100);
   const [boss, setBoss] = useState("Gerente de Sprint");
-  const [highScores, setHighScores] = useState<HighScore[]>([]);
+  const [highScores, setHighScores] = useState<HighScore[]>(() => loadHighScores());
   const [playerName, setPlayerName] = useState("");
   const [scoreSaved, setScoreSaved] = useState(true);
   const [scoreMessage, setScoreMessage] = useState("Ranking global carregando...");
   const [lastOutcome, setLastOutcome] = useState<"over" | "won">("over");
   const [menuPanel, setMenuPanel] = useState<MenuPanel>("home");
-  const [muted, setMuted] = useState(false);
-  const [volume, setVolume] = useState(0.35);
+  const [muted, setMuted] = useState(initialSound.muted);
+  const [volume, setVolume] = useState(initialSound.volume);
+  const [biome, setBiome] = useState(biomeNames[0]);
+  const [upgrade, setUpgrade] = useState("JDK 8");
 
   useEffect(() => {
     stateRef.current = gameState;
   }, [gameState]);
 
   useEffect(() => {
-    setHighScores(loadHighScores());
-    const sound = loadSoundSettings();
-    mutedRef.current = sound.muted;
-    volumeRef.current = sound.volume;
-    setMuted(sound.muted);
-    setVolume(sound.volume);
     refreshHighScores();
   }, []);
 
@@ -282,11 +305,15 @@ export default function Home() {
     let localWave = 1;
     let spawnTimer = 0;
     let dataTimer = 140;
+    let powerUpTimer = 9;
     let shotTimer = 0;
     let bossIndex = 0;
+    let weaponLevel = 1;
     let damageFlash = 0;
     let shake = 0;
     let bossBanner = 0;
+    let effectMessage = "";
+    let effectBanner = 0;
 
     const player = {
       x: WORLD.width / 2,
@@ -297,17 +324,22 @@ export default function Home() {
       speed: 210,
       invincible: 0,
       fury: 0,
+      focus: 0,
+      haste: 0,
     };
 
     const enemies: Actor[] = [];
     const shots: Shot[] = [];
     const particles: Particle[] = [];
+    const powerUps: PowerUp[] = [];
 
     function syncHud() {
       setScore(localScore);
       setWave(localWave);
       setHp(Math.max(0, Math.round(player.hp)));
       setBoss(bossNames[bossIndex] ?? "Comite Executivo");
+      setBiome(biomeNames[Math.min(bossIndex, biomeNames.length - 1)] ?? "War Room");
+      setUpgrade(weaponLevel >= 3 ? "JDK 21" : weaponLevel === 2 ? "JDK 17" : "JDK 8");
     }
 
     function burst(x: number, y: number, color: string, amount = 12) {
@@ -325,7 +357,7 @@ export default function Home() {
       }
     }
 
-    function spawnEnemy(kind: Actor["kind"]) {
+    function spawnEnemy(kind: EnemyKind) {
       const edge = Math.floor(Math.random() * 4);
       const margin = 36;
       const x = edge === 0 ? -margin : edge === 1 ? WORLD.width + margin : Math.random() * WORLD.width;
@@ -333,18 +365,33 @@ export default function Home() {
       const isBoss = kind === "boss";
       const isData = kind === "data";
       const wavePressure = Math.min(localWave - 1, 5);
+      const stats: Record<EnemyKind, { hp: number; speed: number; size: number }> = {
+        user: { hp: 28 + wavePressure * 2, speed: 68 + wavePressure * 5, size: 24 },
+        qa: { hp: 22 + wavePressure * 2, speed: 96 + wavePressure * 7, size: 22 },
+        vip: { hp: 58 + wavePressure * 5, speed: 54 + wavePressure * 3, size: 30 },
+        incident: { hp: 20 + wavePressure * 3, speed: 122 + wavePressure * 8, size: 20 },
+        legacy: { hp: 88 + wavePressure * 8, speed: 36 + wavePressure * 2, size: 34 },
+        data: { hp: 16 + wavePressure, speed: 86 + wavePressure * 5, size: 22 },
+        boss: { hp: 160 + localWave * 28, speed: 52 + wavePressure * 2, size: 38 },
+      };
+      const selected = stats[kind];
       enemies.push({
         x,
         y,
         vx: 0,
         vy: 0,
-        hp: isBoss ? 160 + localWave * 28 : isData ? 16 + wavePressure : 28 + wavePressure * 2,
-        maxHp: isBoss ? 160 + localWave * 28 : isData ? 16 + wavePressure : 28 + wavePressure * 2,
-        speed: isBoss ? 52 + wavePressure * 2 : isData ? 86 + wavePressure * 5 : 68 + wavePressure * 5,
-        size: isBoss ? 38 : isData ? 22 : 24,
+        hp: selected.hp,
+        maxHp: selected.hp,
+        speed: selected.speed,
+        size: selected.size,
         kind,
-        label: isBoss ? bossNames[bossIndex] : isData ? cloudLabels[Math.floor(Math.random() * cloudLabels.length)] : "Usuario",
+        label: isBoss
+          ? bossNames[bossIndex]
+          : isData
+            ? cloudLabels[Math.floor(Math.random() * cloudLabels.length)]
+            : enemyLabels[kind],
         cooldown: isBoss ? 118 : 90,
+        phase: Math.random() * Math.PI * 2,
       });
       if (isBoss) {
         bossBanner = 120;
@@ -352,24 +399,77 @@ export default function Home() {
       }
     }
 
+    function spawnPowerUp() {
+      const kinds: PowerUpKind[] = ["coffee", "refactor", "rollback", "hotfix", "review"];
+      powerUps.push({
+        x: 70 + Math.random() * (WORLD.width - 140),
+        y: 70 + Math.random() * (WORLD.height - 140),
+        kind: kinds[Math.floor(Math.random() * kinds.length)],
+        ttl: 780,
+        pulse: Math.random() * Math.PI * 2,
+      });
+    }
+
+    function announceEffect(message: string) {
+      effectMessage = message;
+      effectBanner = 100;
+    }
+
+    function collectPowerUp(powerUp: PowerUp) {
+      localScore += 35;
+      if (powerUp.kind === "coffee") {
+        player.haste = 6;
+        announceEffect("CAFE: velocidade aumentada");
+      } else if (powerUp.kind === "refactor") {
+        player.fury = 6;
+        announceEffect("REFACTOR: tiros acelerados");
+      } else if (powerUp.kind === "rollback") {
+        const removed = enemies.filter((enemy) => enemy.kind !== "boss" && distance(enemy, player) < 190);
+        for (const enemy of removed) {
+          const index = enemies.indexOf(enemy);
+          if (index >= 0) enemies.splice(index, 1);
+          localScore += enemy.kind === "data" ? 45 : 25;
+          burst(enemy.x, enemy.y, "#7dd3fc", 10);
+        }
+        announceEffect("ROLLBACK: caos revertido");
+      } else if (powerUp.kind === "hotfix") {
+        player.hp = clamp(player.hp + 32, 0, player.maxHp);
+        announceEffect("HOTFIX: vida recuperada");
+      } else {
+        player.focus = 7;
+        player.invincible = Math.max(player.invincible, 2.4);
+        announceEffect("CODE REVIEW: escudo ativo");
+      }
+      playSound("save");
+      burst(powerUp.x, powerUp.y, "#facc15", 18);
+      syncHud();
+    }
+
     function resetGame() {
       localScore = 0;
       localWave = 1;
       spawnTimer = 0;
       dataTimer = 120;
+      powerUpTimer = 7;
       shotTimer = 0;
       bossIndex = 0;
+      weaponLevel = 1;
       damageFlash = 0;
       shake = 0;
       bossBanner = 120;
+      effectMessage = "";
+      effectBanner = 0;
       player.x = WORLD.width / 2;
       player.y = WORLD.height / 2;
       player.hp = player.maxHp;
       player.invincible = 0;
       player.fury = 0;
+      player.focus = 0;
+      player.haste = 0;
       enemies.length = 0;
       shots.length = 0;
       particles.length = 0;
+      powerUps.length = 0;
       for (let i = 0; i < 5; i += 1) spawnEnemy("user");
       spawnEnemy("boss");
       syncHud();
@@ -428,13 +528,18 @@ export default function Home() {
       const aim = target
         ? normalize(target.x - player.x, target.y - player.y)
         : normalize(pointer.current.x - player.x, pointer.current.y - player.y);
-      shots.push({
-        x: player.x + aim.x * 20,
-        y: player.y + aim.y * 20,
-        vx: aim.x * 430,
-        vy: aim.y * 430,
-        ttl: 78,
-      });
+      const lanes = weaponLevel >= 3 ? [-0.16, 0, 0.16] : weaponLevel === 2 ? [-0.1, 0.1] : [0];
+      const shotSpeed = player.focus > 0 ? 500 : 430;
+      for (const spread of lanes) {
+        const angle = Math.atan2(aim.y, aim.x) + spread;
+        shots.push({
+          x: player.x + Math.cos(angle) * 20,
+          y: player.y + Math.sin(angle) * 20,
+          vx: Math.cos(angle) * shotSpeed,
+          vy: Math.sin(angle) * shotSpeed,
+          ttl: 78,
+        });
+      }
     }
 
     function update(delta: number) {
@@ -442,12 +547,17 @@ export default function Home() {
       frame += 1;
       spawnTimer -= delta;
       dataTimer -= delta;
+      powerUpTimer -= delta;
       shotTimer -= delta;
       player.invincible = Math.max(0, player.invincible - delta);
       player.fury = Math.max(0, player.fury - delta);
+      player.focus = Math.max(0, player.focus - delta);
+      player.haste = Math.max(0, player.haste - delta);
       damageFlash = Math.max(0, damageFlash - delta * 60);
       shake = Math.max(0, shake - delta * 60);
       bossBanner = Math.max(0, bossBanner - delta * 60);
+      effectBanner = Math.max(0, effectBanner - delta * 60);
+      weaponLevel = localWave >= 4 ? 3 : localWave >= 2 ? 2 : 1;
 
       let moveX = 0;
       let moveY = 0;
@@ -464,28 +574,45 @@ export default function Home() {
       }
       const move = normalize(moveX, moveY);
       if (moveX || moveY) {
-        player.x = clamp(player.x + move.x * player.speed * delta, 28, WORLD.width - 28);
-        player.y = clamp(player.y + move.y * player.speed * delta, 36, WORLD.height - 28);
+        const currentSpeed = player.speed * (player.haste > 0 ? 1.34 : 1);
+        player.x = clamp(player.x + move.x * currentSpeed * delta, 28, WORLD.width - 28);
+        player.y = clamp(player.y + move.y * currentSpeed * delta, 36, WORLD.height - 28);
       }
 
       if (shotTimer <= 0 || keys.current.has(" ")) {
         shoot();
         playSound("shoot");
-        shotTimer = player.fury > 0 ? 0.11 : 0.24;
+        shotTimer = player.fury > 0 ? 0.11 : weaponLevel >= 3 ? 0.2 : 0.24;
       }
 
       const usersAlive = enemies.filter((enemy) => enemy.kind === "user").length;
       const dataAlive = enemies.filter((enemy) => enemy.kind === "data").length;
+      const specialAlive = enemies.filter((enemy) => ["qa", "vip", "incident", "legacy"].includes(enemy.kind)).length;
       const maxUsers = 7 + localWave * 2;
       const maxData = 3 + Math.ceil(localWave * 0.8);
+      const maxSpecial = Math.min(2 + Math.floor(localWave / 2), 5);
 
       if (spawnTimer <= 0 && usersAlive < maxUsers) {
         spawnTimer = Math.max(0.58, 1.45 - localWave * 0.08);
-        spawnEnemy("user");
+        const specialPool: EnemyKind[] = [
+          ...(localWave >= 2 ? ["qa" as const] : []),
+          ...(localWave >= 3 ? ["vip" as const] : []),
+          ...(localWave >= 4 ? ["incident" as const] : []),
+          ...(localWave >= 5 ? ["legacy" as const] : []),
+        ];
+        if (specialPool.length && specialAlive < maxSpecial && Math.random() < 0.34) {
+          spawnEnemy(specialPool[Math.floor(Math.random() * specialPool.length)]);
+        } else {
+          spawnEnemy("user");
+        }
       }
       if (dataTimer <= 0 && dataAlive < maxData) {
         dataTimer = Math.max(1.55, 4.1 - localWave * 0.18);
         spawnEnemy("data");
+      }
+      if (powerUpTimer <= 0 && powerUps.length < 2) {
+        powerUpTimer = 11 + Math.random() * 8;
+        spawnPowerUp();
       }
 
       for (const enemy of enemies) {
@@ -493,6 +620,20 @@ export default function Home() {
         if (enemy.kind === "data") {
           enemy.vx = toward.x * enemy.speed * 1.5;
           enemy.vy = toward.y * enemy.speed * 1.5;
+        } else if (enemy.kind === "qa") {
+          const strafe = Math.sin(frame / 10 + (enemy.phase ?? 0)) * 85;
+          enemy.vx = toward.x * enemy.speed - toward.y * strafe;
+          enemy.vy = toward.y * enemy.speed + toward.x * strafe;
+        } else if (enemy.kind === "vip") {
+          enemy.vx = toward.x * enemy.speed * 0.84;
+          enemy.vy = toward.y * enemy.speed * 0.84;
+        } else if (enemy.kind === "incident") {
+          const pulse = Math.sin(frame / 14 + (enemy.phase ?? 0)) > 0.25 ? 1.55 : 0.72;
+          enemy.vx = toward.x * enemy.speed * pulse;
+          enemy.vy = toward.y * enemy.speed * pulse;
+        } else if (enemy.kind === "legacy") {
+          enemy.vx = toward.x * enemy.speed + Math.sin(frame / 42 + (enemy.phase ?? 0)) * 8;
+          enemy.vy = toward.y * enemy.speed + Math.cos(frame / 48 + (enemy.phase ?? 0)) * 8;
         } else {
           enemy.vx = toward.x * enemy.speed + Math.sin((frame + enemy.x) / 23) * 16;
           enemy.vy = toward.y * enemy.speed + Math.cos((frame + enemy.y) / 29) * 16;
@@ -503,24 +644,42 @@ export default function Home() {
           enemy.cooldown = (enemy.cooldown ?? 0) - delta * 60;
           if (enemy.cooldown <= 0) {
             enemy.cooldown = Math.max(64, 104 - localWave * 4);
-            const volleySize = localWave >= 3 ? 3 : 2;
+            const pattern = bossIndex % 4;
+            const volleySize = pattern === 1 ? 8 : pattern === 3 ? 5 : localWave >= 3 ? 3 : 2;
             for (let i = 0; i < volleySize; i += 1) {
-              const spread = (i - 1) * 0.34;
-              const base = Math.atan2(player.y - enemy.y, player.x - enemy.x) + spread;
+              const aimed = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+              const base = pattern === 1
+                ? (Math.PI * 2 * i) / volleySize
+                : pattern === 3
+                  ? aimed + (i - 2) * 0.24
+                  : aimed + (i - 1) * 0.34;
               enemies.push({
                 x: enemy.x + Math.cos(base) * 30,
                 y: enemy.y + Math.sin(base) * 30,
                 vx: 0,
                 vy: 0,
-                hp: 16,
-                maxHp: 16,
-                speed: 96 + Math.min(localWave, 5) * 4,
-                size: 18,
-                kind: "data",
-                label: "Deploy",
+                hp: pattern === 2 ? 24 : 16,
+                maxHp: pattern === 2 ? 24 : 16,
+                speed: pattern === 3 ? 126 : 96 + Math.min(localWave, 5) * 4,
+                size: pattern === 2 ? 22 : 18,
+                kind: pattern === 2 ? "qa" : pattern === 3 ? "incident" : "data",
+                label: pattern === 2 ? "QA" : pattern === 3 ? "P1" : "Deploy",
+                phase: Math.random() * Math.PI * 2,
               });
             }
           }
+        }
+      }
+
+      for (let i = powerUps.length - 1; i >= 0; i -= 1) {
+        const powerUp = powerUps[i];
+        powerUp.ttl -= delta * 60;
+        powerUp.pulse += delta * 8;
+        if (distance(powerUp, player) < player.size * 0.55 + 16) {
+          collectPowerUp(powerUp);
+          powerUps.splice(i, 1);
+        } else if (powerUp.ttl <= 0) {
+          powerUps.splice(i, 1);
         }
       }
 
@@ -534,7 +693,16 @@ export default function Home() {
         const enemy = enemies[i];
         if (distance(enemy, player) < enemy.size * 0.55 + player.size * 0.55) {
           if (player.invincible <= 0) {
-            player.hp -= enemy.kind === "boss" ? 18 : enemy.kind === "data" ? 13 : 8;
+            const damage = enemy.kind === "boss"
+              ? 18
+              : enemy.kind === "data"
+                ? 13
+                : enemy.kind === "vip" || enemy.kind === "legacy"
+                  ? 12
+                  : enemy.kind === "incident"
+                    ? 15
+                    : 8;
+            player.hp -= damage;
             player.invincible = 0.92;
             damageFlash = 16;
             shake = 14;
@@ -554,12 +722,23 @@ export default function Home() {
         for (let e = enemies.length - 1; e >= 0; e -= 1) {
           const enemy = enemies[e];
           if (distance(shot, enemy) < enemy.size * 0.55 + 7) {
-            enemy.hp -= player.fury > 0 ? 26 : 18;
+            const damage = player.fury > 0 ? 26 : player.focus > 0 ? 23 : 18;
+            enemy.hp -= damage;
             shots.splice(s, 1);
             playSound("hit");
             burst(shot.x, shot.y, enemy.kind === "boss" ? "#f9c74f" : "#65d6ad", 4);
             if (enemy.hp <= 0) {
-              localScore += enemy.kind === "boss" ? 500 : enemy.kind === "data" ? 80 : 45;
+              localScore += enemy.kind === "boss"
+                ? 500
+                : enemy.kind === "data"
+                  ? 80
+                  : enemy.kind === "vip" || enemy.kind === "legacy"
+                    ? 95
+                    : enemy.kind === "incident"
+                      ? 70
+                      : enemy.kind === "qa"
+                        ? 60
+                        : 45;
               if (enemy.kind === "boss") {
                 player.fury = 5;
                 player.hp = clamp(player.hp + 22, 0, player.maxHp);
@@ -627,6 +806,27 @@ export default function Home() {
         pixelRect(ctx, x + 5, y + 2, actor.size - 10, 6, "#93c5fd");
         pixelRect(ctx, x + 6, y + 11, actor.size - 12, 3, "#dbeafe");
         pixelRect(ctx, x + 6, y + 17, actor.size - 12, 3, "#dbeafe");
+      } else if (actor.kind === "qa") {
+        pixelRect(ctx, x + 4, y, actor.size - 8, 8, "#fde047");
+        pixelRect(ctx, x + 2, y + 8, actor.size - 4, actor.size - 8, "#ca8a04");
+        pixelRect(ctx, x + 6, y + 13, 4, 4, "#111827");
+        pixelRect(ctx, x + actor.size - 10, y + 13, 4, 4, "#111827");
+        pixelRect(ctx, x + 4, y + actor.size - 5, actor.size - 8, 3, "#ef4444");
+      } else if (actor.kind === "vip") {
+        pixelRect(ctx, x + 6, y, actor.size - 12, 9, "#e0e7ff");
+        pixelRect(ctx, x + 3, y + 9, actor.size - 6, actor.size - 9, "#6366f1");
+        pixelRect(ctx, x + 5, y + 15, actor.size - 10, 5, "#facc15");
+        pixelRect(ctx, x + actor.size - 6, y + 10, 8, 8, "#fef3c7");
+      } else if (actor.kind === "incident") {
+        pixelRect(ctx, x + 5, y + 2, actor.size - 10, actor.size - 4, "#ef4444");
+        pixelRect(ctx, x + 2, y + 8, actor.size - 4, 5, "#facc15");
+        pixelRect(ctx, x + 8, y + 15, actor.size - 16, 4, "#111827");
+      } else if (actor.kind === "legacy") {
+        pixelRect(ctx, x + 3, y + 3, actor.size - 6, actor.size - 6, "#57534e");
+        pixelRect(ctx, x + 7, y + 7, actor.size - 14, 5, "#a8a29e");
+        pixelRect(ctx, x + 8, y + 17, 5, 5, "#22c55e");
+        pixelRect(ctx, x + actor.size - 13, y + 17, 5, 5, "#22c55e");
+        pixelRect(ctx, x + 7, y + actor.size - 9, actor.size - 14, 4, "#1c1917");
       } else {
         pixelRect(ctx, x + 6, y, actor.size - 12, 8, "#f9a8d4");
         pixelRect(ctx, x + 3, y + 8, actor.size - 6, actor.size - 8, "#ec4899");
@@ -642,6 +842,41 @@ export default function Home() {
       const bar = actor.size;
       pixelRect(ctx, actor.x - bar / 2, actor.y + actor.size / 2 + 5, bar, 4, "#111827");
       pixelRect(ctx, actor.x - bar / 2, actor.y + actor.size / 2 + 5, bar * (actor.hp / actor.maxHp), 4, "#84cc16");
+    }
+
+    function drawPowerUp(powerUp: PowerUp) {
+      const bob = Math.sin(powerUp.pulse) * 3;
+      const x = powerUp.x - 13;
+      const y = powerUp.y - 13 + bob;
+      const color: Record<PowerUpKind, string> = {
+        coffee: "#a16207",
+        refactor: "#14b8a6",
+        rollback: "#38bdf8",
+        hotfix: "#ef4444",
+        review: "#a855f7",
+      };
+      pixelRect(ctx, x, y, 26, 26, "#020617");
+      pixelRect(ctx, x + 3, y + 3, 20, 20, color[powerUp.kind]);
+      if (powerUp.kind === "coffee") {
+        pixelRect(ctx, x + 8, y + 7, 9, 12, "#fef3c7");
+        pixelRect(ctx, x + 17, y + 10, 4, 6, "#fef3c7");
+      } else if (powerUp.kind === "refactor") {
+        pixelRect(ctx, x + 7, y + 8, 12, 4, "#ecfeff");
+        pixelRect(ctx, x + 7, y + 15, 12, 4, "#ecfeff");
+      } else if (powerUp.kind === "rollback") {
+        pixelRect(ctx, x + 7, y + 8, 12, 4, "#082f49");
+        pixelRect(ctx, x + 7, y + 8, 4, 12, "#082f49");
+      } else if (powerUp.kind === "hotfix") {
+        pixelRect(ctx, x + 11, y + 6, 4, 14, "#fef2f2");
+        pixelRect(ctx, x + 6, y + 11, 14, 4, "#fef2f2");
+      } else {
+        pixelRect(ctx, x + 7, y + 8, 12, 4, "#faf5ff");
+        pixelRect(ctx, x + 7, y + 14, 8, 4, "#faf5ff");
+      }
+      ctx.fillStyle = "#f8fafc";
+      ctx.font = "10px 'Courier New', monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(powerUpLabels[powerUp.kind], powerUp.x, y - 7);
     }
 
     function drawPlayer() {
@@ -665,12 +900,16 @@ export default function Home() {
     }
 
     function drawGrid() {
-      ctx.fillStyle = "#101827";
+      const theme = Math.min(bossIndex, biomeNames.length - 1);
+      const floor = ["#101827", "#1b1620", "#071a2f", "#211414"][theme] ?? "#101827";
+      const tile = ["#132033", "#261b2c", "#0d2745", "#321b1b"][theme] ?? "#132033";
+      const accent = ["#38bdf8", "#fb7185", "#60a5fa", "#facc15"][theme] ?? "#38bdf8";
+      ctx.fillStyle = floor;
       ctx.fillRect(0, 0, WORLD.width, WORLD.height);
       for (let x = 0; x < WORLD.width; x += 32) {
         for (let y = 0; y < WORLD.height; y += 32) {
           if ((x / 32 + y / 32) % 2 === 0) {
-            ctx.fillStyle = "#132033";
+            ctx.fillStyle = tile;
             ctx.fillRect(x, y, 32, 32);
           }
         }
@@ -682,9 +921,13 @@ export default function Home() {
         }
       }
       pixelRect(ctx, 56, 56, 160, 30, "#1f2937");
-      pixelRect(ctx, 64, 64, 144, 4, "#38bdf8");
+      pixelRect(ctx, 64, 64, 144, 4, accent);
       pixelRect(ctx, WORLD.width - 216, WORLD.height - 90, 160, 30, "#1f2937");
       pixelRect(ctx, WORLD.width - 208, WORLD.height - 82, 144, 4, "#fb7185");
+      ctx.fillStyle = "#f8fafc";
+      ctx.font = "12px 'Courier New', monospace";
+      ctx.textAlign = "left";
+      ctx.fillText(biomeNames[theme], 62, 48);
     }
 
     function drawOverlay(title: string, text: string) {
@@ -715,6 +958,7 @@ export default function Home() {
         pixelRect(ctx, shot.x - 5, shot.y - 3, 10, 6, "#facc15");
         pixelRect(ctx, shot.x + 3, shot.y - 1, 4, 2, "#fef9c3");
       }
+      powerUps.forEach(drawPowerUp);
       enemies.sort((a, b) => a.y - b.y).forEach(drawActor);
       drawPlayer();
       ctx.restore();
@@ -731,6 +975,15 @@ export default function Home() {
         ctx.font = "bold 28px 'Courier New', monospace";
         ctx.textAlign = "center";
         ctx.fillText("CHEFE ENTROU NA CALL", WORLD.width / 2, 64);
+      }
+
+      if (effectBanner > 0 && stateRef.current === "playing") {
+        ctx.fillStyle = "rgba(15, 23, 42, 0.82)";
+        ctx.fillRect(WORLD.width / 2 - 230, WORLD.height - 72, 460, 34);
+        ctx.fillStyle = "#7dd3fc";
+        ctx.font = "bold 17px 'Courier New', monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(effectMessage, WORLD.width / 2, WORLD.height - 50);
       }
 
       if (stateRef.current === "menu") {
@@ -861,6 +1114,7 @@ export default function Home() {
                     <li><strong>Mover</strong><span>WASD, setas ou arraste no celular.</span></li>
                     <li><strong>Atirar</strong><span>Automatico no inimigo mais proximo.</span></li>
                     <li><strong>Rajada</strong><span>Espaco acelera os tiros.</span></li>
+                    <li><strong>Power-ups</strong><span>Cafe, Refactor, Rollback, Hotfix e Code Review ajudam na partida.</span></li>
                     <li><strong>Objetivo</strong><span>Sobreviva, derrube chefes e salve seu score.</span></li>
                   </ul>
                   <div className="menu-actions two">
@@ -924,11 +1178,11 @@ export default function Home() {
       <section className="bottombar" aria-label="Controles e alvo">
         <div>
           <strong>Chefe atual</strong>
-          <span>{boss}</span>
+          <span>{boss} · {biome}</span>
         </div>
         <div>
-          <strong>Controles</strong>
-          <span>WASD ou setas para mover, espaco para rajada, Esc pausa. Ao final, salve seu nome no HIGH SCORES.</span>
+          <strong>Arma e controles</strong>
+          <span>{upgrade} · WASD ou setas para mover, espaco para rajada, Esc pausa. Colete power-ups e salve seu nome no HIGH SCORES.</span>
         </div>
       </section>
     </main>
