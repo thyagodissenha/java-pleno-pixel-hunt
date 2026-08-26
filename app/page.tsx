@@ -542,17 +542,20 @@ export default function Home() {
       finalChoicePending = true;
       bossSpawned = true;
       finalBossCorpse = { x, y };
+      bossBanner = 0;
+      shake = 0;
       enemies.length = 0;
       shots.length = 0;
       powerUps.length = 0;
+      const choiceY = clamp(y, 150, WORLD.height - 120);
       const choices: Array<{ kind: PowerUpKind; x: number; y: number }> = [
-        { kind: "promotion", x: clamp(x - 110, 90, WORLD.width - 90), y },
-        { kind: "call", x: clamp(x + 110, 90, WORLD.width - 90), y },
+        { kind: "promotion", x: WORLD.width / 2 - 180, y: choiceY },
+        { kind: "call", x: WORLD.width / 2 + 180, y: choiceY },
       ];
       for (const choice of choices) {
         powerUps.push({
           x: choice.x,
-          y: clamp(choice.y, 90, WORLD.height - 90),
+          y: choice.y,
           kind: choice.kind,
           ttl: 99999,
           pulse: Math.random() * Math.PI * 2,
@@ -811,7 +814,7 @@ export default function Home() {
     }
 
     function update(delta: number) {
-      const choosingFinalReward = stateRef.current === "choice";
+      const choosingFinalReward = stateRef.current === "choice" || finalChoicePending;
       if (stateRef.current !== "playing" && !choosingFinalReward) return;
       frame += 1;
       spawnTimer -= delta;
@@ -1380,23 +1383,26 @@ export default function Home() {
     }
 
     function draw() {
+      const choosingFinalReward = stateRef.current === "choice" || finalChoicePending;
       const shakeX = shake > 0 ? (Math.random() - 0.5) * shake : 0;
       const shakeY = shake > 0 ? (Math.random() - 0.5) * shake : 0;
       ctx.save();
       ctx.translate(shakeX, shakeY);
       drawGrid();
-      if (stateRef.current === "choice") drawFinalChoiceScene();
+      if (choosingFinalReward) drawFinalChoiceScene();
       for (const particle of particles) {
         const size = Math.max(2, Math.min(8, particle.ttl / 6));
         pixelRect(ctx, particle.x, particle.y, size, size, particle.color);
       }
-      for (const shot of shots) {
-        pixelRect(ctx, shot.x - shot.vx * 0.018 - 4, shot.y - shot.vy * 0.018 - 2, 8, 4, "#fde68a");
-        pixelRect(ctx, shot.x - 5, shot.y - 3, 10, 6, "#facc15");
-        pixelRect(ctx, shot.x + 3, shot.y - 1, 4, 2, "#fef9c3");
+      if (!choosingFinalReward) {
+        for (const shot of shots) {
+          pixelRect(ctx, shot.x - shot.vx * 0.018 - 4, shot.y - shot.vy * 0.018 - 2, 8, 4, "#fde68a");
+          pixelRect(ctx, shot.x - 5, shot.y - 3, 10, 6, "#facc15");
+          pixelRect(ctx, shot.x + 3, shot.y - 1, 4, 2, "#fef9c3");
+        }
       }
       powerUps.forEach(drawPowerUp);
-      enemies.sort((a, b) => a.y - b.y).forEach(drawActor);
+      if (!choosingFinalReward) enemies.sort((a, b) => a.y - b.y).forEach(drawActor);
       drawPlayer();
       ctx.restore();
 
@@ -1405,7 +1411,7 @@ export default function Home() {
         ctx.fillRect(0, 0, WORLD.width, WORLD.height);
       }
 
-      if (bossBanner > 0 && stateRef.current === "playing") {
+      if (bossBanner > 0 && stateRef.current === "playing" && !finalChoicePending) {
         ctx.fillStyle = "rgba(2, 6, 23, 0.76)";
         ctx.fillRect(0, 26, WORLD.width, 58);
         ctx.fillStyle = "#facc15";
