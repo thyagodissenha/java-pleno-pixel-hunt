@@ -40,28 +40,44 @@ canvas {
 
 .game-shell {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  place-items: center;
   min-height: 100vh;
   min-height: 100dvh;
-  padding: clamp(12px, 2vw, 24px);
-  gap: 14px;
+  padding: clamp(8px, 1.2vw, 14px);
   background:
-    radial-gradient(circle at 18% 18%, rgba(14, 165, 233, 0.18), transparent 28%),
-    radial-gradient(circle at 86% 76%, rgba(250, 204, 21, 0.12), transparent 24%);
+    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    #090d18;
+  background-size: 28px 28px;
+}
+
+.game-frame {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  width: min(1580px, 100%);
+  height: min(100dvh - clamp(16px, 2.4vw, 28px), 940px);
+  min-height: 0;
 }
 
 .topbar,
 .bottombar {
-  display: flex;
+  display: grid;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  width: min(1120px, 100%);
-  margin: 0 auto;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
   border: 3px solid #334155;
-  background: rgba(15, 23, 42, 0.92);
-  box-shadow: 0 8px 0 #020617, inset 0 0 0 2px rgba(248, 250, 252, 0.06);
-  padding: 12px 14px;
+  background:
+    linear-gradient(180deg, rgba(30, 41, 59, 0.98), rgba(15, 23, 42, 0.98));
+  box-shadow:
+    0 6px 0 #020617,
+    inset 0 0 0 2px rgba(125, 211, 252, 0.08);
+  padding: 8px;
+}
+
+.topbar {
+  grid-template-columns: minmax(210px, 1.35fr) minmax(132px, 0.85fr) minmax(132px, 0.85fr) minmax(126px, 0.72fr) minmax(160px, 1fr) minmax(250px, 1.35fr);
 }
 
 .topbar p,
@@ -82,36 +98,107 @@ canvas {
 
 .topbar h1 {
   color: #fef3c7;
-  font-size: clamp(20px, 3vw, 34px);
+  font-size: clamp(22px, 2.6vw, 42px);
   line-height: 1;
   text-transform: uppercase;
   text-shadow: 3px 3px 0 #7f1d1d;
 }
 
-.hud {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.hud > span {
-  min-width: 88px;
+.brand-panel,
+.hud-card,
+.footer-card {
+  min-width: 0;
   border: 2px solid #475569;
-  background: #111827;
-  color: #f8fafc;
-  padding: 8px 10px;
-  text-align: center;
-  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.35);
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.96));
+  box-shadow:
+    inset 0 0 0 2px rgba(248, 250, 252, 0.04),
+    inset 0 -5px 0 rgba(0, 0, 0, 0.32);
+  padding: 10px;
 }
 
-.hud .stamina-meter {
+.brand-panel {
+  min-height: 76px;
+  border-color: #1e3a8a;
+  background: #0f172a;
+}
+
+.hud-card {
+  display: grid;
+  align-content: center;
+  min-height: 76px;
+  text-align: center;
+}
+
+.hud-card > span {
+  color: #facc15;
+  font-size: 12px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.hud-card > strong {
+  color: #f8fafc;
+  font-size: clamp(18px, 1.9vw, 28px);
+  line-height: 1.05;
+  text-transform: uppercase;
+}
+
+.jdk-card strong,
+.score-card span,
+.hp-card span {
+  color: #facc15;
+}
+
+.score-card strong,
+.hp-card strong {
+  font-size: clamp(24px, 2.6vw, 38px);
+}
+
+.hp-card span,
+.hp-card strong {
+  color: #ef4444;
+}
+
+.hp-card i {
+  display: block;
+  height: 10px;
+  margin-top: 8px;
+  border: 2px solid #020617;
+  background:
+    linear-gradient(90deg, #22c55e var(--hp), #1f2937 var(--hp)),
+    #1f2937;
+}
+
+.mini-bars {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 3px;
+  margin-top: 9px;
+}
+
+.mini-bars i {
+  display: block;
+  height: 17px;
+  border: 1px solid #020617;
+  background: #1f2937;
+}
+
+.mini-bars i.on {
+  background: #facc15;
+}
+
+.utility-card {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.utility-card .stamina-meter {
   display: grid;
   grid-template-columns: auto minmax(54px, 88px) auto;
   align-items: center;
   gap: 6px;
-  min-width: 184px;
+  min-width: 0;
   text-align: left;
 }
 
@@ -185,17 +272,24 @@ canvas {
 
 .game-stage {
   display: grid;
-  place-items: center;
+  place-items: stretch;
   position: relative;
   min-height: 0;
+  width: 100%;
+  margin: 0;
+  border: 4px solid #334155;
+  background: #0f172a;
+  box-shadow:
+    0 6px 0 #020617,
+    inset 0 0 0 2px rgba(125, 211, 252, 0.08);
+  padding: 8px;
 }
 
 .canvas-frame {
   position: relative;
-  width: min(100%, calc((100vh - 190px) * 1.777));
-  width: min(100%, calc((100dvh - 190px) * 1.777));
-  max-width: 1120px;
-  aspect-ratio: 16 / 9;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
 canvas {
@@ -206,9 +300,8 @@ canvas {
   border: 4px solid #e2e8f0;
   background: #101827;
   box-shadow:
-    0 0 0 5px #0f172a,
-    0 14px 0 #020617,
-    0 24px 44px rgba(0, 0, 0, 0.38);
+    0 0 0 4px #020617,
+    0 10px 0 #020617;
   touch-action: none;
   user-select: none;
 }
@@ -281,7 +374,7 @@ canvas {
   width: 100%;
   height: 100%;
   max-width: none;
-  overflow-y: auto;
+  overflow: hidden;
   border-color: #facc15;
   background:
     linear-gradient(rgba(254, 243, 199, 0.96), rgba(254, 240, 138, 0.94)),
@@ -328,16 +421,16 @@ canvas {
 }
 
 .title-menu-panel .menu-copy {
-  max-width: 560px;
-  color: #1e3a8a;
+  display: none;
 }
 
 .retro-title-screen {
   display: grid;
   grid-template-columns: 1fr minmax(210px, 0.9fr) 1fr;
-  grid-template-rows: 122px 122px 122px auto;
+  grid-template-rows: repeat(3, minmax(74px, 1fr)) auto;
   gap: 12px;
   align-items: stretch;
+  height: min(430px, calc(100% - 54px));
   margin-top: 10px;
 }
 
@@ -899,19 +992,137 @@ canvas {
 }
 
 .bottombar {
+  grid-template-columns: minmax(132px, 0.9fr) minmax(120px, 0.72fr) minmax(320px, 2fr) minmax(150px, 0.9fr) minmax(210px, 1.2fr);
   align-items: stretch;
 }
 
-.bottombar div {
+.footer-card {
   display: grid;
-  gap: 3px;
+  gap: 6px;
+  align-content: center;
   min-width: 0;
+  min-height: 86px;
 }
 
-.bottombar span {
+.footer-card span {
+  display: block;
+  overflow-wrap: anywhere;
   color: #f8fafc;
-  font-size: 13px;
-  line-height: 1.35;
+  font-size: clamp(14px, 1.5vw, 20px);
+  line-height: 1.2;
+}
+
+.controls-card,
+.burst-card,
+.biome-card,
+.progress-card {
+  text-align: center;
+}
+
+.controls-card span,
+.burst-card span {
+  border: 2px solid #475569;
+  background: #111827;
+  color: #f8fafc;
+  padding: 9px 10px;
+  text-transform: uppercase;
+}
+
+.boss-card {
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+  border-color: #7f1d1d;
+}
+
+.boss-avatar {
+  position: relative;
+  width: 84px;
+  height: 70px;
+  background: #020617;
+  border: 3px solid #facc15;
+  box-shadow: 0 7px 0 #020617;
+  grid-row: 1 / 3;
+  overflow: hidden;
+}
+
+.boss-avatar span {
+  position: absolute;
+  display: block;
+}
+
+.boss-body {
+  left: 16px;
+  top: 22px;
+  width: 52px;
+  height: 38px;
+  background: #7f1d1d;
+  box-shadow:
+    -4px 5px 0 #450a0a,
+    4px 5px 0 #450a0a,
+    inset 4px 0 0 #450a0a,
+    inset -4px 0 0 #450a0a;
+}
+
+.boss-hair {
+  left: 21px;
+  top: 10px;
+  width: 42px;
+  height: 12px;
+  background: #f97316;
+  box-shadow:
+    -5px 5px 0 #f97316,
+    5px 5px 0 #f97316;
+}
+
+.boss-face-left,
+.boss-face-right {
+  top: 32px;
+  width: 10px;
+  height: 10px;
+  background: #fef3c7;
+}
+
+.boss-face-left {
+  left: 24px;
+}
+
+.boss-face-right {
+  right: 24px;
+}
+
+.boss-mouth {
+  left: 28px;
+  top: 52px;
+  width: 28px;
+  height: 5px;
+  background: #111827;
+}
+
+.boss-card strong,
+.boss-card span {
+  text-align: left;
+}
+
+.boss-card span {
+  color: #ef4444;
+  font-size: clamp(16px, 1.8vw, 25px);
+  font-weight: 700;
+  text-transform: uppercase;
+  text-shadow: 2px 2px 0 #020617;
+}
+
+.biome-card span {
+  color: #7dd3fc;
+  font-size: clamp(18px, 2vw, 26px);
+  font-weight: 700;
+}
+
+.progress-card span {
+  color: #facc15;
+  font-size: clamp(18px, 2vw, 26px);
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 @media (max-width: 720px) {
@@ -920,39 +1131,50 @@ canvas {
   }
 
   .game-shell {
-    grid-template-rows: auto auto auto;
     min-height: 100dvh;
     padding: 8px;
-    gap: 10px;
+  }
+
+  .game-frame {
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    width: 100%;
+    height: auto;
+    min-height: calc(100dvh - 16px);
+    gap: 8px;
   }
 
   .topbar,
   .bottombar {
-    flex-direction: column;
     align-items: stretch;
-    gap: 10px;
-    padding: 10px;
+    gap: 6px;
+    padding: 6px;
     border-width: 2px;
+  }
+
+  .topbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .brand-panel,
+  .utility-card,
+  .boss-card,
+  .progress-card {
+    grid-column: 1 / -1;
   }
 
   .topbar h1 {
     font-size: clamp(20px, 8vw, 28px);
   }
 
-  .hud {
-    justify-content: stretch;
-    gap: 6px;
-  }
-
-  .hud > span {
-    flex: 1 1 76px;
+  .hud-card,
+  .footer-card {
     min-width: 0;
-    padding: 7px 6px;
+    min-height: 64px;
+    padding: 8px;
     font-size: 12px;
   }
 
-  .hud .stamina-meter {
-    flex-basis: 100%;
+  .utility-card .stamina-meter {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
@@ -963,11 +1185,14 @@ canvas {
 
   .game-stage {
     align-content: start;
+    padding: 5px;
+    border-width: 2px;
   }
 
   .canvas-frame {
     width: 100%;
-    max-height: min(54dvh, calc(100vw * 0.5625));
+    height: auto;
+    aspect-ratio: 16 / 9;
   }
 
   .menu-overlay,
@@ -1039,9 +1264,22 @@ canvas {
     gap: 7px;
   }
 
+  .bottombar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .menu-actions.two,
   .help-list li {
     grid-template-columns: 1fr;
+  }
+
+  .boss-card {
+    grid-template-columns: 70px minmax(0, 1fr);
+  }
+
+  .boss-avatar {
+    width: 62px;
+    height: 54px;
   }
 
   .bottombar span {
@@ -1075,10 +1313,12 @@ canvas {
 }
 
 @media (max-height: 620px) and (orientation: landscape) {
-  .game-shell {
-    grid-template-columns: minmax(160px, 0.78fr) minmax(0, 1.6fr);
-    grid-template-rows: auto auto;
+  .game-frame {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
     align-content: start;
+    gap: 6px;
+    height: calc(100dvh - 16px);
   }
 
   .topbar,
@@ -1087,13 +1327,25 @@ canvas {
     margin: 0;
   }
 
+  .topbar {
+    grid-template-columns: minmax(170px, 1.2fr) repeat(4, minmax(92px, 0.7fr)) minmax(190px, 1.1fr);
+  }
+
+  .brand-panel,
+  .hud-card,
+  .footer-card {
+    min-height: 56px;
+    padding: 6px;
+  }
+
   .game-stage {
-    grid-column: 2;
-    grid-row: 1 / 3;
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .canvas-frame {
-    max-height: calc(100dvh - 20px);
+    height: 100%;
+    aspect-ratio: auto;
   }
 
   .menu-panel,

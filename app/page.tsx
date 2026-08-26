@@ -1522,7 +1522,6 @@ export default function Home() {
       const theme = Math.min(bossIndex, biomeNames.length - 1);
       const floor = ["#101827", "#1b1620", "#071a2f", "#211414"][theme] ?? "#101827";
       const tile = ["#132033", "#261b2c", "#0d2745", "#321b1b"][theme] ?? "#132033";
-      const accent = ["#38bdf8", "#fb7185", "#60a5fa", "#facc15"][theme] ?? "#38bdf8";
       ctx.fillStyle = floor;
       ctx.fillRect(0, 0, WORLD.width, WORLD.height);
       for (let x = 0; x < WORLD.width; x += 32) {
@@ -1539,14 +1538,6 @@ export default function Home() {
           ctx.fillRect(x, y, 3, 3);
         }
       }
-      pixelRect(ctx, 56, 56, 160, 30, "#1f2937");
-      pixelRect(ctx, 64, 64, 144, 4, accent);
-      pixelRect(ctx, WORLD.width - 216, WORLD.height - 90, 160, 30, "#1f2937");
-      pixelRect(ctx, WORLD.width - 208, WORLD.height - 82, 144, 4, "#fb7185");
-      ctx.fillStyle = "#f8fafc";
-      ctx.font = "12px 'Courier New', monospace";
-      ctx.textAlign = "left";
-      ctx.fillText(biomeNames[theme], 62, 48);
     }
 
     function drawDim() {
@@ -1684,19 +1675,38 @@ export default function Home() {
   const promotionScreen = gameState === "promotion";
   const menuScreen = gameState === "menu";
   const frameScreen = finalScreen || promotionScreen || (menuScreen && menuPanel !== "home");
+  const jdkPower = upgrade === "JDK 21" ? 9 : upgrade === "JDK 17" ? 6 : 3;
 
   return (
     <main className="game-shell">
+      <div className="game-frame">
       <section className="topbar" aria-label="Painel do jogo">
-        <div>
+        <div className="brand-panel">
           <p>Java Pleno Pixel Hunt</p>
           <h1>{status}</h1>
         </div>
-        <div className="hud">
-          <span>HP {hp}</span>
-          <span>Onda {wave}</span>
-          <span>{score} pts</span>
+        <div className="hud-card jdk-card">
+          <strong>{upgrade}</strong>
+          <span className="mini-bars" aria-hidden="true">
+            {Array.from({ length: 10 }).map((_, index) => (
+              <i key={index} className={index < jdkPower ? "on" : undefined} />
+            ))}
+          </span>
+        </div>
+        <div className="hud-card wave-card">
+          <strong>Onda {wave}</strong>
           <span>Resets {resetCount}</span>
+        </div>
+        <div className="hud-card score-card">
+          <span>Score</span>
+          <strong>{score}</strong>
+        </div>
+        <div className="hud-card hp-card">
+          <span>HP</span>
+          <strong>{hp}</strong>
+          <i style={{ "--hp": `${hp}%` } as CSSProperties} />
+        </div>
+        <div className="hud-card utility-card">
           <span className="stamina-meter">
             <strong>Rajada</strong>
             <i style={{ "--stamina": `${burstStaminaPct}%` } as CSSProperties} />
@@ -1952,15 +1962,37 @@ export default function Home() {
       </section>
 
       <section className="bottombar" aria-label="Controles e alvo">
-        <div>
-          <strong>Chefe atual</strong>
-          <span>{boss} · {biome} · {bossProgress}</span>
+        <div className="footer-card controls-card">
+          <strong>Movimento</strong>
+          <span>WASD / setas</span>
         </div>
-        <div>
-          <strong>Arma e controles</strong>
-          <span>{upgrade} · WASD ou setas para mover, espaço consome estamina da rajada, Esc pausa. No toque, arraste na arena para se mover.</span>
+        <div className="footer-card burst-card">
+          <strong>Rajada</strong>
+          <span>Espaço</span>
+        </div>
+        <div className="footer-card boss-card">
+          <div className="boss-avatar" aria-hidden="true">
+            <span className="boss-hair" />
+            <span className="boss-body" />
+            <span className="boss-face-left" />
+            <span className="boss-face-right" />
+            <span className="boss-mouth" />
+          </div>
+          <div>
+            <strong>Chefe atual</strong>
+            <span>{boss}</span>
+          </div>
+        </div>
+        <div className="footer-card biome-card">
+          <strong>Fase</strong>
+          <span>{biome}</span>
+        </div>
+        <div className="footer-card progress-card">
+          <strong>Boss progress</strong>
+          <span>{bossProgress}</span>
         </div>
       </section>
+      </div>
     </main>
   );
 }
