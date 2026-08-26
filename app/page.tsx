@@ -239,6 +239,7 @@ export default function Home() {
   const [menuIndex, setMenuIndex] = useState(0);
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(0.35);
+  const [supportOpen, setSupportOpen] = useState(false);
   const [biome, setBiome] = useState(biomeNames[0]);
   const [upgrade, setUpgrade] = useState("JDK 8");
   const [bossProgress, setBossProgress] = useState("0/14 mobs");
@@ -389,6 +390,7 @@ export default function Home() {
     setScoreSaved(true);
     setPlayerName("");
     setMenuPanel("home");
+    setSupportOpen(false);
     playSound("start");
     startGameRef.current();
   }
@@ -397,6 +399,7 @@ export default function Home() {
     setScoreSaved(true);
     setPlayerName("");
     setMenuPanel("home");
+    setSupportOpen(false);
     setScore(0);
     setWave(1);
     setResetCount(0);
@@ -416,6 +419,15 @@ export default function Home() {
     setGameState("playing");
     startMusic();
   }, [startMusic]);
+
+  function openSupportPanel() {
+    if (stateRef.current === "playing") {
+      stateRef.current = "paused";
+      setGameState("paused");
+      stopMusic();
+    }
+    setSupportOpen(true);
+  }
 
   useEffect(() => {
     if (gameState !== "promotion") return;
@@ -1693,8 +1705,9 @@ export default function Home() {
   const finalScreen = gameState === "over" || gameState === "won";
   const promotionScreen = gameState === "promotion";
   const menuScreen = gameState === "menu";
-  const pauseScreen = gameState === "paused";
-  const frameScreen = finalScreen || promotionScreen || (menuScreen && menuPanel !== "home");
+  const supportScreen = supportOpen;
+  const pauseScreen = gameState === "paused" && !supportScreen;
+  const frameScreen = supportScreen || finalScreen || promotionScreen || (menuScreen && menuPanel !== "home");
   const jdkPower = upgrade === "JDK 21" ? 9 : upgrade === "JDK 17" ? 6 : 3;
 
   return (
@@ -1760,8 +1773,10 @@ export default function Home() {
         </div>
         <aside className="hud-card sponsor-card" aria-label="Espaço de apoio">
           <span>Patrocínio</span>
-          <strong>Apoie o jogo</strong>
-          <small>Espaço reservado</small>
+          <button type="button" onClick={openSupportPanel}>
+            Apoie o jogo
+          </button>
+          <small>Pix e links em breve</small>
         </aside>
       </section>
 
@@ -1913,6 +1928,35 @@ export default function Home() {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        )}
+        {supportScreen && (
+          <div className="frame-screen support-screen" role="dialog" aria-modal="true" aria-label="Apoie o jogo">
+            <div className="menu-panel frame-panel support-panel">
+              <p className="menu-kicker">Apoie o jogo</p>
+              <h2>PIXEL FUND</h2>
+              <p className="support-copy">
+                O espaço de apoio já está preparado para receber Pix, links de contribuição e patrocínios sem atrapalhar a arena.
+              </p>
+              <div className="support-options" aria-label="Opções de apoio">
+                <div>
+                  <strong>Pix</strong>
+                  <span>Chave em breve</span>
+                </div>
+                <div>
+                  <strong>Link de apoio</strong>
+                  <span>Ko-fi, Catarse ou similar</span>
+                </div>
+                <div>
+                  <strong>Patrocínio</strong>
+                  <span>Banner ou contato comercial</span>
+                </div>
+              </div>
+              <div className="menu-actions two">
+                <button type="button" onClick={() => setSupportOpen(false)}>Fechar</button>
+                <button type="button" onClick={returnToTitle}>Menu inicial</button>
+              </div>
             </div>
           </div>
         )}
