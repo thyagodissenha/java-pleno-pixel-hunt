@@ -82,6 +82,10 @@ const powerUpLabels: Record<PowerUpKind, string> = {
 };
 const biomeNames = ["Escritório", "Produção", "Cloud", "War Room"];
 
+function bossKillTarget(wave: number) {
+  return 10 + wave * 4;
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
@@ -178,6 +182,7 @@ export default function Home() {
   const [volume, setVolume] = useState(initialSound.volume);
   const [biome, setBiome] = useState(biomeNames[0]);
   const [upgrade, setUpgrade] = useState("JDK 8");
+  const [bossProgress, setBossProgress] = useState("0/14 mobs");
 
   useEffect(() => {
     stateRef.current = gameState;
@@ -322,6 +327,7 @@ export default function Home() {
     setBoss("Gerente de Sprint");
     setBiome(biomeNames[0]);
     setUpgrade("JDK 8");
+    setBossProgress("0/14 mobs");
     stateRef.current = "menu";
     setGameState("menu");
     stopMusic();
@@ -393,6 +399,8 @@ export default function Home() {
     let powerUpTimer = 9;
     let shotTimer = 0;
     let bossIndex = 0;
+    let bossKills = 0;
+    let bossSpawned = false;
     let weaponLevel = 1;
     let damageFlash = 0;
     let shake = 0;
@@ -425,6 +433,21 @@ export default function Home() {
       setBoss(bossNames[bossIndex] ?? "Comitê Executivo");
       setBiome(biomeNames[Math.min(bossIndex, biomeNames.length - 1)] ?? "War Room");
       setUpgrade(weaponLevel >= 3 ? "JDK 21" : weaponLevel === 2 ? "JDK 17" : "JDK 8");
+      setBossProgress(
+        bossSpawned
+          ? "Chefe em combate"
+          : `${Math.min(bossKills, bossKillTarget(localWave))}/${bossKillTarget(localWave)} mobs`,
+      );
+    }
+
+    function countBossProgress() {
+      if (bossSpawned) return;
+      bossKills += 1;
+      if (bossKills >= bossKillTarget(localWave)) {
+        bossSpawned = true;
+        announceEffect("CHEFE LIBERADO: entra na call");
+        spawnEnemy("boss");
+      }
     }
 
     function burst(x: number, y: number, color: string, amount = 12) {
@@ -514,6 +537,7 @@ export default function Home() {
           const index = enemies.indexOf(enemy);
           if (index >= 0) enemies.splice(index, 1);
           localScore += enemy.kind === "data" ? 45 : 25;
+          countBossProgress();
           burst(enemy.x, enemy.y, "#7dd3fc", 10);
         }
         announceEffect("ROLLBACK: caos revertido");
@@ -538,10 +562,12 @@ export default function Home() {
       powerUpTimer = 7;
       shotTimer = 0;
       bossIndex = 0;
+      bossKills = 0;
+      bossSpawned = false;
       weaponLevel = 1;
       damageFlash = 0;
       shake = 0;
-      bossBanner = 120;
+      bossBanner = 0;
       effectMessage = "";
       effectBanner = 0;
       player.x = WORLD.width / 2;
@@ -556,7 +582,6 @@ export default function Home() {
       particles.length = 0;
       powerUps.length = 0;
       for (let i = 0; i < 5; i += 1) spawnEnemy("user");
-      spawnEnemy("boss");
       syncHud();
     }
 
@@ -865,6 +890,8 @@ export default function Home() {
                 player.hp = clamp(player.hp + 22, 0, player.maxHp);
                 bossIndex += 1;
                 localWave += 1;
+                bossKills = 0;
+                bossSpawned = false;
                 burst(enemy.x, enemy.y, "#ffd166", 28);
                 if (bossIndex >= bossNames.length) {
                   syncHud();
@@ -876,12 +903,9 @@ export default function Home() {
                   stopMusic();
                   stateRef.current = "won";
                   setGameState("won");
-                } else {
-                  setTimeout(() => {
-                    if (stateRef.current === "playing") spawnEnemy("boss");
-                  }, 700);
                 }
               } else {
+                countBossProgress();
                 burst(enemy.x, enemy.y, enemy.kind === "data" ? "#7dd3fc" : "#a7f3d0", 12);
               }
               enemies.splice(e, 1);
@@ -1458,7 +1482,7 @@ export default function Home() {
       <section className="bottombar" aria-label="Controles e alvo">
         <div>
           <strong>Chefe atual</strong>
-          <span>{boss} · {biome}</span>
+          <span>{boss} · {biome} · {bossProgress}</span>
         </div>
         <div>
           <strong>Arma e controles</strong>
