@@ -30,7 +30,8 @@ O jogo mistura humor de desenvolvimento, correria de go-live e aquele leve deses
 - Curva de ondas balanceada para reduzir picos injustos
 - Feedback visual de dano, tremida de tela e aviso de chefe
 - Botao de mute/volume com efeitos sonoros via Web Audio
-- Visual pixel art desenhado em Canvas
+- Musica chiptune gerada no navegador durante a partida
+- Visual pixel art desenhado em Canvas, com animacoes simples e tela de vitoria arcade
 - Suporte a teclado e toque
 
 ## Controles

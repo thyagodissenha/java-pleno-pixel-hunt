@@ -31,11 +31,11 @@ Este roadmap organiza as proximas melhorias do jogo, saindo de um prototipo joga
 
 ## Fase 4: Arte e som
 
-- Melhorar os sprites pixel art do jogador, inimigos e chefes.
-- Adicionar animacoes de caminhada, tiro, explosao e dano.
-- Criar musica chiptune.
+- [x] Melhorar os sprites pixel art do jogador, inimigos e chefes.
+- [x] Adicionar animacoes de caminhada, tiro, explosao e dano.
+- [x] Criar musica chiptune.
 - [x] Adicionar efeitos sonoros para tiro, hit, boss, game over e vitoria.
-- Criar tela de vitoria mais marcante.
+- [x] Criar tela de vitoria mais marcante.
 - Criar capa e thumbnail do jogo.
 
 ## Fase 5: Identidade e publicacao
@@ -76,17 +76,17 @@ Este roadmap organiza as proximas melhorias do jogo, saindo de um prototipo joga
 1. Tela inicial e menus.
 2. Melhorias mobile.
 3. Protecao anti-spam para o ranking.
-4. Sprites melhores.
+4. Capa e thumbnail do jogo.
 5. Publicacao no Itch.io.
 6. Compartilhamento de score.
 7. Cosmeticos e patrocinio dev.
-8. Musica chiptune.
-9. Ranking por temporada.
-10. Tela de vitoria mais marcante.
+8. Ranking por temporada.
+9. Tela final compartilhavel.
+10. Conquistas.
 
 ## Proxima entrega sugerida
 
-Melhorar sprites e animacoes para deixar os novos inimigos, power-ups e biomas mais expressivos.
+Criar capa, thumbnail e screenshots para preparar a publicacao do jogo no Itch.io e redes sociais.
 
 ## Aposta de monetizacao recomendada
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 type Actor = {
   x: number;
@@ -39,6 +39,7 @@ type MenuPanel = "home" | "scores" | "help";
 type EnemyKind = "user" | "boss" | "data" | "qa" | "vip" | "incident" | "legacy";
 type PowerUpKind = "coffee" | "refactor" | "rollback" | "hotfix" | "review";
 type SoundName = "shoot" | "hit" | "hurt" | "boss" | "over" | "save" | "start" | "won";
+type Tone = [number, number, OscillatorType];
 type HighScore = {
   name: string;
   score: number;
@@ -145,6 +146,8 @@ export default function Home() {
   const stateRef = useRef<GameState>("menu");
   const startGameRef = useRef<() => void>(() => undefined);
   const audioRef = useRef<AudioContext | null>(null);
+  const musicTimerRef = useRef<number | null>(null);
+  const musicStepRef = useRef(0);
   const mutedRef = useRef(initialSound.muted);
   const volumeRef = useRef(initialSound.volume);
   const lastSoundRef = useRef<Record<SoundName, number>>({
@@ -177,38 +180,45 @@ export default function Home() {
     stateRef.current = gameState;
   }, [gameState]);
 
-  useEffect(() => {
-    refreshHighScores();
+  const getAudioContext = useCallback(() => {
+    if (typeof window === "undefined") return null;
+    const AudioContextClass =
+      window.AudioContext ||
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return null;
+    const audio = audioRef.current ?? new AudioContextClass();
+    audioRef.current = audio;
+    if (audio.state === "suspended") void audio.resume();
+    return audio;
   }, []);
 
-  useEffect(() => {
-    mutedRef.current = muted;
-    volumeRef.current = volume;
-    window.localStorage.setItem(SOUND_KEY, JSON.stringify({ muted, volume }));
-  }, [muted, volume]);
+  const playTone = useCallback(([frequency, duration, type]: Tone, volumeScale = 0.16, delay = 0) => {
+    if (mutedRef.current || volumeRef.current <= 0) return;
+    const audio = getAudioContext();
+    if (!audio) return;
+    const gain = audio.createGain();
+    gain.connect(audio.destination);
+    const start = audio.currentTime + delay;
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(volumeRef.current * volumeScale, start + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
 
-  function playSound(sound: SoundName) {
+    const oscillator = audio.createOscillator();
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(frequency, start);
+    oscillator.connect(gain);
+    oscillator.start(start);
+    oscillator.stop(start + duration + 0.01);
+  }, [getAudioContext]);
+
+  const playSound = useCallback((sound: SoundName) => {
     if (mutedRef.current || volumeRef.current <= 0) return;
     const now = performance.now();
     const minGap = sound === "shoot" ? 70 : sound === "hit" ? 45 : 120;
     if (now - lastSoundRef.current[sound] < minGap) return;
     lastSoundRef.current[sound] = now;
 
-    const AudioContextClass =
-      window.AudioContext ||
-      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextClass) return;
-    const audio = audioRef.current ?? new AudioContextClass();
-    audioRef.current = audio;
-    if (audio.state === "suspended") void audio.resume();
-
-    const gain = audio.createGain();
-    gain.connect(audio.destination);
-    gain.gain.setValueAtTime(0.0001, audio.currentTime);
-    gain.gain.exponentialRampToValueAtTime(volumeRef.current * 0.16, audio.currentTime + 0.012);
-    gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.2);
-
-    const notes: Record<SoundName, [number, number, OscillatorType][]> = {
+    const notes: Record<SoundName, Tone[]> = {
       shoot: [[720, 0.055, "square"], [480, 0.05, "square"]],
       hit: [[210, 0.08, "sawtooth"]],
       hurt: [[140, 0.18, "sawtooth"], [90, 0.16, "square"]],
@@ -220,16 +230,52 @@ export default function Home() {
     };
 
     let offset = 0;
-    for (const [frequency, duration, type] of notes[sound]) {
-      const oscillator = audio.createOscillator();
-      oscillator.type = type;
-      oscillator.frequency.setValueAtTime(frequency, audio.currentTime + offset);
-      oscillator.connect(gain);
-      oscillator.start(audio.currentTime + offset);
-      oscillator.stop(audio.currentTime + offset + duration);
+    for (const note of notes[sound]) {
+      playTone(note, 0.16, offset);
+      const [, duration] = note;
       offset += duration * 0.72;
     }
-  }
+  }, [playTone]);
+
+  const stopMusic = useCallback(() => {
+    if (musicTimerRef.current !== null) {
+      window.clearInterval(musicTimerRef.current);
+      musicTimerRef.current = null;
+    }
+  }, []);
+
+  const startMusic = useCallback(() => {
+    if (musicTimerRef.current !== null || mutedRef.current || volumeRef.current <= 0) return;
+    const bass = [110, 110, 147, 110, 165, 147, 196, 147];
+    const lead = [440, 494, 523, 494, 659, 587, 523, 494, 392, 440, 494, 523, 587, 659, 784, 659];
+    musicTimerRef.current = window.setInterval(() => {
+      if (stateRef.current !== "playing" || mutedRef.current || volumeRef.current <= 0) {
+        stopMusic();
+        return;
+      }
+      const step = musicStepRef.current;
+      playTone([bass[step % bass.length], 0.105, "square"], 0.032);
+      if (step % 2 === 0) playTone([lead[step % lead.length], 0.08, "triangle"], 0.026, 0.035);
+      musicStepRef.current += 1;
+    }, 170);
+  }, [playTone, stopMusic]);
+
+  useEffect(() => {
+    refreshHighScores();
+  }, []);
+
+  useEffect(() => {
+    mutedRef.current = muted;
+    volumeRef.current = volume;
+    window.localStorage.setItem(SOUND_KEY, JSON.stringify({ muted, volume }));
+    if (muted || volume <= 0) stopMusic();
+    else if (stateRef.current === "playing") startMusic();
+  }, [muted, startMusic, stopMusic, volume]);
+
+  useEffect(() => {
+    if (gameState === "playing") startMusic();
+    else stopMusic();
+  }, [gameState, startMusic, stopMusic]);
 
   function refreshHighScores() {
     setScoreMessage("Ranking global carregando...");
@@ -299,6 +345,7 @@ export default function Home() {
     if (!ctx) return;
 
     let frame = 0;
+    let visualFrame = 0;
     let raf = 0;
     let last = performance.now();
     let localScore = 0;
@@ -477,7 +524,9 @@ export default function Home() {
 
     function start() {
       resetGame();
+      stateRef.current = "playing";
       setGameState("playing");
+      startMusic();
     }
     startGameRef.current = start;
 
@@ -494,8 +543,15 @@ export default function Home() {
         event.preventDefault();
       }
       if (event.key === "Enter" && stateRef.current === "menu") start();
-      if (event.key === "Escape" && stateRef.current === "playing") setGameState("paused");
-      else if (event.key === "Escape" && stateRef.current === "paused") setGameState("playing");
+      if (event.key === "Escape" && stateRef.current === "playing") {
+        stateRef.current = "paused";
+        stopMusic();
+        setGameState("paused");
+      } else if (event.key === "Escape" && stateRef.current === "paused") {
+        stateRef.current = "playing";
+        setGameState("playing");
+        startMusic();
+      }
       keys.current.add(event.key.toLowerCase());
     };
     const onKeyUp = (event: KeyboardEvent) => keys.current.delete(event.key.toLowerCase());
@@ -508,7 +564,11 @@ export default function Home() {
       pointer.current.active = true;
       onPointerMove(event);
       if (stateRef.current === "menu") start();
-      if (stateRef.current === "paused") setGameState("playing");
+      if (stateRef.current === "paused") {
+        stateRef.current = "playing";
+        setGameState("playing");
+        startMusic();
+      }
     };
     const onPointerUp = () => {
       pointer.current.active = false;
@@ -752,6 +812,8 @@ export default function Home() {
                   setLastOutcome("won");
                   setScoreSaved(false);
                   playSound("won");
+                  stopMusic();
+                  stateRef.current = "won";
                   setGameState("won");
                 } else {
                   setTimeout(() => {
@@ -787,17 +849,24 @@ export default function Home() {
         setLastOutcome("over");
         setScoreSaved(false);
         playSound("over");
+        stopMusic();
+        stateRef.current = "over";
         setGameState("over");
       }
       if (frame % 18 === 0) syncHud();
     }
 
     function drawActor(actor: Actor) {
+      const wobble = Math.sin(visualFrame / 7 + (actor.phase ?? 0)) * 2;
       const x = actor.x - actor.size / 2;
-      const y = actor.y - actor.size / 2;
+      const y = actor.y - actor.size / 2 + wobble;
+      pixelRect(ctx, actor.x - actor.size * 0.42, actor.y + actor.size * 0.36, actor.size * 0.84, 5, "rgba(0, 0, 0, 0.34)");
       if (actor.kind === "boss") {
+        pixelRect(ctx, x - 4, y + 12, actor.size + 8, actor.size - 8, "#450a0a");
         pixelRect(ctx, x, y + 8, actor.size, actor.size - 8, "#7f1d1d");
         pixelRect(ctx, x + 6, y, actor.size - 12, 10, "#f97316");
+        pixelRect(ctx, x + 2, y + 4, 7, 7, "#facc15");
+        pixelRect(ctx, x + actor.size - 9, y + 4, 7, 7, "#facc15");
         pixelRect(ctx, x + 8, y + 17, 6, 6, "#fef3c7");
         pixelRect(ctx, x + actor.size - 14, y + 17, 6, 6, "#fef3c7");
         pixelRect(ctx, x + 9, y + actor.size - 8, actor.size - 18, 5, "#111827");
@@ -834,6 +903,7 @@ export default function Home() {
         pixelRect(ctx, x + actor.size - 11, y + 14, 4, 4, "#111827");
       }
       if (actor.kind !== "user") {
+        pixelRect(ctx, actor.x - actor.label.length * 3.1, actor.y - actor.size / 2 - 19, actor.label.length * 6.2, 14, "rgba(2, 6, 23, 0.72)");
         ctx.fillStyle = "#f8fafc";
         ctx.font = "10px 'Courier New', monospace";
         ctx.textAlign = "center";
@@ -848,6 +918,7 @@ export default function Home() {
       const bob = Math.sin(powerUp.pulse) * 3;
       const x = powerUp.x - 13;
       const y = powerUp.y - 13 + bob;
+      const ring = 20 + Math.sin(powerUp.pulse) * 4;
       const color: Record<PowerUpKind, string> = {
         coffee: "#a16207",
         refactor: "#14b8a6",
@@ -855,6 +926,9 @@ export default function Home() {
         hotfix: "#ef4444",
         review: "#a855f7",
       };
+      ctx.strokeStyle = color[powerUp.kind];
+      ctx.lineWidth = 2;
+      ctx.strokeRect(Math.round(powerUp.x - ring / 2), Math.round(powerUp.y - ring / 2 + bob), Math.round(ring), Math.round(ring));
       pixelRect(ctx, x, y, 26, 26, "#020617");
       pixelRect(ctx, x + 3, y + 3, 20, 20, color[powerUp.kind]);
       if (powerUp.kind === "coffee") {
@@ -881,18 +955,32 @@ export default function Home() {
 
     function drawPlayer() {
       const blink = player.invincible > 0 && Math.floor(frame / 4) % 2 === 0;
+      const run = Math.floor(visualFrame / 8) % 2;
       const x = player.x - player.size / 2;
       const y = player.y - player.size / 2;
+      pixelRect(ctx, x - 2, y + 23, 28, 5, "rgba(0, 0, 0, 0.35)");
+      if (player.focus > 0) {
+        ctx.strokeStyle = "#a855f7";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(Math.round(x - 5), Math.round(y - 5), 34, 34);
+      }
+      if (player.fury > 0) {
+        pixelRect(ctx, x - 4, y + 5, 4, 14, "#f97316");
+        pixelRect(ctx, x + 24, y + 5, 4, 14, "#f97316");
+      }
       pixelRect(ctx, x + 6, y, 12, 7, blink ? "#fee2e2" : "#f5d0a9");
+      pixelRect(ctx, x + 5, y - 3, 14, 4, "#78350f");
       pixelRect(ctx, x + 4, y + 7, 16, 13, player.fury > 0 ? "#f97316" : "#0ea5e9");
       pixelRect(ctx, x + 1, y + 10, 6, 5, "#78350f");
       pixelRect(ctx, x + 17, y + 10, 8, 5, "#78350f");
-      pixelRect(ctx, x + 2, y + 20, 7, 5, "#111827");
-      pixelRect(ctx, x + 15, y + 20, 7, 5, "#111827");
+      pixelRect(ctx, x + 2, y + 20 + run, 7, 5, "#111827");
+      pixelRect(ctx, x + 15, y + 21 - run, 7, 5, "#111827");
       pixelRect(ctx, x + 8, y + 9, 3, 3, "#111827");
       pixelRect(ctx, x + 14, y + 9, 3, 3, "#111827");
+      pixelRect(ctx, x + 7, y + 15, 10, 3, "#fef3c7");
       pixelRect(ctx, x + 20, y + 6, 16, 7, "#facc15");
       pixelRect(ctx, x + 34, y + 8, 7, 3, "#fde68a");
+      if (shotTimer < 0.06) pixelRect(ctx, x + 40, y + 7, 10, 5, "#f97316");
       ctx.fillStyle = "#f8fafc";
       ctx.font = "10px 'Courier New', monospace";
       ctx.textAlign = "center";
@@ -945,6 +1033,34 @@ export default function Home() {
       ctx.fillText("Enter ou toque para jogar", WORLD.width / 2, WORLD.height / 2 + 44);
     }
 
+    function drawVictoryOverlay() {
+      ctx.fillStyle = "rgba(5, 10, 22, 0.82)";
+      ctx.fillRect(0, 0, WORLD.width, WORLD.height);
+      for (let i = 0; i < 46; i += 1) {
+        const x = (i * 73 + visualFrame * (1 + (i % 4))) % WORLD.width;
+        const y = (i * 41 + visualFrame * (2 + (i % 3))) % WORLD.height;
+        const colors = ["#facc15", "#38bdf8", "#fb7185", "#22c55e", "#a855f7"];
+        pixelRect(ctx, x, y, 6, 10, colors[i % colors.length]);
+      }
+      const cx = WORLD.width / 2;
+      pixelRect(ctx, cx - 50, 126, 100, 76, "#facc15");
+      pixelRect(ctx, cx - 34, 110, 68, 24, "#fde68a");
+      pixelRect(ctx, cx - 70, 138, 22, 42, "#ca8a04");
+      pixelRect(ctx, cx + 48, 138, 22, 42, "#ca8a04");
+      pixelRect(ctx, cx - 14, 202, 28, 34, "#ca8a04");
+      pixelRect(ctx, cx - 42, 236, 84, 16, "#92400e");
+      ctx.fillStyle = "#facc15";
+      ctx.font = "bold 44px 'Courier New', monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("GO-LIVE DOMINADO", cx, 306);
+      ctx.fillStyle = "#bfdbfe";
+      ctx.font = "18px 'Courier New', monospace";
+      ctx.fillText(`Voce limpou a firma com ${localScore} pontos`, cx, 342);
+      ctx.fillStyle = "#fde68a";
+      ctx.font = "14px 'Courier New', monospace";
+      ctx.fillText("Salve seu nome no HIGH SCORES", cx, 378);
+    }
+
     function draw() {
       const shakeX = shake > 0 ? (Math.random() - 0.5) * shake : 0;
       const shakeY = shake > 0 ? (Math.random() - 0.5) * shake : 0;
@@ -952,9 +1068,11 @@ export default function Home() {
       ctx.translate(shakeX, shakeY);
       drawGrid();
       for (const particle of particles) {
-        pixelRect(ctx, particle.x, particle.y, 4, 4, particle.color);
+        const size = Math.max(2, Math.min(8, particle.ttl / 6));
+        pixelRect(ctx, particle.x, particle.y, size, size, particle.color);
       }
       for (const shot of shots) {
+        pixelRect(ctx, shot.x - shot.vx * 0.018 - 4, shot.y - shot.vy * 0.018 - 2, 8, 4, "#fde68a");
         pixelRect(ctx, shot.x - 5, shot.y - 3, 10, 6, "#facc15");
         pixelRect(ctx, shot.x + 3, shot.y - 1, 4, 2, "#fef9c3");
       }
@@ -993,13 +1111,14 @@ export default function Home() {
       } else if (stateRef.current === "over") {
         drawOverlay("PRODUCAO CAIU", `Pontuacao final: ${localScore}`);
       } else if (stateRef.current === "won") {
-        drawOverlay("GO-LIVE DOMINADO", `Voce limpou a firma com ${localScore} pontos`);
+        drawVictoryOverlay();
       }
     }
 
     function tick(now: number) {
       const delta = Math.min(0.033, (now - last) / 1000);
       last = now;
+      visualFrame += 1;
       update(delta);
       draw();
       raf = requestAnimationFrame(tick);
@@ -1015,8 +1134,9 @@ export default function Home() {
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("pointerup", onPointerUp);
+      stopMusic();
     };
-  }, []);
+  }, [playSound, startMusic, stopMusic]);
 
   const status = gameState === "playing" ? "Em combate" : gameState === "paused" ? "Pausado" : gameState === "won" ? "Vitoria" : gameState === "over" ? "Fim de jogo" : "Pronto";
   const finalScreen = gameState === "over" || gameState === "won";
