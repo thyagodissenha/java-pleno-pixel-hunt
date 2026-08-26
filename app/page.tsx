@@ -144,6 +144,8 @@ export default function Home() {
   const keys = useRef(new Set<string>());
   const pointer = useRef({ active: false, x: WORLD.width / 2, y: WORLD.height / 2 });
   const stateRef = useRef<GameState>("menu");
+  const menuPanelRef = useRef<MenuPanel>("home");
+  const menuIndexRef = useRef(0);
   const startGameRef = useRef<() => void>(() => undefined);
   const audioRef = useRef<AudioContext | null>(null);
   const musicTimerRef = useRef<number | null>(null);
@@ -171,6 +173,7 @@ export default function Home() {
   const [scoreMessage, setScoreMessage] = useState("Ranking global carregando...");
   const [lastOutcome, setLastOutcome] = useState<"over" | "won">("over");
   const [menuPanel, setMenuPanel] = useState<MenuPanel>("home");
+  const [menuIndex, setMenuIndex] = useState(0);
   const [muted, setMuted] = useState(initialSound.muted);
   const [volume, setVolume] = useState(initialSound.volume);
   const [biome, setBiome] = useState(biomeNames[0]);
@@ -179,6 +182,14 @@ export default function Home() {
   useEffect(() => {
     stateRef.current = gameState;
   }, [gameState]);
+
+  useEffect(() => {
+    menuPanelRef.current = menuPanel;
+  }, [menuPanel]);
+
+  useEffect(() => {
+    menuIndexRef.current = menuIndex;
+  }, [menuIndex]);
 
   const getAudioContext = useCallback(() => {
     if (typeof window === "undefined") return null;
@@ -300,6 +311,18 @@ export default function Home() {
     playSound("start");
     startGameRef.current();
   }
+
+  const activateMenuOption = useCallback((index: number) => {
+    setMenuIndex(index);
+    if (index === 0) startNewGame();
+    else if (index === 1) {
+      setMenuPanel("scores");
+      refreshHighScores();
+    } else {
+      setMenuPanel("help");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function submitScore(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -542,7 +565,23 @@ export default function Home() {
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "w", "a", "s", "d", "W", "A", "S", "D", "Enter", "Escape"].includes(event.key)) {
         event.preventDefault();
       }
-      if (event.key === "Enter" && stateRef.current === "menu") start();
+      if (stateRef.current === "menu" && menuPanelRef.current === "home") {
+        if (event.key === "ArrowUp" || event.key === "w" || event.key === "W") {
+          menuIndexRef.current = (menuIndexRef.current + 2) % 3;
+          setMenuIndex(menuIndexRef.current);
+          playSound("hit");
+        } else if (event.key === "ArrowDown" || event.key === "s" || event.key === "S") {
+          menuIndexRef.current = (menuIndexRef.current + 1) % 3;
+          setMenuIndex(menuIndexRef.current);
+          playSound("hit");
+        } else if (event.key === "Enter" || event.key === " ") {
+          activateMenuOption(menuIndexRef.current);
+        }
+      } else if (event.key === "Enter" && stateRef.current === "menu") {
+        activateMenuOption(0);
+      } else if (event.key === "Escape" && stateRef.current === "menu" && menuPanelRef.current !== "home") {
+        setMenuPanel("home");
+      }
       if (event.key === "Escape" && stateRef.current === "playing") {
         stateRef.current = "paused";
         stopMusic();
@@ -1136,7 +1175,7 @@ export default function Home() {
       window.removeEventListener("pointerup", onPointerUp);
       stopMusic();
     };
-  }, [playSound, startMusic, stopMusic]);
+  }, [activateMenuOption, playSound, startMusic, stopMusic]);
 
   const status = gameState === "playing" ? "Em combate" : gameState === "paused" ? "Pausado" : gameState === "won" ? "Vitoria" : gameState === "over" ? "Fim de jogo" : "Pronto";
   const finalScreen = gameState === "over" || gameState === "won";
@@ -1242,10 +1281,37 @@ export default function Home() {
                       <span className="alert-sign">!</span>
                     </div>
 
-                    <div className="title-menu-actions" aria-label="Opcoes do jogo">
-                      <button type="button" onClick={startNewGame}>&gt; Jogar</button>
-                      <button type="button" onClick={() => { setMenuPanel("scores"); refreshHighScores(); }}>High Scores</button>
-                      <button type="button" onClick={() => setMenuPanel("help")}>Como Jogar</button>
+                    <div className="title-menu-actions" role="menu" aria-label="Opcoes do jogo (use as setas e Enter)">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        aria-current={menuIndex === 0}
+                        className={menuIndex === 0 ? "active" : undefined}
+                        onMouseEnter={() => setMenuIndex(0)}
+                        onClick={() => activateMenuOption(0)}
+                      >
+                        {menuIndex === 0 ? "▶ " : ""}Jogar
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        aria-current={menuIndex === 1}
+                        className={menuIndex === 1 ? "active" : undefined}
+                        onMouseEnter={() => setMenuIndex(1)}
+                        onClick={() => activateMenuOption(1)}
+                      >
+                        {menuIndex === 1 ? "▶ " : ""}High Scores
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        aria-current={menuIndex === 2}
+                        className={menuIndex === 2 ? "active" : undefined}
+                        onMouseEnter={() => setMenuIndex(2)}
+                        onClick={() => activateMenuOption(2)}
+                      >
+                        {menuIndex === 2 ? "▶ " : ""}Como Jogar
+                      </button>
                     </div>
                   </div>
                   <p className="menu-copy">

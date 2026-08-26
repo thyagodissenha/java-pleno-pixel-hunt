@@ -575,7 +575,8 @@ canvas {
 }
 
 .title-menu-actions button:hover,
-.title-menu-actions button:focus-visible {
+.title-menu-actions button:focus-visible,
+.title-menu-actions button.active {
   color: #dc2626;
   outline: none;
   text-shadow: 2px 2px 0 #facc15;
