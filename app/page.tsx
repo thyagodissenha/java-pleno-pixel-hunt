@@ -312,6 +312,21 @@ export default function Home() {
     startGameRef.current();
   }
 
+  function returnToTitle() {
+    setScoreSaved(true);
+    setPlayerName("");
+    setMenuPanel("home");
+    setScore(0);
+    setWave(1);
+    setHp(100);
+    setBoss("Gerente de Sprint");
+    setBiome(biomeNames[0]);
+    setUpgrade("JDK 8");
+    stateRef.current = "menu";
+    setGameState("menu");
+    stopMusic();
+  }
+
   const activateMenuOption = useCallback((index: number) => {
     setMenuIndex(index);
     if (index === 0) startNewGame();
@@ -1192,6 +1207,7 @@ export default function Home() {
   const status = gameState === "playing" ? "Em combate" : gameState === "paused" ? "Pausado" : gameState === "won" ? "Vitória" : gameState === "over" ? "Fim de jogo" : "Pronto";
   const finalScreen = gameState === "over" || gameState === "won";
   const menuScreen = gameState === "menu";
+  const frameScreen = finalScreen || (menuScreen && menuPanel !== "home");
 
   return (
     <main className="game-shell">
@@ -1233,105 +1249,108 @@ export default function Home() {
       </section>
 
       <section className="game-stage" aria-label="Arena do jogo">
-        <div className="canvas-frame">
+        <div className={`canvas-frame ${frameScreen ? "frame-screen-active" : ""}`}>
           <canvas ref={canvasRef} width={WORLD.width} height={WORLD.height} aria-label="Arena pixel art" />
-        {menuScreen && (
-          <div className={`menu-overlay ${menuPanel === "home" ? "menu-overlay-full" : ""}`} role="dialog" aria-label="Menu inicial">
+        {menuScreen && menuPanel === "home" && (
+          <div className="menu-overlay menu-overlay-full" role="dialog" aria-label="Menu inicial">
             <div className={`menu-panel ${menuPanel === "home" ? "title-menu-panel" : ""}`}>
               <p className="menu-kicker">Build instável detectada</p>
 
-              {menuPanel === "home" && (
-                <>
-                  <div className="retro-title-screen" aria-label="Tela inicial pixel art do Java Pleno Pixel Hunt">
-                    <div className="retro-scene hero-scene" aria-hidden="true">
-                      <div className="pixel-dev">
-                        <span className="hair" />
-                        <span className="head" />
-                        <span className="body" />
-                        <span className="arm mug" />
-                        <span className="arm keyboard" />
-                        <span className="leg left" />
-                        <span className="leg right" />
-                      </div>
-                      <span className="java-mug">JAVA</span>
-                      <span className="code-shot" />
-                    </div>
-
-                    <div className="retro-scene call-scene" aria-hidden="true">
-                      <span className="window-title">MEETING CALL</span>
-                      <span className="boss-face" />
-                      <span className="speech">PRA ONTEM!</span>
-                    </div>
-
-                    <div className="retro-logo" aria-label="Java Pleno Pixel Hunt">
-                      <span>Java</span>
-                      <span>Pleno</span>
-                      <span>Pixel Hunt</span>
-                    </div>
-
-                    <div className="retro-scene users-scene" aria-hidden="true">
-                      <span className="speech">USUÁRIOS!</span>
-                      <span className="user u1" />
-                      <span className="user u2" />
-                      <span className="user u3" />
-                    </div>
-
-                    <div className="retro-scene cloud-scene" aria-hidden="true">
-                      <span className="cloud" />
-                      <span className="cube c1" />
-                      <span className="cube c2" />
-                      <span className="binary">101<br />010</span>
-                    </div>
-
-                    <div className="retro-scene deploy-scene" aria-hidden="true">
-                      <span className="terminal">$ deploy --prod<br />tests...<br />success!</span>
-                      <span className="rocket">DEPLOY</span>
-                    </div>
-
-                    <div className="retro-scene incident-scene" aria-hidden="true">
-                      <span className="incident-title">PROD INCIDENT</span>
-                      <span className="explosion" />
-                      <span className="alert-sign">!</span>
-                    </div>
-
-                    <div className="title-menu-actions" role="menu" aria-label="Opções do jogo (use as setas e Enter)">
-                      <button
-                        type="button"
-                        role="menuitem"
-                        aria-current={menuIndex === 0}
-                        className={menuIndex === 0 ? "active" : undefined}
-                        onMouseEnter={() => setMenuIndex(0)}
-                        onClick={() => activateMenuOption(0)}
-                      >
-                        {menuIndex === 0 ? "▶ " : ""}Jogar
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        aria-current={menuIndex === 1}
-                        className={menuIndex === 1 ? "active" : undefined}
-                        onMouseEnter={() => setMenuIndex(1)}
-                        onClick={() => activateMenuOption(1)}
-                      >
-                        {menuIndex === 1 ? "▶ " : ""}High Scores
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        aria-current={menuIndex === 2}
-                        className={menuIndex === 2 ? "active" : undefined}
-                        onMouseEnter={() => setMenuIndex(2)}
-                        onClick={() => activateMenuOption(2)}
-                      >
-                        {menuIndex === 2 ? "▶ " : ""}Como Jogar
-                      </button>
-                    </div>
+              <div className="retro-title-screen" aria-label="Tela inicial pixel art do Java Pleno Pixel Hunt">
+                <div className="retro-scene hero-scene" aria-hidden="true">
+                  <div className="pixel-dev">
+                    <span className="hair" />
+                    <span className="head" />
+                    <span className="body" />
+                    <span className="arm mug" />
+                    <span className="arm keyboard" />
+                    <span className="leg left" />
+                    <span className="leg right" />
                   </div>
-                  <p className="menu-copy">
-                    Sobreviva aos usuários, derrote os chefes e tente entrar no ranking global antes que alguém peça um deploy em sexta-feira.
-                  </p>
-                </>
-              )}
+                  <span className="java-mug">JAVA</span>
+                  <span className="code-shot" />
+                </div>
+
+                <div className="retro-scene call-scene" aria-hidden="true">
+                  <span className="window-title">MEETING CALL</span>
+                  <span className="boss-face" />
+                  <span className="speech">PRA ONTEM!</span>
+                </div>
+
+                <div className="retro-logo" aria-label="Java Pleno Pixel Hunt">
+                  <span>Java</span>
+                  <span>Pleno</span>
+                  <span>Pixel Hunt</span>
+                </div>
+
+                <div className="retro-scene users-scene" aria-hidden="true">
+                  <span className="speech">USUÁRIOS!</span>
+                  <span className="user u1" />
+                  <span className="user u2" />
+                  <span className="user u3" />
+                </div>
+
+                <div className="retro-scene cloud-scene" aria-hidden="true">
+                  <span className="cloud" />
+                  <span className="cube c1" />
+                  <span className="cube c2" />
+                  <span className="binary">101<br />010</span>
+                </div>
+
+                <div className="retro-scene deploy-scene" aria-hidden="true">
+                  <span className="terminal">$ deploy --prod<br />tests...<br />success!</span>
+                  <span className="rocket">DEPLOY</span>
+                </div>
+
+                <div className="retro-scene incident-scene" aria-hidden="true">
+                  <span className="incident-title">PROD INCIDENT</span>
+                  <span className="explosion" />
+                  <span className="alert-sign">!</span>
+                </div>
+
+                <div className="title-menu-actions" role="menu" aria-label="Opções do jogo (use as setas e Enter)">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-current={menuIndex === 0}
+                    className={menuIndex === 0 ? "active" : undefined}
+                    onMouseEnter={() => setMenuIndex(0)}
+                    onClick={() => activateMenuOption(0)}
+                  >
+                    {menuIndex === 0 ? "▶ " : ""}Jogar
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-current={menuIndex === 1}
+                    className={menuIndex === 1 ? "active" : undefined}
+                    onMouseEnter={() => setMenuIndex(1)}
+                    onClick={() => activateMenuOption(1)}
+                  >
+                    {menuIndex === 1 ? "▶ " : ""}High Scores
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-current={menuIndex === 2}
+                    className={menuIndex === 2 ? "active" : undefined}
+                    onMouseEnter={() => setMenuIndex(2)}
+                    onClick={() => activateMenuOption(2)}
+                  >
+                    {menuIndex === 2 ? "▶ " : ""}Como Jogar
+                  </button>
+                </div>
+              </div>
+              <p className="menu-copy">
+                Sobreviva aos usuários, derrote os chefes e tente entrar no ranking global antes que alguém peça um deploy em sexta-feira.
+              </p>
+            </div>
+          </div>
+        )}
+        {menuScreen && menuPanel !== "home" && (
+          <div className="frame-screen" role="dialog" aria-label={menuPanel === "scores" ? "High Scores" : "Como jogar"}>
+            <div className="menu-panel frame-panel">
+              <p className="menu-kicker">Java Pleno Pixel Hunt</p>
 
               {menuPanel === "scores" && (
                 <>
@@ -1355,7 +1374,7 @@ export default function Home() {
                   </ol>
                   <div className="menu-actions two">
                     <button type="button" onClick={startNewGame}>Jogar</button>
-                    <button type="button" onClick={() => setMenuPanel("home")}>Voltar</button>
+                    <button type="button" onClick={() => setMenuPanel("home")}>Voltar ao início</button>
                   </div>
                 </>
               )}
@@ -1372,7 +1391,7 @@ export default function Home() {
                   </ul>
                   <div className="menu-actions two">
                     <button type="button" onClick={startNewGame}>Jogar</button>
-                    <button type="button" onClick={() => setMenuPanel("home")}>Voltar</button>
+                    <button type="button" onClick={() => setMenuPanel("home")}>Voltar ao início</button>
                   </div>
                 </>
               )}
@@ -1380,8 +1399,8 @@ export default function Home() {
           </div>
         )}
         {finalScreen && (
-          <div className="score-overlay" role="dialog" aria-modal="true" aria-label="Ranking de maiores pontuações">
-            <div className="score-panel">
+          <div className="frame-screen" role="dialog" aria-modal="true" aria-label="Ranking de maiores pontuações">
+            <div className="score-panel frame-panel">
               <p className="score-kicker">{gameState === "won" ? "Missão completa" : "Produção caiu"}</p>
               <h2>HIGH SCORES</h2>
               <p className="score-mode">{scoreMessage}</p>
@@ -1402,8 +1421,15 @@ export default function Home() {
                   <span>{score} pts · onda {wave}</span>
                 </form>
               ) : (
-                <button className="play-again" type="button" onClick={startNewGame}>
-                  Jogar de novo
+                <div className="menu-actions two">
+                  <button type="button" onClick={startNewGame}>Jogar de novo</button>
+                  <button type="button" onClick={returnToTitle}>Voltar ao início</button>
+                </div>
+              )}
+
+              {!scoreSaved && (
+                <button className="play-again secondary-action" type="button" onClick={returnToTitle}>
+                  Voltar ao início
                 </button>
               )}
 
