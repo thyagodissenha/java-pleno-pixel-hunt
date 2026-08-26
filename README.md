@@ -21,6 +21,7 @@ O jogo mistura humor de desenvolvimento, correria de go-live e aquele leve deses
 - Tela HIGH SCORES com nome do jogador
 - Ranking global via API
 - Fallback local no navegador quando o servidor estiver indisponivel
+- Menu inicial com acesso ao ranking e instrucoes
 - Visual pixel art desenhado em Canvas
 - Suporte a teclado e toque
 
@@ -34,6 +35,10 @@ O jogo mistura humor de desenvolvimento, correria de go-live e aquele leve deses
 | Iniciar/reiniciar | `Enter` ou toque na arena |
 
 No celular ou tablet, arraste na arena para mover o personagem.
+
+## Menu inicial
+
+A tela inicial tem acesso rapido para iniciar a partida, abrir o ranking global e consultar os controles antes de jogar.
 
 ## Ranking
 

@@ -34,6 +34,7 @@ type Particle = {
 };
 
 type GameState = "menu" | "playing" | "paused" | "over" | "won";
+type MenuPanel = "home" | "scores" | "help";
 type HighScore = {
   name: string;
   score: number;
@@ -109,6 +110,7 @@ export default function Home() {
   const [scoreSaved, setScoreSaved] = useState(true);
   const [scoreMessage, setScoreMessage] = useState("Ranking global carregando...");
   const [lastOutcome, setLastOutcome] = useState<"over" | "won">("over");
+  const [menuPanel, setMenuPanel] = useState<MenuPanel>("home");
 
   useEffect(() => {
     stateRef.current = gameState;
@@ -116,7 +118,12 @@ export default function Home() {
 
   useEffect(() => {
     setHighScores(loadHighScores());
-    fetch("/api/scores", { cache: "no-store" })
+    refreshHighScores();
+  }, []);
+
+  function refreshHighScores() {
+    setScoreMessage("Ranking global carregando...");
+    return fetch("/api/scores", { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((payload: unknown) => {
         const data = payload as { scores?: HighScore[] };
@@ -128,11 +135,12 @@ export default function Home() {
       .catch(() => {
         setScoreMessage("Ranking local offline");
       });
-  }, []);
+  }
 
   function startNewGame() {
     setScoreSaved(true);
     setPlayerName("");
+    setMenuPanel("home");
     startGameRef.current();
   }
 
@@ -629,6 +637,7 @@ export default function Home() {
 
   const status = gameState === "playing" ? "Em combate" : gameState === "paused" ? "Pausado" : gameState === "won" ? "Vitoria" : gameState === "over" ? "Fim de jogo" : "Pronto";
   const finalScreen = gameState === "over" || gameState === "won";
+  const menuScreen = gameState === "menu";
 
   return (
     <main className="game-shell">
@@ -646,6 +655,68 @@ export default function Home() {
 
       <section className="game-stage" aria-label="Arena do jogo">
         <canvas ref={canvasRef} width={WORLD.width} height={WORLD.height} aria-label="Arena pixel art" />
+        {menuScreen && (
+          <div className="menu-overlay" role="dialog" aria-label="Menu inicial">
+            <div className="menu-panel">
+              <p className="menu-kicker">Build instavel detectada</p>
+              <h2>Java Pleno Pixel Hunt</h2>
+
+              {menuPanel === "home" && (
+                <>
+                  <p className="menu-copy">
+                    Sobreviva aos usuarios, derrote os chefes e tente entrar no ranking global antes que alguem peca um deploy em sexta-feira.
+                  </p>
+                  <div className="menu-actions">
+                    <button type="button" onClick={startNewGame}>Jogar</button>
+                    <button type="button" onClick={() => { setMenuPanel("scores"); refreshHighScores(); }}>High Scores</button>
+                    <button type="button" onClick={() => setMenuPanel("help")}>Como jogar</button>
+                  </div>
+                </>
+              )}
+
+              {menuPanel === "scores" && (
+                <>
+                  <p className="score-mode">{scoreMessage}</p>
+                  <ol className="score-list menu-score-list">
+                    {highScores.length ? (
+                      highScores.map((entry, index) => (
+                        <li key={`${entry.createdAt}-${entry.name}`}>
+                          <span>{String(index + 1).padStart(2, "0")}</span>
+                          <strong>{entry.name}</strong>
+                          <em>{entry.score}<small>Onda {entry.wave}</small></em>
+                        </li>
+                      ))
+                    ) : (
+                      <li className="empty-score">
+                        <strong>NENHUM SCORE AINDA</strong>
+                        <em>0</em>
+                      </li>
+                    )}
+                  </ol>
+                  <div className="menu-actions two">
+                    <button type="button" onClick={startNewGame}>Jogar</button>
+                    <button type="button" onClick={() => setMenuPanel("home")}>Voltar</button>
+                  </div>
+                </>
+              )}
+
+              {menuPanel === "help" && (
+                <>
+                  <ul className="help-list">
+                    <li><strong>Mover</strong><span>WASD, setas ou arraste no celular.</span></li>
+                    <li><strong>Atirar</strong><span>Automatico no inimigo mais proximo.</span></li>
+                    <li><strong>Rajada</strong><span>Espaco acelera os tiros.</span></li>
+                    <li><strong>Objetivo</strong><span>Sobreviva, derrube chefes e salve seu score.</span></li>
+                  </ul>
+                  <div className="menu-actions two">
+                    <button type="button" onClick={startNewGame}>Jogar</button>
+                    <button type="button" onClick={() => setMenuPanel("home")}>Voltar</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
         {finalScreen && (
           <div className="score-overlay" role="dialog" aria-modal="true" aria-label="Ranking de maiores pontuacoes">
             <div className="score-panel">
