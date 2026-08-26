@@ -17,9 +17,11 @@ O jogo mistura humor de desenvolvimento, correria de go-live e aquele leve deses
 - Usuários perseguindo o jogador
 - Chefes com mais vida e ataques especiais
 - Padrões de ataque diferentes por chefe
+- Boss final maior, com 3 fases e 3 barras de vida
 - Inimigos especiais: QA nervoso, usuário VIP, incidente P1 e legado sem teste
 - Projéteis/obstáculos inspirados em Azure, SQL, CI/CD, Kafka, BI e deploys
-- Power-ups: café, refactor, rollback, hotfix e code review
+- Power-ups: café, refactor, rollback, hotfix, code review e sprint
+- Escolha final entre a cilada da promoção e atender um novo chamado
 - Progressão de arma por onda, indo de JDK 8 para JDK 17 e JDK 21
 - Biomas por fase: Escritório, Produção, Cloud e War Room
 - Sistema de vida, pontuação, ondas e vitória
@@ -40,7 +42,7 @@ O jogo mistura humor de desenvolvimento, correria de go-live e aquele leve deses
 | Ação | Teclado |
 | --- | --- |
 | Mover | `WASD` ou setas |
-| Rajada | `Espaço` |
+| Rajada | `Espaço`, consumindo estamina |
 | Pausar | `Esc` |
 | Iniciar/reiniciar | `Enter` ou toque na arena |
 
@@ -53,6 +55,7 @@ No celular ou tablet, arraste na arena para mover o personagem.
 - **Rollback** remove ameaças próximas que não sejam chefes.
 - **Hotfix** recupera vida.
 - **Code Review** cria uma janela de proteção e melhora o dano.
+- **Sprint** recupera 5% da estamina de rajada se ela ainda não estiver cheia.
 
 ## Menu inicial
 

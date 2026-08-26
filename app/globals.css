@@ -819,6 +819,19 @@ canvas {
   font-size: 12px;
 }
 
+.promotion-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.promotion-copy {
+  margin: 0;
+  color: #fef3c7;
+  font-size: clamp(14px, 2.6vw, 18px);
+  line-height: 1.4;
+  text-align: center;
+}
+
 .play-again {
   display: block;
   width: 100%;

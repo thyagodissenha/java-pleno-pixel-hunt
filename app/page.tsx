@@ -15,6 +15,7 @@ type Actor = {
   label: string;
   cooldown?: number;
   phase?: number;
+  bossPhase?: number;
 };
 
 type Shot = {
@@ -34,10 +35,18 @@ type Particle = {
   color: string;
 };
 
-type GameState = "menu" | "playing" | "paused" | "over" | "won";
+type GameState = "menu" | "playing" | "paused" | "over" | "won" | "promotion";
 type MenuPanel = "home" | "scores" | "help";
 type EnemyKind = "user" | "boss" | "data" | "qa" | "vip" | "incident" | "legacy";
-type PowerUpKind = "coffee" | "refactor" | "rollback" | "hotfix" | "review" | "stamina";
+type PowerUpKind =
+  | "coffee"
+  | "refactor"
+  | "rollback"
+  | "hotfix"
+  | "review"
+  | "stamina"
+  | "promotion"
+  | "call";
 type SoundName = "shoot" | "hit" | "hurt" | "boss" | "over" | "save" | "start" | "won";
 type Tone = [number, number, OscillatorType];
 type HighScore = {
@@ -80,6 +89,8 @@ const powerUpLabels: Record<PowerUpKind, string> = {
   hotfix: "Hotfix",
   review: "Code Review",
   stamina: "Sprint",
+  promotion: "Promoção",
+  call: "Chamado",
 };
 const biomeNames = ["Escritório", "Produção", "Cloud", "War Room"];
 const BURST_STAMINA_MAX = 100;
@@ -340,6 +351,13 @@ export default function Home() {
     stopMusic();
   }
 
+  function openPromotionScore() {
+    setLastOutcome("over");
+    setScoreSaved(false);
+    stateRef.current = "over";
+    setGameState("over");
+  }
+
   const activateMenuOption = useCallback((index: number) => {
     setMenuIndex(index);
     if (index === 0) startNewGame();
@@ -408,6 +426,7 @@ export default function Home() {
     let bossIndex = 0;
     let bossKills = 0;
     let bossSpawned = false;
+    let finalChoicePending = false;
     let burstStamina = BURST_STAMINA_MAX;
     let weaponLevel = 1;
     let damageFlash = 0;
@@ -443,20 +462,86 @@ export default function Home() {
       setUpgrade(weaponLevel >= 3 ? "JDK 21" : weaponLevel === 2 ? "JDK 17" : "JDK 8");
       setBurstStaminaPct(Math.round(burstStamina));
       setBossProgress(
-        bossSpawned
+        finalChoicePending
+          ? "Escolha final"
+          : bossSpawned
           ? "Chefe em combate"
           : `${Math.min(bossKills, bossKillTarget(localWave))}/${bossKillTarget(localWave)} mobs`,
       );
     }
 
     function countBossProgress() {
-      if (bossSpawned) return;
+      if (bossSpawned || finalChoicePending) return;
       bossKills += 1;
       if (bossKills >= bossKillTarget(localWave)) {
         bossSpawned = true;
         announceEffect("CHEFE LIBERADO: entra na call");
         spawnEnemy("boss");
       }
+    }
+
+    function isFinalBoss() {
+      return bossIndex === bossNames.length - 1;
+    }
+
+    function finalBossHp(phase: number) {
+      return 210 + phase * 48 + localWave * 22;
+    }
+
+    function resetWaveOne(keepScore = false) {
+      if (!keepScore) localScore = 0;
+      localWave = 1;
+      spawnTimer = 0;
+      dataTimer = 120;
+      powerUpTimer = 7;
+      shotTimer = 0;
+      bossIndex = 0;
+      bossKills = 0;
+      bossSpawned = false;
+      finalChoicePending = false;
+      burstStamina = BURST_STAMINA_MAX;
+      weaponLevel = 1;
+      damageFlash = 0;
+      shake = 0;
+      bossBanner = 0;
+      effectMessage = "";
+      effectBanner = 0;
+      player.x = WORLD.width / 2;
+      player.y = WORLD.height / 2;
+      player.hp = player.maxHp;
+      player.invincible = 0;
+      player.fury = 0;
+      player.focus = 0;
+      player.haste = 0;
+      enemies.length = 0;
+      shots.length = 0;
+      particles.length = 0;
+      powerUps.length = 0;
+      for (let i = 0; i < 5; i += 1) spawnEnemy("user");
+      syncHud();
+    }
+
+    function spawnFinalChoices(x: number, y: number) {
+      finalChoicePending = true;
+      bossSpawned = true;
+      enemies.length = 0;
+      shots.length = 0;
+      powerUps.length = 0;
+      const choices: Array<{ kind: PowerUpKind; x: number; y: number }> = [
+        { kind: "promotion", x: clamp(x - 110, 90, WORLD.width - 90), y },
+        { kind: "call", x: clamp(x + 110, 90, WORLD.width - 90), y },
+      ];
+      for (const choice of choices) {
+        powerUps.push({
+          x: choice.x,
+          y: clamp(choice.y, 90, WORLD.height - 90),
+          kind: choice.kind,
+          ttl: 99999,
+          pulse: Math.random() * Math.PI * 2,
+        });
+      }
+      announceEffect("ESCOLHA O SEU DESTINO CORPORATIVO");
+      syncHud();
     }
 
     function burst(x: number, y: number, color: string, amount = 12) {
@@ -481,6 +566,7 @@ export default function Home() {
       const y = edge === 2 ? -margin : edge === 3 ? WORLD.height + margin : Math.random() * WORLD.height;
       const isBoss = kind === "boss";
       const isData = kind === "data";
+      const finalBoss = isBoss && isFinalBoss();
       const wavePressure = Math.min(localWave - 1, 5);
       const stats: Record<EnemyKind, { hp: number; speed: number; size: number }> = {
         user: { hp: 28 + wavePressure * 2, speed: 68 + wavePressure * 5, size: 24 },
@@ -489,7 +575,9 @@ export default function Home() {
         incident: { hp: 20 + wavePressure * 3, speed: 122 + wavePressure * 8, size: 20 },
         legacy: { hp: 88 + wavePressure * 8, speed: 36 + wavePressure * 2, size: 34 },
         data: { hp: 16 + wavePressure, speed: 86 + wavePressure * 5, size: 22 },
-        boss: { hp: 160 + localWave * 28, speed: 52 + wavePressure * 2, size: 38 },
+        boss: finalBoss
+          ? { hp: finalBossHp(1), speed: 44 + wavePressure, size: 62 }
+          : { hp: 160 + localWave * 28, speed: 52 + wavePressure * 2, size: 38 },
       };
       const selected = stats[kind];
       enemies.push({
@@ -503,12 +591,13 @@ export default function Home() {
         size: selected.size,
         kind,
         label: isBoss
-          ? bossNames[bossIndex]
+          ? finalBoss ? "Diretoria" : bossNames[bossIndex]
           : isData
             ? cloudLabels[Math.floor(Math.random() * cloudLabels.length)]
             : enemyLabels[kind],
         cooldown: isBoss ? 118 : 90,
         phase: Math.random() * Math.PI * 2,
+        bossPhase: finalBoss ? 1 : undefined,
       });
       if (isBoss) {
         bossBanner = 120;
@@ -533,6 +622,25 @@ export default function Home() {
     }
 
     function collectPowerUp(powerUp: PowerUp) {
+      if (powerUp.kind === "promotion") {
+        setScore(localScore);
+        setWave(localWave);
+        setLastOutcome("over");
+        setScoreSaved(true);
+        playSound("over");
+        stopMusic();
+        stateRef.current = "promotion";
+        setGameState("promotion");
+        return;
+      }
+
+      if (powerUp.kind === "call") {
+        playSound("start");
+        resetWaveOne(true);
+        announceEffect("NOVO CHAMADO: pontuação mantida");
+        return;
+      }
+
       localScore += 35;
       if (powerUp.kind === "coffee") {
         player.haste = 6;
@@ -571,35 +679,7 @@ export default function Home() {
     }
 
     function resetGame() {
-      localScore = 0;
-      localWave = 1;
-      spawnTimer = 0;
-      dataTimer = 120;
-      powerUpTimer = 7;
-      shotTimer = 0;
-      bossIndex = 0;
-      bossKills = 0;
-      bossSpawned = false;
-      burstStamina = BURST_STAMINA_MAX;
-      weaponLevel = 1;
-      damageFlash = 0;
-      shake = 0;
-      bossBanner = 0;
-      effectMessage = "";
-      effectBanner = 0;
-      player.x = WORLD.width / 2;
-      player.y = WORLD.height / 2;
-      player.hp = player.maxHp;
-      player.invincible = 0;
-      player.fury = 0;
-      player.focus = 0;
-      player.haste = 0;
-      enemies.length = 0;
-      shots.length = 0;
-      particles.length = 0;
-      powerUps.length = 0;
-      for (let i = 0; i < 5; i += 1) spawnEnemy("user");
-      syncHud();
+      resetWaveOne(false);
     }
 
     function start() {
@@ -762,7 +842,7 @@ export default function Home() {
       const maxData = 3 + Math.ceil(localWave * 0.8);
       const maxSpecial = Math.min(2 + Math.floor(localWave / 2), 5);
 
-      if (spawnTimer <= 0 && usersAlive < maxUsers) {
+      if (!finalChoicePending && spawnTimer <= 0 && usersAlive < maxUsers) {
         spawnTimer = Math.max(0.58, 1.45 - localWave * 0.08);
         const specialPool: EnemyKind[] = [
           ...(localWave >= 2 ? ["qa" as const] : []),
@@ -776,11 +856,11 @@ export default function Home() {
           spawnEnemy("user");
         }
       }
-      if (dataTimer <= 0 && dataAlive < maxData) {
+      if (!finalChoicePending && dataTimer <= 0 && dataAlive < maxData) {
         dataTimer = Math.max(1.55, 4.1 - localWave * 0.18);
         spawnEnemy("data");
       }
-      if (powerUpTimer <= 0 && powerUps.length < 2) {
+      if (!finalChoicePending && powerUpTimer <= 0 && powerUps.length < 2) {
         powerUpTimer = 11 + Math.random() * 8;
         spawnPowerUp();
       }
@@ -813,9 +893,15 @@ export default function Home() {
         if (enemy.kind === "boss") {
           enemy.cooldown = (enemy.cooldown ?? 0) - delta * 60;
           if (enemy.cooldown <= 0) {
-            enemy.cooldown = Math.max(64, 104 - localWave * 4);
-            const pattern = bossIndex % 4;
-            const volleySize = pattern === 1 ? 8 : pattern === 3 ? 5 : localWave >= 3 ? 3 : 2;
+            const finalBoss = isFinalBoss();
+            const bossPhase = enemy.bossPhase ?? 1;
+            enemy.cooldown = finalBoss
+              ? Math.max(42, 86 - bossPhase * 10)
+              : Math.max(64, 104 - localWave * 4);
+            const pattern = finalBoss ? bossPhase : bossIndex % 4;
+            const volleySize = finalBoss
+              ? bossPhase === 1 ? 4 : bossPhase === 2 ? 9 : 7
+              : pattern === 1 ? 8 : pattern === 3 ? 5 : localWave >= 3 ? 3 : 2;
             for (let i = 0; i < volleySize; i += 1) {
               const aimed = Math.atan2(player.y - enemy.y, player.x - enemy.x);
               const base = pattern === 1
@@ -910,23 +996,40 @@ export default function Home() {
                         ? 60
                         : 45;
               if (enemy.kind === "boss") {
+                const finalBoss = isFinalBoss();
+                const currentBossPhase = enemy.bossPhase ?? 1;
                 player.fury = 5;
                 player.hp = clamp(player.hp + 22, 0, player.maxHp);
+                if (finalBoss && currentBossPhase < 3) {
+                  enemy.bossPhase = currentBossPhase + 1;
+                  enemy.maxHp = finalBossHp(enemy.bossPhase);
+                  enemy.hp = enemy.maxHp;
+                  enemy.size = 62 + enemy.bossPhase * 6;
+                  enemy.speed += 7;
+                  enemy.cooldown = 64;
+                  bossBanner = 130;
+                  announceEffect(`DIRETORIA FASE ${enemy.bossPhase}: benefício removido`);
+                  burst(enemy.x, enemy.y, "#f97316", 30);
+                  syncHud();
+                  break;
+                }
                 bossIndex += 1;
                 localWave += 1;
                 bossKills = 0;
                 bossSpawned = false;
                 burst(enemy.x, enemy.y, "#ffd166", 28);
-                if (bossIndex >= bossNames.length) {
-                  syncHud();
-                  setScore(localScore);
-                  setWave(localWave);
-                  setLastOutcome("won");
-                  setScoreSaved(false);
-                  playSound("won");
-                  stopMusic();
-                  stateRef.current = "won";
-                  setGameState("won");
+                if (finalBoss) {
+                  spawnFinalChoices(enemy.x, enemy.y);
+                } else if (bossIndex >= bossNames.length) {
+                    syncHud();
+                    setScore(localScore);
+                    setWave(localWave);
+                    setLastOutcome("won");
+                    setScoreSaved(false);
+                    playSound("won");
+                    stopMusic();
+                    stateRef.current = "won";
+                    setGameState("won");
                 }
               } else {
                 countBossProgress();
@@ -1019,8 +1122,21 @@ export default function Home() {
         ctx.fillText(actor.label, actor.x, actor.y - actor.size / 2 - 8);
       }
       const bar = actor.size;
-      pixelRect(ctx, actor.x - bar / 2, actor.y + actor.size / 2 + 5, bar, 4, "#111827");
-      pixelRect(ctx, actor.x - bar / 2, actor.y + actor.size / 2 + 5, bar * (actor.hp / actor.maxHp), 4, "#84cc16");
+      if (actor.kind === "boss" && actor.bossPhase) {
+        for (let phase = 1; phase <= 3; phase += 1) {
+          const yOffset = actor.y + actor.size / 2 + 5 + (phase - 1) * 6;
+          const fill = phase < actor.bossPhase
+            ? 1
+            : phase === actor.bossPhase
+              ? actor.hp / actor.maxHp
+              : 0;
+          pixelRect(ctx, actor.x - bar / 2, yOffset, bar, 4, "#111827");
+          pixelRect(ctx, actor.x - bar / 2, yOffset, bar * fill, 4, phase === 3 ? "#ef4444" : "#facc15");
+        }
+      } else {
+        pixelRect(ctx, actor.x - bar / 2, actor.y + actor.size / 2 + 5, bar, 4, "#111827");
+        pixelRect(ctx, actor.x - bar / 2, actor.y + actor.size / 2 + 5, bar * (actor.hp / actor.maxHp), 4, "#84cc16");
+      }
     }
 
     function drawPowerUp(powerUp: PowerUp) {
@@ -1035,6 +1151,8 @@ export default function Home() {
         hotfix: "#ef4444",
         review: "#a855f7",
         stamina: "#22c55e",
+        promotion: "#facc15",
+        call: "#38bdf8",
       };
       ctx.strokeStyle = color[powerUp.kind];
       ctx.lineWidth = 2;
@@ -1059,6 +1177,14 @@ export default function Home() {
       } else {
         pixelRect(ctx, x + 6, y + 7, 14, 5, "#dcfce7");
         pixelRect(ctx, x + 6, y + 14, 9, 5, "#dcfce7");
+      }
+      if (powerUp.kind === "promotion") {
+        pixelRect(ctx, x + 6, y + 6, 14, 6, "#7f1d1d");
+        pixelRect(ctx, x + 9, y + 12, 8, 9, "#fef3c7");
+      } else if (powerUp.kind === "call") {
+        pixelRect(ctx, x + 7, y + 6, 12, 15, "#082f49");
+        pixelRect(ctx, x + 10, y + 9, 6, 3, "#dbeafe");
+        pixelRect(ctx, x + 10, y + 15, 6, 3, "#dbeafe");
       }
       ctx.fillStyle = "#f8fafc";
       ctx.font = "10px 'Courier New', monospace";
@@ -1256,10 +1382,11 @@ export default function Home() {
     };
   }, [activateMenuOption, playSound, startMusic, stopMusic]);
 
-  const status = gameState === "playing" ? "Em combate" : gameState === "paused" ? "Pausado" : gameState === "won" ? "Vitória" : gameState === "over" ? "Fim de jogo" : "Pronto";
+  const status = gameState === "playing" ? "Em combate" : gameState === "paused" ? "Pausado" : gameState === "promotion" ? "Promoção?" : gameState === "won" ? "Vitória" : gameState === "over" ? "Fim de jogo" : "Pronto";
   const finalScreen = gameState === "over" || gameState === "won";
+  const promotionScreen = gameState === "promotion";
   const menuScreen = gameState === "menu";
-  const frameScreen = finalScreen || (menuScreen && menuPanel !== "home");
+  const frameScreen = finalScreen || promotionScreen || (menuScreen && menuPanel !== "home");
 
   return (
     <main className="game-shell">
@@ -1444,6 +1571,7 @@ export default function Home() {
                     <li><strong>Atirar</strong><span>Automático no inimigo mais próximo.</span></li>
                     <li><strong>Rajada</strong><span>Espaço acelera os tiros enquanto houver estamina.</span></li>
                     <li><strong>Power-ups</strong><span>Café, Refactor, Rollback, Hotfix, Code Review e Sprint ajudam na partida.</span></li>
+                    <li><strong>Final</strong><span>A promoção é uma cilada. Novo chamado mantém o score e recomeça a firma.</span></li>
                     <li><strong>Objetivo</strong><span>Sobreviva, derrube chefes e salve seu score.</span></li>
                   </ul>
                   <div className="menu-actions two">
@@ -1452,6 +1580,21 @@ export default function Home() {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        )}
+        {promotionScreen && (
+          <div className="frame-screen" role="dialog" aria-modal="true" aria-label="Promoção para sênior">
+            <div className="score-panel frame-panel promotion-panel">
+              <p className="score-kicker">Promoção para Sênior</p>
+              <h2>ERA CILADA DO RH</h2>
+              <p className="promotion-copy">
+                Parabéns: você aceitou o cargo, herdou o legado sem teste, ganhou acesso a mais reuniões e morreu de responsabilidade.
+              </p>
+              <p className="score-mode">O pleno nunca vira sênior. Ele só desbloqueia outro board.</p>
+              <button className="play-again" type="button" onClick={openPromotionScore}>
+                Ir para HIGH SCORES
+              </button>
             </div>
           </div>
         )}
