@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import Script from 'next/script';
 import './globals.css';
 import { getAdsenseClientId } from '@/lib/adsense';
 
@@ -25,16 +24,17 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR">
-      <body>
-        {children}
+      <head>
         {adsenseClientId && (
-          <Script
-            id="google-adsense"
+          <script
+            async
             src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adsenseClientId}`}
-            strategy="afterInteractive"
             crossOrigin="anonymous"
           />
         )}
+      </head>
+      <body>
+        {children}
       </body>
     </html>
   );
