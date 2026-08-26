@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 type Actor = {
   x: number;
@@ -37,7 +37,7 @@ type Particle = {
 type GameState = "menu" | "playing" | "paused" | "over" | "won";
 type MenuPanel = "home" | "scores" | "help";
 type EnemyKind = "user" | "boss" | "data" | "qa" | "vip" | "incident" | "legacy";
-type PowerUpKind = "coffee" | "refactor" | "rollback" | "hotfix" | "review";
+type PowerUpKind = "coffee" | "refactor" | "rollback" | "hotfix" | "review" | "stamina";
 type SoundName = "shoot" | "hit" | "hurt" | "boss" | "over" | "save" | "start" | "won";
 type Tone = [number, number, OscillatorType];
 type HighScore = {
@@ -79,8 +79,13 @@ const powerUpLabels: Record<PowerUpKind, string> = {
   rollback: "Rollback",
   hotfix: "Hotfix",
   review: "Code Review",
+  stamina: "Sprint",
 };
 const biomeNames = ["Escritório", "Produção", "Cloud", "War Room"];
+const BURST_STAMINA_MAX = 100;
+const BURST_STAMINA_RECHARGE = 8;
+const BURST_STAMINA_COST = 32;
+const STAMINA_POWER_UP_GAIN = 5;
 
 function bossKillTarget(wave: number) {
   return 10 + wave * 4;
@@ -183,6 +188,7 @@ export default function Home() {
   const [biome, setBiome] = useState(biomeNames[0]);
   const [upgrade, setUpgrade] = useState("JDK 8");
   const [bossProgress, setBossProgress] = useState("0/14 mobs");
+  const [burstStaminaPct, setBurstStaminaPct] = useState(BURST_STAMINA_MAX);
 
   useEffect(() => {
     stateRef.current = gameState;
@@ -328,6 +334,7 @@ export default function Home() {
     setBiome(biomeNames[0]);
     setUpgrade("JDK 8");
     setBossProgress("0/14 mobs");
+    setBurstStaminaPct(BURST_STAMINA_MAX);
     stateRef.current = "menu";
     setGameState("menu");
     stopMusic();
@@ -401,6 +408,7 @@ export default function Home() {
     let bossIndex = 0;
     let bossKills = 0;
     let bossSpawned = false;
+    let burstStamina = BURST_STAMINA_MAX;
     let weaponLevel = 1;
     let damageFlash = 0;
     let shake = 0;
@@ -433,6 +441,7 @@ export default function Home() {
       setBoss(bossNames[bossIndex] ?? "Comitê Executivo");
       setBiome(biomeNames[Math.min(bossIndex, biomeNames.length - 1)] ?? "War Room");
       setUpgrade(weaponLevel >= 3 ? "JDK 21" : weaponLevel === 2 ? "JDK 17" : "JDK 8");
+      setBurstStaminaPct(Math.round(burstStamina));
       setBossProgress(
         bossSpawned
           ? "Chefe em combate"
@@ -508,7 +517,7 @@ export default function Home() {
     }
 
     function spawnPowerUp() {
-      const kinds: PowerUpKind[] = ["coffee", "refactor", "rollback", "hotfix", "review"];
+      const kinds: PowerUpKind[] = ["coffee", "refactor", "rollback", "hotfix", "review", "stamina"];
       powerUps.push({
         x: 70 + Math.random() * (WORLD.width - 140),
         y: 70 + Math.random() * (WORLD.height - 140),
@@ -544,10 +553,17 @@ export default function Home() {
       } else if (powerUp.kind === "hotfix") {
         player.hp = clamp(player.hp + 32, 0, player.maxHp);
         announceEffect("HOTFIX: vida recuperada");
-      } else {
+      } else if (powerUp.kind === "review") {
         player.focus = 7;
         player.invincible = Math.max(player.invincible, 2.4);
         announceEffect("CODE REVIEW: escudo ativo");
+      } else {
+        if (burstStamina < BURST_STAMINA_MAX) {
+          burstStamina = clamp(burstStamina + STAMINA_POWER_UP_GAIN, 0, BURST_STAMINA_MAX);
+          announceEffect("SPRINT: estamina +5%");
+        } else {
+          announceEffect("SPRINT: estamina cheia");
+        }
       }
       playSound("save");
       burst(powerUp.x, powerUp.y, "#facc15", 18);
@@ -564,6 +580,7 @@ export default function Home() {
       bossIndex = 0;
       bossKills = 0;
       bossSpawned = false;
+      burstStamina = BURST_STAMINA_MAX;
       weaponLevel = 1;
       damageFlash = 0;
       shake = 0;
@@ -704,6 +721,13 @@ export default function Home() {
       bossBanner = Math.max(0, bossBanner - delta * 60);
       effectBanner = Math.max(0, effectBanner - delta * 60);
       weaponLevel = localWave >= 4 ? 3 : localWave >= 2 ? 2 : 1;
+      const wantsBurst = keys.current.has(" ");
+      const burstActive = wantsBurst && burstStamina > 0;
+      if (burstActive) {
+        burstStamina = Math.max(0, burstStamina - BURST_STAMINA_COST * delta);
+      } else {
+        burstStamina = Math.min(BURST_STAMINA_MAX, burstStamina + BURST_STAMINA_RECHARGE * delta);
+      }
 
       let moveX = 0;
       let moveY = 0;
@@ -725,10 +749,10 @@ export default function Home() {
         player.y = clamp(player.y + move.y * currentSpeed * delta, 36, WORLD.height - 28);
       }
 
-      if (shotTimer <= 0 || keys.current.has(" ")) {
+      if (shotTimer <= 0) {
         shoot();
         playSound("shoot");
-        shotTimer = player.fury > 0 ? 0.11 : weaponLevel >= 3 ? 0.2 : 0.24;
+        shotTimer = player.fury > 0 || burstActive ? 0.11 : weaponLevel >= 3 ? 0.2 : 0.24;
       }
 
       const usersAlive = enemies.filter((enemy) => enemy.kind === "user").length;
@@ -1010,6 +1034,7 @@ export default function Home() {
         rollback: "#38bdf8",
         hotfix: "#ef4444",
         review: "#a855f7",
+        stamina: "#22c55e",
       };
       ctx.strokeStyle = color[powerUp.kind];
       ctx.lineWidth = 2;
@@ -1028,9 +1053,12 @@ export default function Home() {
       } else if (powerUp.kind === "hotfix") {
         pixelRect(ctx, x + 11, y + 6, 4, 14, "#fef2f2");
         pixelRect(ctx, x + 6, y + 11, 14, 4, "#fef2f2");
-      } else {
+      } else if (powerUp.kind === "review") {
         pixelRect(ctx, x + 7, y + 8, 12, 4, "#faf5ff");
         pixelRect(ctx, x + 7, y + 14, 8, 4, "#faf5ff");
+      } else {
+        pixelRect(ctx, x + 6, y + 7, 14, 5, "#dcfce7");
+        pixelRect(ctx, x + 6, y + 14, 9, 5, "#dcfce7");
       }
       ctx.fillStyle = "#f8fafc";
       ctx.font = "10px 'Courier New', monospace";
@@ -1244,6 +1272,11 @@ export default function Home() {
           <span>HP {hp}</span>
           <span>Onda {wave}</span>
           <span>{score} pts</span>
+          <span className="stamina-meter">
+            <strong>Rajada</strong>
+            <i style={{ "--stamina": `${burstStaminaPct}%` } as CSSProperties} />
+            <small>{burstStaminaPct}%</small>
+          </span>
           <div className="sound-controls" aria-label="Controles de som">
             <button
               type="button"
@@ -1409,8 +1442,8 @@ export default function Home() {
                   <ul className="help-list">
                     <li><strong>Mover</strong><span>WASD, setas ou arraste no celular.</span></li>
                     <li><strong>Atirar</strong><span>Automático no inimigo mais próximo.</span></li>
-                    <li><strong>Rajada</strong><span>Espaço acelera os tiros.</span></li>
-                    <li><strong>Power-ups</strong><span>Café, Refactor, Rollback, Hotfix e Code Review ajudam na partida.</span></li>
+                    <li><strong>Rajada</strong><span>Espaço acelera os tiros enquanto houver estamina.</span></li>
+                    <li><strong>Power-ups</strong><span>Café, Refactor, Rollback, Hotfix, Code Review e Sprint ajudam na partida.</span></li>
                     <li><strong>Objetivo</strong><span>Sobreviva, derrube chefes e salve seu score.</span></li>
                   </ul>
                   <div className="menu-actions two">
@@ -1486,7 +1519,7 @@ export default function Home() {
         </div>
         <div>
           <strong>Arma e controles</strong>
-          <span>{upgrade} · WASD ou setas para mover, espaço para rajada, Esc pausa. No toque, arraste na arena para se mover.</span>
+          <span>{upgrade} · WASD ou setas para mover, espaço consome estamina da rajada, Esc pausa. No toque, arraste na arena para se mover.</span>
         </div>
       </section>
     </main>
