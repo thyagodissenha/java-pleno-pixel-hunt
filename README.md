@@ -69,6 +69,18 @@ Em produção, o ranking usa a rota `/api/scores` e persiste os resultados com V
 
 Em desenvolvimento local, o ranking usa `data/high-scores.json`. Se a API global estiver indisponível no navegador, o jogo salva uma cópia local em `localStorage`.
 
+## Monetização
+
+O projeto já está preparado para Google AdSense. Configure na Vercel a variável:
+
+```text
+GOOGLE_ADSENSE_PUBLISHER_ID=pub-0000000000000000
+```
+
+Também funciona se o valor vier no formato `ca-pub-0000000000000000`; o projeto normaliza automaticamente.
+
+Com a variável configurada, o layout carrega o script do AdSense em todas as páginas, adiciona a meta tag `google-adsense-account` e expõe o arquivo `/ads.txt` com o publisher ID correto.
+
 ## Stack
 
 - React
