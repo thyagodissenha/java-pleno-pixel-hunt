@@ -22,6 +22,8 @@ O jogo mistura humor de desenvolvimento, correria de go-live e aquele leve deses
 - Ranking global via API
 - Fallback local no navegador quando o servidor estiver indisponivel
 - Menu inicial com acesso ao ranking e instrucoes
+- Curva de ondas balanceada para reduzir picos injustos
+- Feedback visual de dano, tremida de tela e aviso de chefe
 - Visual pixel art desenhado em Canvas
 - Suporte a teclado e toque
 

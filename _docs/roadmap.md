@@ -5,8 +5,8 @@ Este roadmap organiza as proximas melhorias do jogo, saindo de um prototipo joga
 ## Fase 1: Polimento essencial
 
 - [x] Criar uma tela inicial mais bonita, com botoes para jogar, ver high scores e abrir instrucoes.
-- Ajustar a curva de dificuldade das ondas.
-- Melhorar colisao e feedback visual de dano.
+- [x] Ajustar a curva de dificuldade das ondas.
+- [x] Melhorar colisao e feedback visual de dano.
 - Adicionar botao de mute/volume.
 - Melhorar a experiencia em dispositivos moveis.
 - Revisar textos e acentos em portugues.
@@ -74,18 +74,19 @@ Este roadmap organiza as proximas melhorias do jogo, saindo de um prototipo joga
 ## Prioridade recomendada
 
 1. Tela inicial e menus.
-2. Ajuste de dificuldade das ondas.
-3. Protecao anti-spam para o ranking.
-4. Power-ups.
-5. Som.
-6. Sprites melhores.
-7. Publicacao no Itch.io.
-8. Compartilhamento de score.
-9. Cosmeticos e patrocinio dev.
+2. Botao de mute/volume.
+3. Melhorias mobile.
+4. Protecao anti-spam para o ranking.
+5. Power-ups.
+6. Som.
+7. Sprites melhores.
+8. Publicacao no Itch.io.
+9. Compartilhamento de score.
+10. Cosmeticos e patrocinio dev.
 
 ## Proxima entrega sugerida
 
-Ajustar a curva de dificuldade das ondas e melhorar o feedback de dano/colisao.
+Adicionar botao de mute/volume e preparar a base para efeitos sonoros.
 
 ## Aposta de monetizacao recomendada
 

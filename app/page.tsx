@@ -179,12 +179,6 @@ export default function Home() {
     }
   }
 
-  function clearHighScores() {
-    window.localStorage.removeItem(HIGH_SCORE_KEY);
-    setHighScores([]);
-    setScoreMessage("Ranking local limpo");
-  }
-
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -200,6 +194,9 @@ export default function Home() {
     let dataTimer = 140;
     let shotTimer = 0;
     let bossIndex = 0;
+    let damageFlash = 0;
+    let shake = 0;
+    let bossBanner = 0;
 
     const player = {
       x: WORLD.width / 2,
@@ -245,19 +242,21 @@ export default function Home() {
       const y = edge === 2 ? -margin : edge === 3 ? WORLD.height + margin : Math.random() * WORLD.height;
       const isBoss = kind === "boss";
       const isData = kind === "data";
+      const wavePressure = Math.min(localWave - 1, 5);
       enemies.push({
         x,
         y,
         vx: 0,
         vy: 0,
-        hp: isBoss ? 140 + localWave * 35 : isData ? 18 : 28 + localWave * 2,
-        maxHp: isBoss ? 140 + localWave * 35 : isData ? 18 : 28 + localWave * 2,
-        speed: isBoss ? 54 + localWave * 2 : isData ? 92 : 72 + localWave * 4,
+        hp: isBoss ? 160 + localWave * 28 : isData ? 16 + wavePressure : 28 + wavePressure * 2,
+        maxHp: isBoss ? 160 + localWave * 28 : isData ? 16 + wavePressure : 28 + wavePressure * 2,
+        speed: isBoss ? 52 + wavePressure * 2 : isData ? 86 + wavePressure * 5 : 68 + wavePressure * 5,
         size: isBoss ? 38 : isData ? 22 : 24,
         kind,
         label: isBoss ? bossNames[bossIndex] : isData ? cloudLabels[Math.floor(Math.random() * cloudLabels.length)] : "Usuario",
-        cooldown: 90,
+        cooldown: isBoss ? 118 : 90,
       });
+      if (isBoss) bossBanner = 120;
     }
 
     function resetGame() {
@@ -267,6 +266,9 @@ export default function Home() {
       dataTimer = 120;
       shotTimer = 0;
       bossIndex = 0;
+      damageFlash = 0;
+      shake = 0;
+      bossBanner = 120;
       player.x = WORLD.width / 2;
       player.y = WORLD.height / 2;
       player.hp = player.maxHp;
@@ -350,6 +352,9 @@ export default function Home() {
       shotTimer -= delta;
       player.invincible = Math.max(0, player.invincible - delta);
       player.fury = Math.max(0, player.fury - delta);
+      damageFlash = Math.max(0, damageFlash - delta * 60);
+      shake = Math.max(0, shake - delta * 60);
+      bossBanner = Math.max(0, bossBanner - delta * 60);
 
       let moveX = 0;
       let moveY = 0;
@@ -375,12 +380,17 @@ export default function Home() {
         shotTimer = player.fury > 0 ? 0.11 : 0.24;
       }
 
-      if (spawnTimer <= 0) {
-        spawnTimer = Math.max(0.34, 1.25 - localWave * 0.06);
+      const usersAlive = enemies.filter((enemy) => enemy.kind === "user").length;
+      const dataAlive = enemies.filter((enemy) => enemy.kind === "data").length;
+      const maxUsers = 7 + localWave * 2;
+      const maxData = 3 + Math.ceil(localWave * 0.8);
+
+      if (spawnTimer <= 0 && usersAlive < maxUsers) {
+        spawnTimer = Math.max(0.58, 1.45 - localWave * 0.08);
         spawnEnemy("user");
       }
-      if (dataTimer <= 0) {
-        dataTimer = Math.max(1.2, 3.7 - localWave * 0.16);
+      if (dataTimer <= 0 && dataAlive < maxData) {
+        dataTimer = Math.max(1.55, 4.1 - localWave * 0.18);
         spawnEnemy("data");
       }
 
@@ -398,8 +408,9 @@ export default function Home() {
         if (enemy.kind === "boss") {
           enemy.cooldown = (enemy.cooldown ?? 0) - delta * 60;
           if (enemy.cooldown <= 0) {
-            enemy.cooldown = 82 - localWave * 2;
-            for (let i = 0; i < 3; i += 1) {
+            enemy.cooldown = Math.max(64, 104 - localWave * 4);
+            const volleySize = localWave >= 3 ? 3 : 2;
+            for (let i = 0; i < volleySize; i += 1) {
               const spread = (i - 1) * 0.34;
               const base = Math.atan2(player.y - enemy.y, player.x - enemy.x) + spread;
               enemies.push({
@@ -409,7 +420,7 @@ export default function Home() {
                 vy: 0,
                 hp: 16,
                 maxHp: 16,
-                speed: 110 + localWave * 3,
+                speed: 96 + Math.min(localWave, 5) * 4,
                 size: 18,
                 kind: "data",
                 label: "Deploy",
@@ -430,8 +441,10 @@ export default function Home() {
         if (distance(enemy, player) < enemy.size * 0.55 + player.size * 0.55) {
           if (player.invincible <= 0) {
             player.hp -= enemy.kind === "boss" ? 18 : enemy.kind === "data" ? 13 : 8;
-            player.invincible = 0.72;
-            burst(player.x, player.y, "#ff5353", 10);
+            player.invincible = 0.92;
+            damageFlash = 16;
+            shake = 14;
+            burst(player.x, player.y, "#ff5353", 16);
             if (enemy.kind !== "boss") enemies.splice(i, 1);
           }
         }
@@ -453,7 +466,7 @@ export default function Home() {
               localScore += enemy.kind === "boss" ? 500 : enemy.kind === "data" ? 80 : 45;
               if (enemy.kind === "boss") {
                 player.fury = 5;
-                player.hp = clamp(player.hp + 18, 0, player.maxHp);
+                player.hp = clamp(player.hp + 22, 0, player.maxHp);
                 bossIndex += 1;
                 localWave += 1;
                 burst(enemy.x, enemy.y, "#ffd166", 28);
@@ -592,6 +605,10 @@ export default function Home() {
     }
 
     function draw() {
+      const shakeX = shake > 0 ? (Math.random() - 0.5) * shake : 0;
+      const shakeY = shake > 0 ? (Math.random() - 0.5) * shake : 0;
+      ctx.save();
+      ctx.translate(shakeX, shakeY);
       drawGrid();
       for (const particle of particles) {
         pixelRect(ctx, particle.x, particle.y, 4, 4, particle.color);
@@ -602,6 +619,21 @@ export default function Home() {
       }
       enemies.sort((a, b) => a.y - b.y).forEach(drawActor);
       drawPlayer();
+      ctx.restore();
+
+      if (damageFlash > 0) {
+        ctx.fillStyle = `rgba(239, 68, 68, ${Math.min(0.32, damageFlash / 55)})`;
+        ctx.fillRect(0, 0, WORLD.width, WORLD.height);
+      }
+
+      if (bossBanner > 0 && stateRef.current === "playing") {
+        ctx.fillStyle = "rgba(2, 6, 23, 0.76)";
+        ctx.fillRect(0, 26, WORLD.width, 58);
+        ctx.fillStyle = "#facc15";
+        ctx.font = "bold 28px 'Courier New', monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("CHEFE ENTROU NA CALL", WORLD.width / 2, 64);
+      }
 
       if (stateRef.current === "menu") {
         drawOverlay("JAVA PLENO: ESTOUROU A BUILD", "Sobreviva aos usuarios, dados e chefes da firma");
@@ -761,9 +793,6 @@ export default function Home() {
                   </li>
                 )}
               </ol>
-              <button className="clear-scores" type="button" onClick={clearHighScores}>
-                Limpar ranking local
-              </button>
             </div>
           </div>
         )}
