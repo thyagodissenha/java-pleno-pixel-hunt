@@ -832,6 +832,16 @@ canvas {
   text-align: center;
 }
 
+.promotion-countdown {
+  margin: 0;
+  border: 2px solid #facc15;
+  background: #111827;
+  color: #facc15;
+  padding: 10px 12px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
 .play-again {
   display: block;
   width: 100%;

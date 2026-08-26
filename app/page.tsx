@@ -35,7 +35,7 @@ type Particle = {
   color: string;
 };
 
-type GameState = "menu" | "playing" | "paused" | "over" | "won" | "promotion";
+type GameState = "menu" | "playing" | "paused" | "over" | "won" | "promotion" | "choice";
 type MenuPanel = "home" | "scores" | "help";
 type EnemyKind = "user" | "boss" | "data" | "qa" | "vip" | "incident" | "legacy";
 type PowerUpKind =
@@ -200,6 +200,7 @@ export default function Home() {
   const [upgrade, setUpgrade] = useState("JDK 8");
   const [bossProgress, setBossProgress] = useState("0/14 mobs");
   const [burstStaminaPct, setBurstStaminaPct] = useState(BURST_STAMINA_MAX);
+  const [promotionCountdown, setPromotionCountdown] = useState(3);
 
   useEffect(() => {
     stateRef.current = gameState;
@@ -351,12 +352,22 @@ export default function Home() {
     stopMusic();
   }
 
-  function openPromotionScore() {
-    setLastOutcome("over");
-    setScoreSaved(false);
-    stateRef.current = "over";
-    setGameState("over");
-  }
+  useEffect(() => {
+    if (gameState !== "promotion") return;
+    const interval = window.setInterval(() => {
+      setPromotionCountdown((current) => Math.max(0, current - 1));
+    }, 1000);
+    const timeout = window.setTimeout(() => {
+      setScoreSaved(false);
+      stateRef.current = "over";
+      setGameState("over");
+    }, 3200);
+
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(timeout);
+    };
+  }, [gameState]);
 
   const activateMenuOption = useCallback((index: number) => {
     setMenuIndex(index);
@@ -427,6 +438,8 @@ export default function Home() {
     let bossKills = 0;
     let bossSpawned = false;
     let finalChoicePending = false;
+    let finalBossCorpse: { x: number; y: number } | null = null;
+    let callLoops = 0;
     let burstStamina = BURST_STAMINA_MAX;
     let weaponLevel = 1;
     let damageFlash = 0;
@@ -457,7 +470,7 @@ export default function Home() {
       setScore(localScore);
       setWave(localWave);
       setHp(Math.max(0, Math.round(player.hp)));
-      setBoss(bossNames[bossIndex] ?? "Comitê Executivo");
+      setBoss(finalChoicePending ? "Diretoria caída" : bossNames[bossIndex] ?? "Comitê Executivo");
       setBiome(biomeNames[Math.min(bossIndex, biomeNames.length - 1)] ?? "War Room");
       setUpgrade(weaponLevel >= 3 ? "JDK 21" : weaponLevel === 2 ? "JDK 17" : "JDK 8");
       setBurstStaminaPct(Math.round(burstStamina));
@@ -489,7 +502,10 @@ export default function Home() {
     }
 
     function resetWaveOne(keepScore = false) {
-      if (!keepScore) localScore = 0;
+      if (!keepScore) {
+        localScore = 0;
+        callLoops = 0;
+      }
       localWave = 1;
       spawnTimer = 0;
       dataTimer = 120;
@@ -499,6 +515,7 @@ export default function Home() {
       bossKills = 0;
       bossSpawned = false;
       finalChoicePending = false;
+      finalBossCorpse = null;
       burstStamina = BURST_STAMINA_MAX;
       weaponLevel = 1;
       damageFlash = 0;
@@ -524,6 +541,7 @@ export default function Home() {
     function spawnFinalChoices(x: number, y: number) {
       finalChoicePending = true;
       bossSpawned = true;
+      finalBossCorpse = { x, y };
       enemies.length = 0;
       shots.length = 0;
       powerUps.length = 0;
@@ -541,6 +559,8 @@ export default function Home() {
         });
       }
       announceEffect("ESCOLHA O SEU DESTINO CORPORATIVO");
+      stateRef.current = "choice";
+      setGameState("choice");
       syncHud();
     }
 
@@ -627,6 +647,7 @@ export default function Home() {
         setWave(localWave);
         setLastOutcome("over");
         setScoreSaved(true);
+        setPromotionCountdown(3);
         playSound("over");
         stopMusic();
         stateRef.current = "promotion";
@@ -635,9 +656,13 @@ export default function Home() {
       }
 
       if (powerUp.kind === "call") {
+        callLoops += 1;
         playSound("start");
         resetWaveOne(true);
         announceEffect("NOVO CHAMADO: pontuação mantida");
+        stateRef.current = "playing";
+        setGameState("playing");
+        startMusic();
         return;
       }
 
@@ -786,7 +811,8 @@ export default function Home() {
     }
 
     function update(delta: number) {
-      if (stateRef.current !== "playing") return;
+      const choosingFinalReward = stateRef.current === "choice";
+      if (stateRef.current !== "playing" && !choosingFinalReward) return;
       frame += 1;
       spawnTimer -= delta;
       dataTimer -= delta;
@@ -802,7 +828,7 @@ export default function Home() {
       effectBanner = Math.max(0, effectBanner - delta * 60);
       weaponLevel = localWave >= 4 ? 3 : localWave >= 2 ? 2 : 1;
       const wantsBurst = keys.current.has(" ");
-      const burstActive = wantsBurst && burstStamina > 0;
+      const burstActive = !choosingFinalReward && wantsBurst && burstStamina > 0;
       if (burstActive) {
         burstStamina = Math.max(0, burstStamina - BURST_STAMINA_COST * delta);
       } else {
@@ -827,6 +853,28 @@ export default function Home() {
         const currentSpeed = player.speed * (player.haste > 0 ? 1.34 : 1);
         player.x = clamp(player.x + move.x * currentSpeed * delta, 28, WORLD.width - 28);
         player.y = clamp(player.y + move.y * currentSpeed * delta, 36, WORLD.height - 28);
+      }
+
+      if (choosingFinalReward) {
+        for (let i = powerUps.length - 1; i >= 0; i -= 1) {
+          const powerUp = powerUps[i];
+          powerUp.pulse += delta * 8;
+          if (distance(powerUp, player) < player.size * 0.55 + 18) {
+            collectPowerUp(powerUp);
+            powerUps.splice(i, 1);
+          }
+        }
+        for (let i = particles.length - 1; i >= 0; i -= 1) {
+          const particle = particles[i];
+          particle.x += particle.vx * delta;
+          particle.y += particle.vy * delta;
+          particle.vx *= 0.96;
+          particle.vy *= 0.96;
+          particle.ttl -= delta * 60;
+          if (particle.ttl <= 0) particles.splice(i, 1);
+        }
+        if (frame % 18 === 0) syncHud();
+        return;
       }
 
       if (shotTimer <= 0) {
@@ -1123,15 +1171,16 @@ export default function Home() {
       }
       const bar = actor.size;
       if (actor.kind === "boss" && actor.bossPhase) {
+        const phaseColors = ["#22c55e", "#facc15", "#ef4444"];
         for (let phase = 1; phase <= 3; phase += 1) {
-          const yOffset = actor.y + actor.size / 2 + 5 + (phase - 1) * 6;
+          const yOffset = actor.y + actor.size / 2 + 5 + (3 - phase) * 6;
           const fill = phase < actor.bossPhase
-            ? 1
+            ? 0
             : phase === actor.bossPhase
               ? actor.hp / actor.maxHp
-              : 0;
+              : 1;
           pixelRect(ctx, actor.x - bar / 2, yOffset, bar, 4, "#111827");
-          pixelRect(ctx, actor.x - bar / 2, yOffset, bar * fill, 4, phase === 3 ? "#ef4444" : "#facc15");
+          pixelRect(ctx, actor.x - bar / 2, yOffset, bar * fill, 4, phaseColors[phase - 1]);
         }
       } else {
         pixelRect(ctx, actor.x - bar / 2, actor.y + actor.size / 2 + 5, bar, 4, "#111827");
@@ -1192,6 +1241,27 @@ export default function Home() {
       ctx.fillText(powerUpLabels[powerUp.kind], powerUp.x, y - 7);
     }
 
+    function drawFinalChoiceScene() {
+      if (!finalBossCorpse) return;
+      const x = finalBossCorpse.x - 50;
+      const y = finalBossCorpse.y - 24;
+      pixelRect(ctx, finalBossCorpse.x - 70, finalBossCorpse.y + 42, 140, 8, "rgba(0, 0, 0, 0.4)");
+      pixelRect(ctx, x, y + 16, 98, 58, "#450a0a");
+      pixelRect(ctx, x + 6, y + 22, 86, 46, "#7f1d1d");
+      pixelRect(ctx, x + 16, y + 8, 64, 16, "#f97316");
+      pixelRect(ctx, x + 14, y + 34, 12, 8, "#fef3c7");
+      pixelRect(ctx, x + 72, y + 34, 12, 8, "#fef3c7");
+      pixelRect(ctx, x + 30, y + 54, 38, 5, "#111827");
+      pixelRect(ctx, x - 18, y + 58, 120, 8, "#020617");
+      ctx.fillStyle = "#facc15";
+      ctx.font = "bold 18px 'Courier New', monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("DIRETORIA CAIU", WORLD.width / 2, 72);
+      ctx.fillStyle = "#bfdbfe";
+      ctx.font = "14px 'Courier New', monospace";
+      ctx.fillText("Escolha a sua próxima mentira corporativa", WORLD.width / 2, 96);
+    }
+
     function drawPlayer() {
       const blink = player.invincible > 0 && Math.floor(frame / 4) % 2 === 0;
       const run = Math.floor(visualFrame / 8) % 2;
@@ -1219,11 +1289,16 @@ export default function Home() {
       pixelRect(ctx, x + 7, y + 15, 10, 3, "#fef3c7");
       pixelRect(ctx, x + 20, y + 6, 16, 7, "#facc15");
       pixelRect(ctx, x + 34, y + 8, 7, 3, "#fde68a");
-      if (shotTimer < 0.06) pixelRect(ctx, x + 40, y + 7, 10, 5, "#f97316");
+      if (stateRef.current !== "choice" && shotTimer < 0.06) pixelRect(ctx, x + 40, y + 7, 10, 5, "#f97316");
       ctx.fillStyle = "#f8fafc";
       ctx.font = "10px 'Courier New', monospace";
       ctx.textAlign = "center";
       ctx.fillText("Java Pleno", player.x, player.y - 20);
+      if (callLoops > 0) {
+        ctx.fillStyle = "#facc15";
+        ctx.font = "bold 14px 'Courier New', monospace";
+        ctx.fillText(`+${callLoops}`, player.x, player.y - 36);
+      }
     }
 
     function drawGrid() {
@@ -1310,6 +1385,7 @@ export default function Home() {
       ctx.save();
       ctx.translate(shakeX, shakeY);
       drawGrid();
+      if (stateRef.current === "choice") drawFinalChoiceScene();
       for (const particle of particles) {
         const size = Math.max(2, Math.min(8, particle.ttl / 6));
         pixelRect(ctx, particle.x, particle.y, size, size, particle.color);
@@ -1338,7 +1414,7 @@ export default function Home() {
         ctx.fillText("CHEFE ENTROU NA CALL", WORLD.width / 2, 64);
       }
 
-      if (effectBanner > 0 && stateRef.current === "playing") {
+      if (effectBanner > 0 && (stateRef.current === "playing" || stateRef.current === "choice")) {
         ctx.fillStyle = "rgba(15, 23, 42, 0.82)";
         ctx.fillRect(WORLD.width / 2 - 230, WORLD.height - 72, 460, 34);
         ctx.fillStyle = "#7dd3fc";
@@ -1382,7 +1458,7 @@ export default function Home() {
     };
   }, [activateMenuOption, playSound, startMusic, stopMusic]);
 
-  const status = gameState === "playing" ? "Em combate" : gameState === "paused" ? "Pausado" : gameState === "promotion" ? "Promoção?" : gameState === "won" ? "Vitória" : gameState === "over" ? "Fim de jogo" : "Pronto";
+  const status = gameState === "playing" ? "Em combate" : gameState === "choice" ? "Escolha final" : gameState === "paused" ? "Pausado" : gameState === "promotion" ? "Promoção?" : gameState === "won" ? "Vitória" : gameState === "over" ? "Fim de jogo" : "Pronto";
   const finalScreen = gameState === "over" || gameState === "won";
   const promotionScreen = gameState === "promotion";
   const menuScreen = gameState === "menu";
@@ -1592,9 +1668,7 @@ export default function Home() {
                 Parabéns: você aceitou o cargo, herdou o legado sem teste, ganhou acesso a mais reuniões e morreu de responsabilidade.
               </p>
               <p className="score-mode">O pleno nunca vira sênior. Ele só desbloqueia outro board.</p>
-              <button className="play-again" type="button" onClick={openPromotionScore}>
-                Ir para HIGH SCORES
-              </button>
+              <p className="promotion-countdown">High Scores em {promotionCountdown}</p>
             </div>
           </div>
         )}
