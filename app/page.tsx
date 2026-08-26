@@ -201,7 +201,6 @@ function loadSoundSettings() {
 }
 
 export default function Home() {
-  const [initialSound] = useState(() => loadSoundSettings());
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const keys = useRef(new Set<string>());
   const pointer = useRef({ active: false, x: WORLD.width / 2, y: WORLD.height / 2 });
@@ -212,8 +211,9 @@ export default function Home() {
   const audioRef = useRef<AudioContext | null>(null);
   const musicTimerRef = useRef<number | null>(null);
   const musicStepRef = useRef(0);
-  const mutedRef = useRef(initialSound.muted);
-  const volumeRef = useRef(initialSound.volume);
+  const soundHydratedRef = useRef(false);
+  const mutedRef = useRef(false);
+  const volumeRef = useRef(0.35);
   const lastSoundRef = useRef<Record<SoundName, number>>({
     shoot: 0,
     hit: 0,
@@ -230,15 +230,15 @@ export default function Home() {
   const [resetCount, setResetCount] = useState(0);
   const [hp, setHp] = useState(100);
   const [boss, setBoss] = useState("Gerente de Sprint");
-  const [highScores, setHighScores] = useState<HighScore[]>(() => loadHighScores());
+  const [highScores, setHighScores] = useState<HighScore[]>([]);
   const [playerName, setPlayerName] = useState("");
   const [scoreSaved, setScoreSaved] = useState(true);
   const [scoreMessage, setScoreMessage] = useState("Ranking global carregando...");
   const [lastOutcome, setLastOutcome] = useState<"over" | "won">("over");
   const [menuPanel, setMenuPanel] = useState<MenuPanel>("home");
   const [menuIndex, setMenuIndex] = useState(0);
-  const [muted, setMuted] = useState(initialSound.muted);
-  const [volume, setVolume] = useState(initialSound.volume);
+  const [muted, setMuted] = useState(false);
+  const [volume, setVolume] = useState(0.35);
   const [biome, setBiome] = useState(biomeNames[0]);
   const [upgrade, setUpgrade] = useState("JDK 8");
   const [bossProgress, setBossProgress] = useState("0/14 mobs");
@@ -342,8 +342,22 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      const savedSound = loadSoundSettings();
+      soundHydratedRef.current = true;
+      mutedRef.current = savedSound.muted;
+      volumeRef.current = savedSound.volume;
+      setMuted(savedSound.muted);
+      setVolume(savedSound.volume);
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, []);
+
+  useEffect(() => {
     mutedRef.current = muted;
     volumeRef.current = volume;
+    if (!soundHydratedRef.current) return;
     window.localStorage.setItem(SOUND_KEY, JSON.stringify({ muted, volume }));
     if (muted || volume <= 0) stopMusic();
     else if (stateRef.current === "playing") startMusic();
@@ -366,6 +380,7 @@ export default function Home() {
         setScoreMessage("Ranking global");
       })
       .catch(() => {
+        setHighScores(loadHighScores());
         setScoreMessage("Ranking local offline");
       });
   }
@@ -395,6 +410,12 @@ export default function Home() {
     setGameState("menu");
     stopMusic();
   }
+
+  const resumeGame = useCallback(() => {
+    stateRef.current = "playing";
+    setGameState("playing");
+    startMusic();
+  }, [startMusic]);
 
   useEffect(() => {
     if (gameState !== "promotion") return;
@@ -874,9 +895,7 @@ export default function Home() {
         stopMusic();
         setGameState("paused");
       } else if (event.key === "Escape" && stateRef.current === "paused") {
-        stateRef.current = "playing";
-        setGameState("playing");
-        startMusic();
+        resumeGame();
       }
       keys.current.add(event.key.toLowerCase());
     };
@@ -1668,12 +1687,13 @@ export default function Home() {
       window.removeEventListener("pointercancel", onPointerUp);
       stopMusic();
     };
-  }, [activateMenuOption, playSound, startMusic, stopMusic]);
+  }, [activateMenuOption, playSound, resumeGame, startMusic, stopMusic]);
 
   const status = gameState === "playing" ? "Em combate" : gameState === "choice" ? "Escolha final" : gameState === "paused" ? "Pausado" : gameState === "promotion" ? "Promoção?" : gameState === "won" ? "Vitória" : gameState === "over" ? "Fim de jogo" : "Pronto";
   const finalScreen = gameState === "over" || gameState === "won";
   const promotionScreen = gameState === "promotion";
   const menuScreen = gameState === "menu";
+  const pauseScreen = gameState === "paused";
   const frameScreen = finalScreen || promotionScreen || (menuScreen && menuPanel !== "home");
   const jdkPower = upgrade === "JDK 21" ? 9 : upgrade === "JDK 17" ? 6 : 3;
 
@@ -1738,6 +1758,11 @@ export default function Home() {
             </label>
           </div>
         </div>
+        <aside className="hud-card sponsor-card" aria-label="Espaço de apoio">
+          <span>Patrocínio</span>
+          <strong>Apoie o jogo</strong>
+          <small>Espaço reservado</small>
+        </aside>
       </section>
 
       <section className="game-stage" aria-label="Arena do jogo">
@@ -1888,6 +1913,18 @@ export default function Home() {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        )}
+        {pauseScreen && (
+          <div className="pause-menu-overlay" role="dialog" aria-modal="true" aria-label="Jogo pausado">
+            <div className="pause-panel">
+              <p className="menu-kicker">Jogo pausado</p>
+              <h2>PAUSADO</h2>
+              <div className="menu-actions two">
+                <button type="button" onClick={resumeGame}>Continuar</button>
+                <button type="button" onClick={returnToTitle}>Sair do jogo</button>
+              </div>
             </div>
           </div>
         )}
