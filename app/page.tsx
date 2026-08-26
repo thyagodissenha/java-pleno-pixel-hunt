@@ -62,25 +62,25 @@ const SOUND_KEY = "java-pleno-pixel-hunt-sound";
 const bossNames = [
   "Gerente de Sprint",
   "Dono do Roadmap",
-  "Arquiteto das Reunioes",
+  "Arquiteto das Reuniões",
   "Diretor do Go-Live",
 ];
 const cloudLabels = ["Azure", "SQL", "Blob", "CI/CD", "Kafka", "BI"];
 const enemyLabels: Record<Exclude<EnemyKind, "boss" | "data">, string> = {
-  user: "Usuario",
+  user: "Usuário",
   qa: "QA nervoso",
-  vip: "Usuario VIP",
+  vip: "Usuário VIP",
   incident: "Incidente P1",
   legacy: "Legado",
 };
 const powerUpLabels: Record<PowerUpKind, string> = {
-  coffee: "Cafe",
+  coffee: "Café",
   refactor: "Refactor",
   rollback: "Rollback",
   hotfix: "Hotfix",
   review: "Code Review",
 };
-const biomeNames = ["Escritorio", "Producao", "Cloud", "War Room"];
+const biomeNames = ["Escritório", "Produção", "Cloud", "War Room"];
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -355,7 +355,7 @@ export default function Home() {
         .slice(0, 10);
       saveHighScores(nextScores);
       setHighScores(nextScores);
-      setScoreMessage("Ranking local salvo. Global indisponivel.");
+      setScoreMessage("Ranking local salvo. Global indisponível.");
       playSound("save");
       setScoreSaved(true);
     }
@@ -407,7 +407,7 @@ export default function Home() {
       setScore(localScore);
       setWave(localWave);
       setHp(Math.max(0, Math.round(player.hp)));
-      setBoss(bossNames[bossIndex] ?? "Comite Executivo");
+      setBoss(bossNames[bossIndex] ?? "Comitê Executivo");
       setBiome(biomeNames[Math.min(bossIndex, biomeNames.length - 1)] ?? "War Room");
       setUpgrade(weaponLevel >= 3 ? "JDK 21" : weaponLevel === 2 ? "JDK 17" : "JDK 8");
     }
@@ -489,7 +489,7 @@ export default function Home() {
       localScore += 35;
       if (powerUp.kind === "coffee") {
         player.haste = 6;
-        announceEffect("CAFE: velocidade aumentada");
+        announceEffect("CAFÉ: velocidade aumentada");
       } else if (powerUp.kind === "refactor") {
         player.fury = 6;
         announceEffect("REFACTOR: tiros acelerados");
@@ -595,11 +595,14 @@ export default function Home() {
     };
     const onKeyUp = (event: KeyboardEvent) => keys.current.delete(event.key.toLowerCase());
     const onPointerMove = (event: PointerEvent) => {
+      event.preventDefault();
       const bounds = canvas.getBoundingClientRect();
       pointer.current.x = ((event.clientX - bounds.left) / bounds.width) * WORLD.width;
       pointer.current.y = ((event.clientY - bounds.top) / bounds.height) * WORLD.height;
     };
     const onPointerDown = (event: PointerEvent) => {
+      event.preventDefault();
+      canvas.setPointerCapture?.(event.pointerId);
       pointer.current.active = true;
       onPointerMove(event);
       if (stateRef.current === "menu") start();
@@ -609,7 +612,10 @@ export default function Home() {
         startMusic();
       }
     };
-    const onPointerUp = () => {
+    const onPointerUp = (event: PointerEvent) => {
+      if (canvas.hasPointerCapture?.(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
       pointer.current.active = false;
     };
 
@@ -618,6 +624,7 @@ export default function Home() {
     canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
 
     function shoot() {
       let target = enemies[0];
@@ -1098,7 +1105,7 @@ export default function Home() {
       ctx.fillText("GO-LIVE DOMINADO", cx, 306);
       ctx.fillStyle = "#bfdbfe";
       ctx.font = "18px 'Courier New', monospace";
-      ctx.fillText(`Voce limpou a firma com ${localScore} pontos`, cx, 342);
+      ctx.fillText(`Você limpou a firma com ${localScore} pontos`, cx, 342);
       ctx.fillStyle = "#fde68a";
       ctx.font = "14px 'Courier New', monospace";
       ctx.fillText("Salve seu nome no HIGH SCORES", cx, 378);
@@ -1152,7 +1159,7 @@ export default function Home() {
       } else if (stateRef.current === "paused") {
         drawOverlay("PAUSADO", "Respira. A daily espera.");
       } else if (stateRef.current === "over") {
-        drawOverlay("PRODUCAO CAIU", `Pontuacao final: ${localScore}`);
+        drawOverlay("PRODUÇÃO CAIU", `Pontuação final: ${localScore}`);
       } else if (stateRef.current === "won") {
         drawVictoryOverlay();
       }
@@ -1177,11 +1184,12 @@ export default function Home() {
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
       stopMusic();
     };
   }, [activateMenuOption, playSound, startMusic, stopMusic]);
 
-  const status = gameState === "playing" ? "Em combate" : gameState === "paused" ? "Pausado" : gameState === "won" ? "Vitoria" : gameState === "over" ? "Fim de jogo" : "Pronto";
+  const status = gameState === "playing" ? "Em combate" : gameState === "paused" ? "Pausado" : gameState === "won" ? "Vitória" : gameState === "over" ? "Fim de jogo" : "Pronto";
   const finalScreen = gameState === "over" || gameState === "won";
   const menuScreen = gameState === "menu";
 
@@ -1226,11 +1234,11 @@ export default function Home() {
 
       <section className="game-stage" aria-label="Arena do jogo">
         <div className="canvas-frame">
-        <canvas ref={canvasRef} width={WORLD.width} height={WORLD.height} aria-label="Arena pixel art" />
+          <canvas ref={canvasRef} width={WORLD.width} height={WORLD.height} aria-label="Arena pixel art" />
         {menuScreen && (
           <div className={`menu-overlay ${menuPanel === "home" ? "menu-overlay-full" : ""}`} role="dialog" aria-label="Menu inicial">
             <div className={`menu-panel ${menuPanel === "home" ? "title-menu-panel" : ""}`}>
-              <p className="menu-kicker">Build instavel detectada</p>
+              <p className="menu-kicker">Build instável detectada</p>
 
               {menuPanel === "home" && (
                 <>
@@ -1262,7 +1270,7 @@ export default function Home() {
                     </div>
 
                     <div className="retro-scene users-scene" aria-hidden="true">
-                      <span className="speech">USUARIOS!</span>
+                      <span className="speech">USUÁRIOS!</span>
                       <span className="user u1" />
                       <span className="user u2" />
                       <span className="user u3" />
@@ -1286,7 +1294,7 @@ export default function Home() {
                       <span className="alert-sign">!</span>
                     </div>
 
-                    <div className="title-menu-actions" role="menu" aria-label="Opcoes do jogo (use as setas e Enter)">
+                    <div className="title-menu-actions" role="menu" aria-label="Opções do jogo (use as setas e Enter)">
                       <button
                         type="button"
                         role="menuitem"
@@ -1320,7 +1328,7 @@ export default function Home() {
                     </div>
                   </div>
                   <p className="menu-copy">
-                    Sobreviva aos usuarios, derrote os chefes e tente entrar no ranking global antes que alguem peca um deploy em sexta-feira.
+                    Sobreviva aos usuários, derrote os chefes e tente entrar no ranking global antes que alguém peça um deploy em sexta-feira.
                   </p>
                 </>
               )}
@@ -1357,9 +1365,9 @@ export default function Home() {
                   <h2>Como jogar</h2>
                   <ul className="help-list">
                     <li><strong>Mover</strong><span>WASD, setas ou arraste no celular.</span></li>
-                    <li><strong>Atirar</strong><span>Automatico no inimigo mais proximo.</span></li>
-                    <li><strong>Rajada</strong><span>Espaco acelera os tiros.</span></li>
-                    <li><strong>Power-ups</strong><span>Cafe, Refactor, Rollback, Hotfix e Code Review ajudam na partida.</span></li>
+                    <li><strong>Atirar</strong><span>Automático no inimigo mais próximo.</span></li>
+                    <li><strong>Rajada</strong><span>Espaço acelera os tiros.</span></li>
+                    <li><strong>Power-ups</strong><span>Café, Refactor, Rollback, Hotfix e Code Review ajudam na partida.</span></li>
                     <li><strong>Objetivo</strong><span>Sobreviva, derrube chefes e salve seu score.</span></li>
                   </ul>
                   <div className="menu-actions two">
@@ -1372,9 +1380,9 @@ export default function Home() {
           </div>
         )}
         {finalScreen && (
-          <div className="score-overlay" role="dialog" aria-modal="true" aria-label="Ranking de maiores pontuacoes">
+          <div className="score-overlay" role="dialog" aria-modal="true" aria-label="Ranking de maiores pontuações">
             <div className="score-panel">
-              <p className="score-kicker">{gameState === "won" ? "Missao completa" : "Producao caiu"}</p>
+              <p className="score-kicker">{gameState === "won" ? "Missão completa" : "Produção caiu"}</p>
               <h2>HIGH SCORES</h2>
               <p className="score-mode">{scoreMessage}</p>
               {!scoreSaved ? (
@@ -1428,7 +1436,7 @@ export default function Home() {
         </div>
         <div>
           <strong>Arma e controles</strong>
-          <span>{upgrade} · WASD ou setas para mover, espaco para rajada, Esc pausa. Colete power-ups e salve seu nome no HIGH SCORES.</span>
+          <span>{upgrade} · WASD ou setas para mover, espaço para rajada, Esc pausa. No toque, arraste na arena para se mover.</span>
         </div>
       </section>
     </main>

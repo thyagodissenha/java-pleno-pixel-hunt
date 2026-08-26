@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     return Response.json({ scores }, { status: 201 });
   } catch {
     return Response.json(
-      { error: "Nao foi possivel salvar o ranking agora." },
+      { error: "Não foi possível salvar o ranking agora." },
       { status: 503 },
     );
   }
