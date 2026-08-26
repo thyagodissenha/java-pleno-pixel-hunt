@@ -97,6 +97,10 @@ const BURST_STAMINA_MAX = 100;
 const BURST_STAMINA_RECHARGE = 8;
 const BURST_STAMINA_COST = 32;
 const STAMINA_POWER_UP_GAIN = 5;
+const FINAL_CHOICE_OFFSET_X = 104;
+const FINAL_CHOICE_OFFSET_Y = 76;
+const FINAL_CHOICE_PICKUP_RADIUS = 68;
+const FINAL_CHOICE_CLICK_RADIUS = 52;
 
 function bossKillTarget(wave: number) {
   return 10 + wave * 4;
@@ -108,6 +112,10 @@ function clamp(value: number, min: number, max: number) {
 
 function distance(a: { x: number; y: number }, b: { x: number; y: number }) {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function isFinalChoicePowerUp(kind: PowerUpKind) {
+  return kind === "promotion" || kind === "call";
 }
 
 function normalize(x: number, y: number) {
@@ -547,10 +555,11 @@ export default function Home() {
       enemies.length = 0;
       shots.length = 0;
       powerUps.length = 0;
-      const choiceY = clamp(y, 150, WORLD.height - 120);
+      const choiceCenterX = clamp(player.x, FINAL_CHOICE_OFFSET_X + 40, WORLD.width - FINAL_CHOICE_OFFSET_X - 40);
+      const choiceY = clamp(player.y - FINAL_CHOICE_OFFSET_Y, 120, WORLD.height - 110);
       const choices: Array<{ kind: PowerUpKind; x: number; y: number }> = [
-        { kind: "promotion", x: WORLD.width / 2 - 180, y: choiceY },
-        { kind: "call", x: WORLD.width / 2 + 180, y: choiceY },
+        { kind: "promotion", x: choiceCenterX - FINAL_CHOICE_OFFSET_X, y: choiceY },
+        { kind: "call", x: choiceCenterX + FINAL_CHOICE_OFFSET_X, y: choiceY },
       ];
       for (const choice of choices) {
         powerUps.push({
@@ -646,6 +655,10 @@ export default function Home() {
 
     function collectPowerUp(powerUp: PowerUp) {
       if (powerUp.kind === "promotion") {
+        finalChoicePending = false;
+        bossSpawned = false;
+        finalBossCorpse = null;
+        powerUps.length = 0;
         setScore(localScore);
         setWave(localWave);
         setLastOutcome("over");
@@ -770,6 +783,17 @@ export default function Home() {
       canvas.setPointerCapture?.(event.pointerId);
       pointer.current.active = true;
       onPointerMove(event);
+      if (stateRef.current === "choice" || finalChoicePending) {
+        for (let i = powerUps.length - 1; i >= 0; i -= 1) {
+          const powerUp = powerUps[i];
+          if (!powerUp) continue;
+          if (isFinalChoicePowerUp(powerUp.kind) && distance(powerUp, pointer.current) < FINAL_CHOICE_CLICK_RADIUS) {
+            powerUps.splice(i, 1);
+            collectPowerUp(powerUp);
+            return;
+          }
+        }
+      }
       if (stateRef.current === "menu") start();
       if (stateRef.current === "paused") {
         stateRef.current = "playing";
@@ -861,10 +885,15 @@ export default function Home() {
       if (choosingFinalReward) {
         for (let i = powerUps.length - 1; i >= 0; i -= 1) {
           const powerUp = powerUps[i];
+          if (!powerUp) continue;
           powerUp.pulse += delta * 8;
-          if (distance(powerUp, player) < player.size * 0.55 + 18) {
-            collectPowerUp(powerUp);
+          const pickupRadius = isFinalChoicePowerUp(powerUp.kind)
+            ? FINAL_CHOICE_PICKUP_RADIUS
+            : player.size * 0.55 + 18;
+          if (distance(powerUp, player) < pickupRadius) {
             powerUps.splice(i, 1);
+            collectPowerUp(powerUp);
+            if (stateRef.current !== "choice" && !finalChoicePending) return;
           }
         }
         for (let i = particles.length - 1; i >= 0; i -= 1) {
@@ -1022,12 +1051,17 @@ export default function Home() {
 
       for (let s = shots.length - 1; s >= 0; s -= 1) {
         const shot = shots[s];
+        if (!shot) {
+          shots.splice(s, 1);
+          continue;
+        }
         if (shot.ttl <= 0 || shot.x < -20 || shot.x > WORLD.width + 20 || shot.y < -20 || shot.y > WORLD.height + 20) {
           shots.splice(s, 1);
           continue;
         }
         for (let e = enemies.length - 1; e >= 0; e -= 1) {
           const enemy = enemies[e];
+          if (!enemy) continue;
           if (distance(shot, enemy) < enemy.size * 0.55 + 7) {
             const damage = player.fury > 0 ? 26 : player.focus > 0 ? 23 : 18;
             enemy.hp -= damage;
@@ -1193,9 +1227,10 @@ export default function Home() {
 
     function drawPowerUp(powerUp: PowerUp) {
       const bob = Math.sin(powerUp.pulse) * 3;
+      const finalChoice = isFinalChoicePowerUp(powerUp.kind);
       const x = powerUp.x - 13;
       const y = powerUp.y - 13 + bob;
-      const ring = 20 + Math.sin(powerUp.pulse) * 4;
+      const ring = (finalChoice ? 44 : 20) + Math.sin(powerUp.pulse) * (finalChoice ? 7 : 4);
       const color: Record<PowerUpKind, string> = {
         coffee: "#a16207",
         refactor: "#14b8a6",
@@ -1207,8 +1242,18 @@ export default function Home() {
         call: "#38bdf8",
       };
       ctx.strokeStyle = color[powerUp.kind];
-      ctx.lineWidth = 2;
+      ctx.lineWidth = finalChoice ? 3 : 2;
       ctx.strokeRect(Math.round(powerUp.x - ring / 2), Math.round(powerUp.y - ring / 2 + bob), Math.round(ring), Math.round(ring));
+      if (finalChoice) {
+        ctx.strokeStyle = "rgba(248, 250, 252, 0.5)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(
+          Math.round(powerUp.x - FINAL_CHOICE_PICKUP_RADIUS / 2),
+          Math.round(powerUp.y - FINAL_CHOICE_PICKUP_RADIUS / 2 + bob),
+          FINAL_CHOICE_PICKUP_RADIUS,
+          FINAL_CHOICE_PICKUP_RADIUS,
+        );
+      }
       pixelRect(ctx, x, y, 26, 26, "#020617");
       pixelRect(ctx, x + 3, y + 3, 20, 20, color[powerUp.kind]);
       if (powerUp.kind === "coffee") {
@@ -1263,6 +1308,11 @@ export default function Home() {
       ctx.fillStyle = "#bfdbfe";
       ctx.font = "14px 'Courier New', monospace";
       ctx.fillText("Escolha a sua próxima mentira corporativa", WORLD.width / 2, 96);
+      ctx.fillStyle = "#f8fafc";
+      ctx.font = "12px 'Courier New', monospace";
+      ctx.fillText("Encoste no powerup ou toque nele para confirmar", WORLD.width / 2, 120);
+      ctx.fillStyle = "#fde68a";
+      ctx.fillText("Promoção encerra · Chamado reinicia mantendo pontos", WORLD.width / 2, 140);
     }
 
     function drawPlayer() {
