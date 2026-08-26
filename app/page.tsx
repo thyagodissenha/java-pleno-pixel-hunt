@@ -107,6 +107,7 @@ export default function Home() {
   const [highScores, setHighScores] = useState<HighScore[]>([]);
   const [playerName, setPlayerName] = useState("");
   const [scoreSaved, setScoreSaved] = useState(true);
+  const [scoreMessage, setScoreMessage] = useState("Ranking global carregando...");
   const [lastOutcome, setLastOutcome] = useState<"over" | "won">("over");
 
   useEffect(() => {
@@ -115,6 +116,18 @@ export default function Home() {
 
   useEffect(() => {
     setHighScores(loadHighScores());
+    fetch("/api/scores", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : Promise.reject()))
+      .then((payload: unknown) => {
+        const data = payload as { scores?: HighScore[] };
+        const scores = data.scores ?? [];
+        setHighScores(scores);
+        saveHighScores(scores);
+        setScoreMessage("Ranking global");
+      })
+      .catch(() => {
+        setScoreMessage("Ranking local offline");
+      });
   }, []);
 
   function startNewGame() {
@@ -123,28 +136,45 @@ export default function Home() {
     startGameRef.current();
   }
 
-  function submitScore(event: FormEvent<HTMLFormElement>) {
+  async function submitScore(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const cleanName = playerName.trim().replace(/\s+/g, " ").slice(0, 14) || "DEV ANON";
-    const nextScores = [
-      {
-        name: cleanName.toUpperCase(),
-        score,
-        wave,
-        outcome: lastOutcome,
-        createdAt: new Date().toISOString(),
-      },
-      ...highScores,
-    ].sort((a, b) => b.score - a.score || b.wave - a.wave).slice(0, 10);
+    const entry = {
+      name: cleanName.toUpperCase(),
+      score,
+      wave,
+      outcome: lastOutcome,
+      createdAt: new Date().toISOString(),
+    };
 
-    saveHighScores(nextScores);
-    setHighScores(nextScores);
-    setScoreSaved(true);
+    setScoreMessage("Salvando score...");
+    try {
+      const response = await fetch("/api/scores", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entry),
+      });
+      if (!response.ok) throw new Error("Score API failed");
+      const payload = (await response.json()) as { scores: HighScore[] };
+      setHighScores(payload.scores);
+      saveHighScores(payload.scores);
+      setScoreMessage("Ranking global atualizado");
+      setScoreSaved(true);
+    } catch {
+      const nextScores = [entry, ...highScores]
+        .sort((a, b) => b.score - a.score || b.wave - a.wave)
+        .slice(0, 10);
+      saveHighScores(nextScores);
+      setHighScores(nextScores);
+      setScoreMessage("Ranking local salvo. Global indisponivel.");
+      setScoreSaved(true);
+    }
   }
 
   function clearHighScores() {
     window.localStorage.removeItem(HIGH_SCORE_KEY);
     setHighScores([]);
+    setScoreMessage("Ranking local limpo");
   }
 
   useEffect(() => {
@@ -613,6 +643,7 @@ export default function Home() {
             <div className="score-panel">
               <p className="score-kicker">{gameState === "won" ? "Missao completa" : "Producao caiu"}</p>
               <h2>HIGH SCORES</h2>
+              <p className="score-mode">{scoreMessage}</p>
               {!scoreSaved ? (
                 <form className="score-form" onSubmit={submitScore}>
                   <label htmlFor="player-name">Digite seu nome</label>
@@ -641,7 +672,7 @@ export default function Home() {
                     <li key={`${entry.createdAt}-${entry.name}`}>
                       <span>{String(index + 1).padStart(2, "0")}</span>
                       <strong>{entry.name}</strong>
-                      <em>{entry.score}</em>
+                      <em>{entry.score}<small>Onda {entry.wave}</small></em>
                     </li>
                   ))
                 ) : (

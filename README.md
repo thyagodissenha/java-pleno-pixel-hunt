@@ -19,7 +19,8 @@ O jogo mistura humor de desenvolvimento, correria de go-live e aquele leve deses
 - Projetis/obstaculos inspirados em Azure, SQL, CI/CD, Kafka, BI e deploys
 - Sistema de vida, pontuacao, ondas e vitoria
 - Tela HIGH SCORES com nome do jogador
-- Ranking local salvo no navegador
+- Ranking global via API
+- Fallback local no navegador quando o servidor estiver indisponivel
 - Visual pixel art desenhado em Canvas
 - Suporte a teclado e toque
 
@@ -38,7 +39,9 @@ No celular ou tablet, arraste na arena para mover o personagem.
 
 Ao final da partida, o jogo solicita o nome do jogador e salva o resultado em uma tela **HIGH SCORES** inspirada em arcades classicos.
 
-Nesta versao, o ranking fica gravado no `localStorage` do navegador. Isso significa que cada aparelho/navegador mantem sua propria lista de pontuacoes.
+Em producao, o ranking usa a rota `/api/scores` e persiste os resultados com Vercel Blob quando a variavel `BLOB_READ_WRITE_TOKEN` esta configurada.
+
+Em desenvolvimento local, o ranking usa `data/high-scores.json`. Se a API global estiver indisponivel no navegador, o jogo salva uma copia local em `localStorage`.
 
 ## Stack
 
@@ -47,6 +50,7 @@ Nesta versao, o ranking fica gravado no `localStorage` do navegador. Isso signif
 - TypeScript
 - HTML5 Canvas
 - Tailwind CSS
+- Vercel Blob
 - Vinext / Sites
 
 ## Rodando localmente
@@ -86,9 +90,12 @@ npm run build
 
 ```text
 app/
+  api/scores/    # API do ranking global
   page.tsx       # Logica do jogo e renderizacao do Canvas
   globals.css    # Visual arcade/pixel art da pagina
   layout.tsx     # Metadados e layout base
+lib/
+  high-scores.ts # Persistencia e validacao do ranking
 public/
   favicon.svg
 ```

@@ -150,6 +150,7 @@ canvas {
 }
 
 .score-kicker,
+.score-mode,
 .score-panel h2,
 .score-form label,
 .score-form span {
@@ -170,6 +171,13 @@ canvas {
   font-size: clamp(30px, 7vw, 52px);
   line-height: 1;
   text-shadow: 4px 4px 0 #7f1d1d;
+}
+
+.score-mode {
+  color: #94a3b8;
+  font-size: 11px;
+  margin-top: 8px;
+  text-transform: uppercase;
 }
 
 .score-form {
@@ -264,9 +272,18 @@ canvas {
 }
 
 .score-list em {
+  display: grid;
+  gap: 1px;
   color: #facc15;
   font-style: normal;
   text-align: right;
+}
+
+.score-list small {
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: uppercase;
 }
 
 .score-list .empty-score {

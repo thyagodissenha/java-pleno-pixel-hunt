@@ -13,11 +13,11 @@ Este roadmap organiza as proximas melhorias do jogo, saindo de um prototipo joga
 
 ## Fase 2: Ranking global
 
-- Salvar scores em um banco ou servico persistente.
-- Criar tela de ranking global.
-- Validar nomes dos jogadores.
+- [x] Salvar scores em um servico persistente.
+- [x] Criar tela de ranking global.
+- [x] Validar nomes dos jogadores.
+- [x] Mostrar onda alcancada e resultado da partida na estrutura do score.
 - Adicionar protecao simples contra spam.
-- Mostrar data, onda alcancada e resultado da partida.
 - Separar rankings por modo de jogo, se houver novos modos no futuro.
 
 ## Fase 3: Gameplay
@@ -59,8 +59,8 @@ Este roadmap organiza as proximas melhorias do jogo, saindo de um prototipo joga
 
 ## Prioridade recomendada
 
-1. Ranking global.
-2. Tela inicial e menus.
+1. Tela inicial e menus.
+2. Protecao anti-spam para o ranking.
 3. Power-ups.
 4. Som.
 5. Sprites melhores.
@@ -68,4 +68,4 @@ Este roadmap organiza as proximas melhorias do jogo, saindo de um prototipo joga
 
 ## Proxima entrega sugerida
 
-Implementar o ranking global, porque ele transforma o link publico em uma experiencia competitiva entre amigos e colegas.
+Criar uma tela inicial completa com acesso direto ao ranking, instrucoes e inicio de partida.
