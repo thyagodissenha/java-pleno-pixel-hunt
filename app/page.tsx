@@ -1057,9 +1057,13 @@ export default function Home() {
       ctx.fillText(biomeNames[theme], 62, 48);
     }
 
-    function drawOverlay(title: string, text: string) {
+    function drawDim() {
       ctx.fillStyle = "rgba(8, 13, 24, 0.76)";
       ctx.fillRect(0, 0, WORLD.width, WORLD.height);
+    }
+
+    function drawOverlay(title: string, text: string) {
+      drawDim();
       ctx.fillStyle = "#f8fafc";
       ctx.font = "bold 42px 'Courier New', monospace";
       ctx.textAlign = "center";
@@ -1143,8 +1147,8 @@ export default function Home() {
         ctx.fillText(effectMessage, WORLD.width / 2, WORLD.height - 50);
       }
 
-      if (stateRef.current === "menu") {
-        drawOverlay("JAVA PLENO: ESTOUROU A BUILD", "Sobreviva aos usuarios, dados e chefes da firma");
+      if (stateRef.current === "menu" && menuPanelRef.current !== "home") {
+        drawDim();
       } else if (stateRef.current === "paused") {
         drawOverlay("PAUSADO", "Respira. A daily espera.");
       } else if (stateRef.current === "over") {
@@ -1221,9 +1225,10 @@ export default function Home() {
       </section>
 
       <section className="game-stage" aria-label="Arena do jogo">
+        <div className="canvas-frame">
         <canvas ref={canvasRef} width={WORLD.width} height={WORLD.height} aria-label="Arena pixel art" />
         {menuScreen && (
-          <div className="menu-overlay" role="dialog" aria-label="Menu inicial">
+          <div className={`menu-overlay ${menuPanel === "home" ? "menu-overlay-full" : ""}`} role="dialog" aria-label="Menu inicial">
             <div className={`menu-panel ${menuPanel === "home" ? "title-menu-panel" : ""}`}>
               <p className="menu-kicker">Build instavel detectada</p>
 
@@ -1413,6 +1418,7 @@ export default function Home() {
             </div>
           </div>
         )}
+        </div>
       </section>
 
       <section className="bottombar" aria-label="Controles e alvo">
