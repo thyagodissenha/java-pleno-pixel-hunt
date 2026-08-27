@@ -14,7 +14,7 @@ export type HighScore = {
 const SCORE_PATH = "java-pleno-pixel-hunt/high-scores.json";
 const LOCAL_SCORE_FILE = path.join(process.cwd(), "data", "high-scores.json");
 
-function cleanScores(scores: HighScore[]) {
+export function cleanScores(scores: HighScore[]) {
   return scores
     .filter((score) => Number.isFinite(score.score) && Number.isFinite(score.wave))
     .sort((a, b) => b.score - a.score || b.wave - a.wave || (b.resets ?? 0) - (a.resets ?? 0) || a.createdAt.localeCompare(b.createdAt))
@@ -22,7 +22,7 @@ function cleanScores(scores: HighScore[]) {
 }
 
 export function sanitizeScore(input: unknown): HighScore {
-  const body = input as Partial<HighScore>;
+  const body = input && typeof input === "object" ? input as Partial<HighScore> : {};
   const rawName = typeof body.name === "string" ? body.name : "";
   const name = rawName.trim().replace(/\s+/g, " ").slice(0, 14).toUpperCase() || "DEV ANON";
   const score = Math.max(0, Math.min(999999, Math.floor(Number(body.score) || 0)));
