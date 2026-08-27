@@ -38,3 +38,6 @@ next-env.d.ts
 /work/
 /data/high-scores.json
 site-build.tar.gz
+
+# agent skills (local tooling)
+.agents/skills/
