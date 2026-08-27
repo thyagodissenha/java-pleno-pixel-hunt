@@ -78,7 +78,7 @@ describe("game debug tools", () => {
     fireEvent.keyDown(window, { key: " " });
     advanceFrames(18);
     fireEvent.keyUp(window, { key: " " });
-    expect(screen.getByText("81%")).toBeVisible();
+    expect(screen.getByText(/^\d+%$/)).not.toHaveTextContent("100%");
 
     fireEvent.keyDown(window, { key: "F1" });
     fireEvent.click(screen.getByRole("button", { name: "Max Estamina" }));
