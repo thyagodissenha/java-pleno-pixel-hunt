@@ -1,112 +1,195 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const blob = vi.hoisted(() => ({
-  get: vi.fn(),
-  put: vi.fn(),
+const adapters = vi.hoisted(() => ({ acquire: vi.fn(), claim: vi.fn(), complete: vi.fn(), release: vi.fn() }));
+const scores = vi.hoisted(() => ({ add: vi.fn(), read: vi.fn() }));
+
+vi.mock("@/lib/score-rate-limit", () => ({
+  createRateLimitStore: () => ({ acquire: adapters.acquire }),
 }));
 
-vi.mock("@vercel/blob", () => blob);
+vi.mock("@/lib/score-idempotency", () => ({
+  createIdempotencyStore: () => ({
+    claim: adapters.claim,
+    complete: adapters.complete,
+    release: adapters.release,
+  }),
+}));
 
-const scorePayload = {
-  name: "DEV",
-  score: 1200,
-  wave: 4,
-  resets: 1,
-  outcome: "over",
-};
+vi.mock("@/lib/high-scores", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/high-scores")>()),
+  addHighScore: scores.add,
+  readHighScores: scores.read,
+}));
 
-async function loadPost() {
-  const route = await import("@/app/api/scores/route");
-  return route.POST;
+const scorePayload = { name: "DEV", score: 1200, wave: 4, resets: 1, outcome: "over" };
+
+async function loadRoute() {
+  return import("@/app/api/scores/route");
 }
 
-function scoreRequest(headers: HeadersInit = {}) {
+function scoreRequest({ body = scorePayload, headers = {} }: { body?: unknown; headers?: HeadersInit } = {}) {
   return new Request("http://localhost/api/scores", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify(scorePayload),
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": "submission-1",
+      "x-forwarded-for": "203.0.113.1",
+      ...headers,
+    },
+    body: JSON.stringify(body),
   });
 }
 
-describe("POST /api/scores", () => {
+describe("/api/scores", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-27T12:00:00.000Z"));
-    vi.stubEnv("VERCEL", "1");
-    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "test-token");
-    blob.get.mockReset().mockResolvedValue(null);
-    blob.put.mockReset().mockResolvedValue(undefined);
+    adapters.acquire.mockReset().mockResolvedValue({ allowed: true, backend: "redis", retryAfterMs: 10_000 });
+    adapters.claim.mockReset().mockResolvedValue("claimed");
+    adapters.complete.mockReset().mockResolvedValue(undefined);
+    adapters.release.mockReset().mockResolvedValue(undefined);
+    scores.read.mockReset().mockResolvedValue([]);
+    scores.add.mockReset().mockImplementation(async (score) => ({ scores: [score], storage: "blob" }));
   });
 
   afterEach(() => {
     vi.useRealTimers();
-    vi.unstubAllEnvs();
   });
 
-  it("returns a local fallback when Blob throws a configuration error", async () => {
-    blob.put.mockRejectedValueOnce(new Error("Missing token"));
-    const POST = await loadPost();
+  it("sanitizes and orders every score returned by GET", async () => {
+    scores.read.mockResolvedValue([
+      { name: "  low  ", score: 10, wave: 2, resets: 0, outcome: "invalid", createdAt: null },
+      { name: " high ", score: 900, wave: "3", resets: -2, outcome: "won", createdAt: 42 },
+    ]);
+    const { GET } = await loadRoute();
 
-    const response = await POST(scoreRequest({ "x-forwarded-for": "203.0.113.1" }));
+    const response = await GET();
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
-      scores: [{ ...scorePayload, name: "DEV", createdAt: "2026-08-27T12:00:00.000Z" }],
-      storage: "local",
+      scores: [
+        { name: "HIGH", score: 900, wave: 3, resets: 0, outcome: "won", createdAt: "2026-08-27T12:00:00.000Z" },
+        { name: "LOW", score: 10, wave: 2, resets: 0, outcome: "over", createdAt: "2026-08-27T12:00:00.000Z" },
+      ],
     });
   });
 
-  it("returns a local fallback when the Blob token is absent", async () => {
-    vi.stubEnv("BLOB_READ_WRITE_TOKEN", undefined);
-    const POST = await loadPost();
+  it("sanitizes POST payloads before persistence and completes the claim", async () => {
+    const { POST } = await loadRoute();
 
-    const response = await POST(scoreRequest({ "x-forwarded-for": "203.0.113.2" }));
-    const body = await response.json() as { storage: string };
+    const response = await POST(scoreRequest({
+      body: { name: "  java   pleno  ", score: 1_000_000, wave: 0, resets: -1, outcome: "invalid" },
+    }));
 
-    expect(response.status).toBe(200);
-    expect(body.storage).toBe("local");
-  });
-
-  it("accepts another submission from the forwarded IP after ten seconds", async () => {
-    const POST = await loadPost();
-
-    const firstResponse = await POST(scoreRequest({ "x-forwarded-for": "203.0.113.4" }));
-    vi.advanceTimersByTime(10_000);
-    const secondResponse = await POST(scoreRequest({ "x-forwarded-for": "203.0.113.4" }));
-
-    expect(firstResponse.status).toBe(201);
-    expect(await firstResponse.json()).toEqual({
-      scores: [{ ...scorePayload, name: "DEV", createdAt: "2026-08-27T12:00:00.000Z" }],
-      storage: "blob",
+    expect(response.status).toBe(201);
+    expect(scores.add).toHaveBeenCalledWith({
+      name: "JAVA PLENO",
+      score: 999_999,
+      wave: 1,
+      resets: 0,
+      outcome: "over",
+      createdAt: "2026-08-27T12:00:00.000Z",
     });
-    expect(secondResponse.status).toBe(201);
+    expect(adapters.complete).toHaveBeenCalledWith("submission-1");
+    expect(adapters.release).not.toHaveBeenCalled();
   });
 
-  it("throttles the forwarded IP for ten seconds", async () => {
-    const POST = await loadPost();
-    await POST(scoreRequest({ "x-forwarded-for": "203.0.113.3, 198.51.100.1" }));
+  it("rejects an explicitly debug-originated payload without persistence", async () => {
+    const { POST } = await loadRoute();
 
-    const response = await POST(scoreRequest({ "x-forwarded-for": "203.0.113.3, 192.0.2.1" }));
+    const response = await POST(scoreRequest({ body: { ...scorePayload, origin: "debug" } }));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Scores de debug não são aceitos." });
+    expect(adapters.acquire).not.toHaveBeenCalled();
+    expect(scores.add).not.toHaveBeenCalled();
+  });
+
+  it("requires a valid Idempotency-Key before acquiring the throttle", async () => {
+    const { POST } = await loadRoute();
+
+    const response = await POST(scoreRequest({ headers: { "Idempotency-Key": "invalid key" } }));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Idempotency-Key inválido." });
+    expect(adapters.acquire).not.toHaveBeenCalled();
+    expect(scores.add).not.toHaveBeenCalled();
+  });
+
+  it("returns the exact 429 contract without claiming or persisting", async () => {
+    adapters.acquire.mockResolvedValue({ allowed: false, backend: "redis", retryAfterMs: 8_000 });
+    const { POST } = await loadRoute();
+
+    const response = await POST(scoreRequest());
 
     expect(response.status).toBe(429);
     expect(response.headers.get("Retry-After")).toBe("10");
-    expect(await response.json()).toEqual({
-      error: "Aguarde antes de enviar outro score.",
-      retryAfterMs: 10_000,
-    });
+    expect(await response.json()).toEqual({ error: "Aguarde antes de enviar outro score.", retryAfterMs: 10_000 });
+    expect(adapters.claim).not.toHaveBeenCalled();
+    expect(scores.add).not.toHaveBeenCalled();
   });
 
-  it("uses x-real-ip when x-forwarded-for is absent", async () => {
-    const POST = await loadPost();
-    await POST(scoreRequest({ "x-real-ip": "198.51.100.8" }));
-    vi.advanceTimersByTime(4_000);
+  it("returns 503 on a Redis error without persisting", async () => {
+    adapters.acquire.mockRejectedValue(new Error("Redis unavailable"));
+    const { POST } = await loadRoute();
 
-    const response = await POST(scoreRequest({ "x-real-ip": "198.51.100.8" }));
-    const body = await response.json() as { retryAfterMs: number };
+    const response = await POST(scoreRequest());
 
-    expect(response.status).toBe(429);
-    expect(response.headers.get("Retry-After")).toBe("6");
-    expect(body.retryAfterMs).toBe(6_000);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Não foi possível salvar o ranking agora." });
+    expect(scores.add).not.toHaveBeenCalled();
+  });
+
+  it("returns an idempotent success without a second write", async () => {
+    adapters.claim.mockResolvedValue("completed");
+    scores.read.mockResolvedValue([{ ...scorePayload, createdAt: "2026-08-26T12:00:00.000Z" }]);
+    const { POST } = await loadRoute();
+
+    const response = await POST(scoreRequest());
+    const body = await response.json() as { idempotent: boolean; scores: unknown[] };
+
+    expect(response.status).toBe(200);
+    expect(body.idempotent).toBe(true);
+    expect(body.scores).toHaveLength(1);
+    expect(scores.add).not.toHaveBeenCalled();
+    expect(adapters.complete).not.toHaveBeenCalled();
+  });
+
+  it("returns a transient conflict for an in-flight claim without persistence", async () => {
+    adapters.claim.mockResolvedValue("in-flight");
+    const { POST } = await loadRoute();
+
+    const response = await POST(scoreRequest());
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "Submissão em processamento." });
+    expect(scores.add).not.toHaveBeenCalled();
+  });
+
+  it("releases the claim when Blob persistence falls back to local storage", async () => {
+    scores.add.mockResolvedValue({
+      scores: [{ ...scorePayload, createdAt: "2026-08-27T12:00:00.000Z" }],
+      storage: "local",
+    });
+    const { POST } = await loadRoute();
+
+    const response = await POST(scoreRequest());
+
+    expect(response.status).toBe(200);
+    expect((await response.json() as { storage: string }).storage).toBe("local");
+    expect(adapters.release).toHaveBeenCalledWith("submission-1");
+    expect(adapters.complete).not.toHaveBeenCalled();
+  });
+
+  it("releases the claim when score persistence throws", async () => {
+    scores.add.mockRejectedValue(new Error("Blob failed"));
+    const { POST } = await loadRoute();
+
+    const response = await POST(scoreRequest());
+
+    expect(response.status).toBe(503);
+    expect(adapters.release).toHaveBeenCalledWith("submission-1");
+    expect(adapters.complete).not.toHaveBeenCalled();
   });
 });
