@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "@/app/page";
+import { DEBUG_ACTION_EVENT } from "@/lib/debug";
 
 const canvasContext = {
   fillRect: vi.fn(),
@@ -95,5 +96,24 @@ describe("game debug tools", () => {
     expect(screen.getByRole("dialog", { name: "Ranking de maiores pontuações" })).toBeVisible();
     expect(screen.getByText("Missão completa")).toBeVisible();
     expect(screen.getByRole("textbox", { name: "Digite seu nome" })).toBeVisible();
+  });
+
+  it("ignores a forged debug event in production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    render(<Home />);
+
+    fireEvent(window, new CustomEvent(DEBUG_ACTION_EVENT, { detail: "spawn_boss" }));
+
+    expect(screen.getByRole("heading", { level: 1, name: "Pronto" })).toBeVisible();
+    expect(screen.queryByText("Chefe em combate")).not.toBeInTheDocument();
+  });
+
+  it("ignores a debug event whose detail is outside the allowlist", () => {
+    render(<Home />);
+
+    fireEvent(window, new CustomEvent(DEBUG_ACTION_EVENT, { detail: "spawn-anything" }));
+
+    expect(screen.getByRole("heading", { level: 1, name: "Pronto" })).toBeVisible();
+    expect(screen.queryByRole("dialog", { name: "Ferramentas de debug" })).not.toBeInTheDocument();
   });
 });

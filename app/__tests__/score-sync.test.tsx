@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import Home from "@/app/page";
 
 const HIGH_SCORE_KEY = "java-pleno-pixel-hunt-high-scores";
+const PENDING_SCORE_KEY = "java-pleno-pixel-hunt-pending-scores";
 const pendingScore = {
   name: "OFFLINE DEV",
   score: 900,
@@ -52,13 +53,29 @@ describe("offline score synchronization", () => {
   });
 
   it("preserves a submitted score in localStorage when the network fails", async () => {
+    const animationFrames: FrameRequestCallback[] = [];
+    let frameTime = performance.now();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    vi.spyOn(Math, "atan2").mockReturnValue(0);
+    vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
+      animationFrames.push(callback);
+      return animationFrames.length;
+    }));
     server.use(
       http.get("http://localhost/api/scores", () => HttpResponse.json({ scores: [] })),
       http.post("http://localhost/api/scores", () => HttpResponse.error()),
     );
     render(<Home />);
-    fireEvent.keyDown(window, { key: "F1" });
-    fireEvent.click(screen.getByRole("button", { name: "Testar Tela de Vitória" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "▶ Jogar" }));
+    for (let batch = 0; batch < 20 && !screen.queryByRole("textbox", { name: "Digite seu nome" }); batch += 1) {
+      act(() => {
+        for (let frame = 0; frame < 100; frame += 1) {
+          const callback = animationFrames.shift();
+          frameTime += 33;
+          callback?.(frameTime);
+        }
+      });
+    }
     fireEvent.change(screen.getByRole("textbox", { name: "Digite seu nome" }), { target: { value: "Offline Dev" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
@@ -70,11 +87,36 @@ describe("offline score synchronization", () => {
           score: 0,
           wave: 1,
           resets: 0,
-          outcome: "won",
+          outcome: "over",
           createdAt: expect.any(String),
         },
       ]);
     });
+  });
+
+  it("does not submit or enqueue a score from a debug run", async () => {
+    let postAttempts = 0;
+    server.use(
+      http.get("http://localhost/api/scores", () => HttpResponse.json({ scores: [] })),
+      http.post("http://localhost/api/scores", () => {
+        postAttempts += 1;
+        return HttpResponse.json({ scores: [] }, { status: 201 });
+      }),
+    );
+    render(<Home />);
+    fireEvent.keyDown(window, { key: "F1" });
+    fireEvent.click(screen.getByRole("button", { name: "Invocar Boss" }));
+    fireEvent.keyDown(window, { key: "F1" });
+    fireEvent.click(screen.getByRole("button", { name: "Testar Tela de Vitória" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Digite seu nome" }), {
+      target: { value: "Debug Dev" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await waitFor(() => expect(screen.getByText("Score de debug não enviado.")).toBeVisible());
+    expect(postAttempts).toBe(0);
+    expect(localStorage.getItem(PENDING_SCORE_KEY)).toBeNull();
   });
 
   it("retries a pending local score when the page loads", async () => {

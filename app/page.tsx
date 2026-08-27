@@ -5,8 +5,9 @@ import { type CSSProperties, type FormEvent, useCallback, useEffect, useRef, use
 import {
   createDebugKeyHandler,
   DEBUG_ACTION_EVENT,
+  isDebugAction,
+  isDebugAllowed,
   triggerDebugAction,
-  type DebugAction,
 } from "@/lib/debug";
 
 type Actor = {
@@ -43,6 +44,7 @@ type Particle = {
 };
 
 type GameState = "menu" | "playing" | "paused" | "over" | "won" | "promotion" | "choice";
+type RunOrigin = "normal" | "debug";
 type MenuPanel = "home" | "scores" | "help";
 type EnemyKind = "user" | "boss" | "data" | "qa" | "vip" | "incident" | "legacy";
 type ObstacleKind = "desk" | "server" | "firewall" | "board";
@@ -236,6 +238,7 @@ export default function Home() {
   const keys = useRef(new Set<string>());
   const pointer = useRef({ active: false, x: WORLD.width / 2, y: WORLD.height / 2 });
   const stateRef = useRef<GameState>("menu");
+  const runOriginRef = useRef<RunOrigin>("normal");
   const menuPanelRef = useRef<MenuPanel>("home");
   const menuIndexRef = useRef(0);
   const startGameRef = useRef<() => void>(() => undefined);
@@ -534,6 +537,12 @@ export default function Home() {
 
   async function submitScore(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (runOriginRef.current === "debug") {
+      setScoreMessage("Score de debug não enviado.");
+      setScoreSaved(true);
+      return;
+    }
+
     const cleanName = playerName.trim().replace(/\s+/g, " ").slice(0, 14) || "DEV ANON";
     const entry = {
       name: cleanName.toUpperCase(),
@@ -941,6 +950,7 @@ export default function Home() {
 
     function start() {
       resetGame();
+      runOriginRef.current = "normal";
       stateRef.current = "playing";
       setGameState("playing");
       startMusic();
@@ -948,15 +958,23 @@ export default function Home() {
     startGameRef.current = start;
 
     const onDebugAction = (event: Event) => {
-      const action = (event as CustomEvent<DebugAction>).detail;
+      const action = (event as CustomEvent<unknown>).detail;
+      if (!isDebugAllowed() || !isDebugAction(action)) return;
+
       if (action === "toggle_menu") {
         setDebugOpen((current) => !current);
         return;
       }
 
       setDebugOpen(false);
+      if ((action === "spawn_boss" || action === "add_powerup") && stateRef.current !== "playing") {
+        start();
+      } else if (action === "reset") {
+        start();
+      }
+      runOriginRef.current = "debug";
+
       if (action === "spawn_boss") {
-        if (stateRef.current !== "playing") start();
         if (!bossSpawned) {
           bossKills = bossKillTarget(localWave, callLoops);
           bossSpawned = true;
@@ -964,7 +982,6 @@ export default function Home() {
           syncHud();
         }
       } else if (action === "add_powerup") {
-        if (stateRef.current !== "playing") start();
         spawnPowerUp();
         announceEffect("DEBUG: power-up liberado");
       } else if (action === "max_stamina") {
@@ -979,8 +996,6 @@ export default function Home() {
         stopMusic();
         stateRef.current = "won";
         setGameState("won");
-      } else if (action === "reset") {
-        start();
       }
     };
 
