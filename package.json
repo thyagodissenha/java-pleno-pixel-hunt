@@ -7,9 +7,10 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "test": "vitest run"
   },
   "dependencies": {
     "@vercel/blob": "^2.8.0",
@@ -22,6 +23,9 @@
     "@cloudflare/workers-types": "5.20260826.1",
     "@openai/sites-vite-plugin": "^0.1.0 || ^0.2.0",
     "@tailwindcss/postcss": "4.2.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "24.13.3",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.5",
@@ -29,11 +33,13 @@
     "@vitejs/plugin-rsc": "0.5.34",
     "eslint": "9.39.5",
     "eslint-config-next": "16.3.3",
+    "jsdom": "^30.0.1",
     "react-server-dom-webpack": "19.2.8",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "vinext": "1.0.0-beta.8",
     "vite": "8.2.2",
+    "vitest": "^4.1.11",
     "wrangler": "4.126.0"
   },
   "type": "module",
