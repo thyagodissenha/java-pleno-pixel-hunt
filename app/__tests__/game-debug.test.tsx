@@ -72,6 +72,15 @@ describe("game debug tools", () => {
     expect(screen.getByText("Chefe em combate")).toBeVisible();
   });
 
+  it("exposes the spawned boss entity at full health", () => {
+    render(<Home />);
+    fireEvent.keyDown(window, { key: "F1" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Invocar Boss" }));
+
+    expect(screen.getByRole("status", { name: "Vida do boss debug" })).toHaveTextContent("188/188 HP");
+  });
+
   it("restores stamina after it has been consumed", () => {
     render(<Home />);
     fireEvent.keyDown(window, { key: "F1" });

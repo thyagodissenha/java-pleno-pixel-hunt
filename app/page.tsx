@@ -278,6 +278,7 @@ export default function Home() {
   const [biome, setBiome] = useState(biomeNames[0]);
   const [upgrade, setUpgrade] = useState("JDK 8");
   const [bossProgress, setBossProgress] = useState("0/14 mobs");
+  const [debugBossHealth, setDebugBossHealth] = useState<{ hp: number; maxHp: number } | null>(null);
   const [burstStaminaPct, setBurstStaminaPct] = useState(BURST_STAMINA_MAX);
   const [promotionCountdown, setPromotionCountdown] = useState(3);
   const [debugOpen, setDebugOpen] = useState(false);
@@ -950,6 +951,7 @@ export default function Home() {
 
     function start() {
       resetGame();
+      setDebugBossHealth(null);
       runOriginRef.current = "normal";
       stateRef.current = "playing";
       setGameState("playing");
@@ -979,6 +981,8 @@ export default function Home() {
           bossKills = bossKillTarget(localWave, callLoops);
           bossSpawned = true;
           spawnEnemy("boss");
+          const bossEntity = enemies.find((enemy) => enemy.kind === "boss");
+          setDebugBossHealth(bossEntity ? { hp: bossEntity.hp, maxHp: bossEntity.maxHp } : null);
           syncHud();
         }
       } else if (action === "add_powerup") {
@@ -1846,6 +1850,11 @@ export default function Home() {
           <p>Java Pleno Pixel Hunt</p>
           <h1>{status}</h1>
         </div>
+        {debugBossHealth && (
+          <output aria-label="Vida do boss debug">
+            {debugBossHealth.hp}/{debugBossHealth.maxHp} HP
+          </output>
+        )}
         <div className="hud-card jdk-card">
           <strong>{upgrade}</strong>
           <span className="mini-bars" aria-hidden="true">
