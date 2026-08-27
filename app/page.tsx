@@ -274,6 +274,12 @@ function removePendingScore(submissionId: string) {
   savePendingScores(loadPendingScores().filter((entry) => entry.submissionId !== submissionId));
 }
 
+function updatePendingScoreAttempt(submissionId: string, attemptedAt: string) {
+  savePendingScores(loadPendingScores().map((entry) => entry.submissionId === submissionId
+    ? { ...entry, attempts: entry.attempts + 1, lastAttemptAt: attemptedAt }
+    : entry));
+}
+
 function scoreIdentity(score: HighScore) {
   return `${score.createdAt}:${score.name}`;
 }
@@ -313,6 +319,7 @@ export default function Home() {
   const audioRef = useRef<AudioContext | null>(null);
   const musicTimerRef = useRef<number | null>(null);
   const debugFirstActionRef = useRef<HTMLButtonElement | null>(null);
+  const drainPromiseRef = useRef<Promise<void> | null>(null);
   const musicStepRef = useRef(0);
   const soundHydratedRef = useRef(false);
   const mutedRef = useRef(false);
@@ -446,7 +453,11 @@ export default function Home() {
 
   useEffect(() => {
     void refreshHighScores();
-    const retryPendingScores = () => void refreshHighScores();
+    void drainPendingScores();
+    const retryPendingScores = () => {
+      void refreshHighScores();
+      void drainPendingScores();
+    };
     window.addEventListener("online", retryPendingScores);
     return () => window.removeEventListener("online", retryPendingScores);
   }, []);
@@ -496,12 +507,39 @@ export default function Home() {
       if (!response.ok) throw new Error("Score API failed");
       const payload = (await response.json()) as { scores?: HighScore[] };
       const globalScores = payload.scores ?? [];
+      const scores = loadPendingScores().length > 0
+        ? mergeHighScores(globalScores, loadHighScores())
+        : globalScores;
+      setHighScores(scores);
+      saveHighScores(scores);
+      setScoreMessage("Ranking global");
+    } catch {
       const localScores = loadHighScores();
-      const pendingScore = loadPendingScores()[0];
+      setHighScores(localScores);
+      setScoreMessage("Ranking local offline");
+    }
+  }
 
-      if (pendingScore) {
+  function drainPendingScores() {
+    if (drainPromiseRef.current) return drainPromiseRef.current;
+
+    const drain = async () => {
+      let previousPostStartedAt: number | null = null;
+
+      while (true) {
+        const pendingScore = loadPendingScores()[0];
+        if (!pendingScore) return;
+
+        if (previousPostStartedAt !== null) {
+          const remainingDelay = Math.max(0, 10_000 - (Date.now() - previousPostStartedAt));
+          if (remainingDelay > 0) {
+            await new Promise<void>((resolve) => window.setTimeout(resolve, remainingDelay));
+          }
+        }
+
+        previousPostStartedAt = Date.now();
         try {
-          const syncResponse = await fetch("/api/scores", {
+          const response = await fetch("/api/scores", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -509,31 +547,28 @@ export default function Home() {
             },
             body: JSON.stringify(pendingScore.score),
           });
-          if (!syncResponse.ok) throw new Error("Score sync failed");
-          const syncPayload = (await syncResponse.json()) as { scores: HighScore[]; storage?: "blob" | "local" };
+          if (!response.ok) throw new Error("Score sync failed");
+          const payload = (await response.json()) as { scores?: HighScore[]; storage?: "blob" | "local" };
           removePendingScore(pendingScore.submissionId);
-          const scores = mergeHighScores(syncPayload.scores, localScores);
-          setHighScores(scores);
-          saveHighScores(scores);
-          setScoreMessage(syncPayload.storage === "local" ? "Ranking local aguardando sincronização" : "Ranking global atualizado");
-          return;
+          if (payload.scores) {
+            setHighScores(payload.scores);
+            saveHighScores(payload.scores);
+          }
+          setScoreMessage(payload.storage === "local"
+            ? "Ranking local aguardando sincronização"
+            : "Ranking global atualizado");
         } catch {
-          const scores = mergeHighScores(globalScores, localScores);
-          setHighScores(scores);
-          saveHighScores(scores);
+          updatePendingScoreAttempt(pendingScore.submissionId, new Date().toISOString());
           setScoreMessage("Ranking local aguardando sincronização");
           return;
         }
       }
+    };
 
-      setHighScores(globalScores);
-      saveHighScores(globalScores);
-      setScoreMessage("Ranking global");
-    } catch {
-      const localScores = loadHighScores();
-      setHighScores(localScores);
-      setScoreMessage("Ranking local offline");
-    }
+    drainPromiseRef.current = drain().finally(() => {
+      drainPromiseRef.current = null;
+    });
+    return drainPromiseRef.current;
   }
 
   function startNewGame() {

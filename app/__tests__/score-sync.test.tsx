@@ -23,6 +23,18 @@ const pendingEntry = {
   attempts: 0,
   lastAttemptAt: null,
 };
+const secondPendingScore = {
+  ...pendingScore,
+  name: "SECOND DEV",
+  score: 800,
+  createdAt: "2026-08-27T12:00:02.000Z",
+};
+const secondPendingEntry = {
+  ...pendingEntry,
+  submissionId: "33333333-3333-4333-8333-333333333333",
+  score: secondPendingScore,
+  enqueuedAt: "2026-08-27T12:00:03.000Z",
+};
 const server = setupServer();
 const canvasContext = {
   fillRect: vi.fn(),
@@ -56,6 +68,7 @@ describe("offline score synchronization", () => {
     cleanup();
     server.resetHandlers();
     vi.restoreAllMocks();
+    vi.useRealTimers();
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   });
@@ -160,7 +173,6 @@ describe("offline score synchronization", () => {
   });
 
   it("retries a pending local score when the browser comes online", async () => {
-    localStorage.setItem(PENDING_SCORE_KEY, JSON.stringify([pendingEntry]));
     let getAttempts = 0;
     let postAttempts = 0;
     server.use(
@@ -176,10 +188,125 @@ describe("offline score synchronization", () => {
     render(<Home />);
     await waitFor(() => expect(getAttempts).toBe(1));
 
+    localStorage.setItem(PENDING_SCORE_KEY, JSON.stringify([pendingEntry]));
     act(() => window.dispatchEvent(new Event("online")));
 
     await waitFor(() => expect(postAttempts).toBe(1));
     expect(JSON.parse(localStorage.getItem(PENDING_SCORE_KEY) ?? "[]")).toEqual([]);
+  });
+
+  it("drains pending scores in FIFO order with ten seconds between POST starts", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime("2026-08-27T13:00:00.000Z");
+    localStorage.setItem(PENDING_SCORE_KEY, JSON.stringify([pendingEntry, secondPendingEntry]));
+    const postedNames: string[] = [];
+    const postStarts: number[] = [];
+    server.use(
+      http.get("http://localhost/api/scores", () => HttpResponse.json({ scores: [] })),
+      http.post("http://localhost/api/scores", async ({ request }) => {
+        postStarts.push(Date.now());
+        postedNames.push(((await request.json()) as { name: string }).name);
+        return HttpResponse.json(
+          { scores: [], storage: "blob", idempotent: postedNames.length === 1 },
+          { status: postedNames.length === 1 ? 200 : 201 },
+        );
+      }),
+    );
+
+    render(<Home />);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.waitFor(() => expect(postedNames).toEqual([pendingScore.name, secondPendingScore.name]));
+
+    expect(postStarts[1] - postStarts[0]).toBeGreaterThanOrEqual(10_000);
+    expect(JSON.parse(localStorage.getItem(PENDING_SCORE_KEY) ?? "[]")).toEqual([]);
+  });
+
+  it("shares one drain when load and online overlap", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    localStorage.setItem(PENDING_SCORE_KEY, JSON.stringify([pendingEntry, secondPendingEntry]));
+    let releaseFirst!: () => void;
+    let inFlight = 0;
+    let maxInFlight = 0;
+    let postAttempts = 0;
+    const firstResponse = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    server.use(
+      http.get("http://localhost/api/scores", () => HttpResponse.json({ scores: [] })),
+      http.post("http://localhost/api/scores", async () => {
+        postAttempts += 1;
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        if (postAttempts === 1) await firstResponse;
+        inFlight -= 1;
+        return HttpResponse.json({ scores: [], storage: "blob" }, { status: 201 });
+      }),
+    );
+
+    render(<Home />);
+    await vi.waitFor(() => expect(postAttempts).toBe(1));
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+      window.dispatchEvent(new Event("online"));
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(postAttempts).toBe(1);
+
+    releaseFirst();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.waitFor(() => expect(postAttempts).toBe(2));
+    expect(maxInFlight).toBe(1);
+  });
+
+  it.each([
+    ["network", () => HttpResponse.error()],
+    ["429", () => HttpResponse.json({ error: "wait" }, { status: 429 })],
+    ["503", () => HttpResponse.json({ error: "unavailable" }, { status: 503 })],
+  ])("keeps the current item and stops the drain after a %s failure", async (_kind, response) => {
+    localStorage.setItem(PENDING_SCORE_KEY, JSON.stringify([pendingEntry, secondPendingEntry]));
+    let postAttempts = 0;
+    server.use(
+      http.get("http://localhost/api/scores", () => HttpResponse.json({ scores: [] })),
+      http.post("http://localhost/api/scores", () => {
+        postAttempts += 1;
+        return response();
+      }),
+    );
+
+    render(<Home />);
+
+    await waitFor(() => {
+      const queue = JSON.parse(localStorage.getItem(PENDING_SCORE_KEY) ?? "[]");
+      expect(queue).toEqual([
+        { ...pendingEntry, attempts: 1, lastAttemptAt: expect.any(String) },
+        secondPendingEntry,
+      ]);
+    });
+    expect(postAttempts).toBe(1);
+  });
+
+  it("does not post or schedule a drain timer for an empty queue", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const setTimeoutSpy = vi.spyOn(window, "setTimeout");
+    let getAttempts = 0;
+    let postAttempts = 0;
+    server.use(
+      http.get("http://localhost/api/scores", () => {
+        getAttempts += 1;
+        return HttpResponse.json({ scores: [] });
+      }),
+      http.post("http://localhost/api/scores", () => {
+        postAttempts += 1;
+        return HttpResponse.json({ scores: [] });
+      }),
+    );
+
+    render(<Home />);
+    await vi.waitFor(() => expect(getAttempts).toBe(1));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(postAttempts).toBe(0);
+    expect(setTimeoutSpy.mock.calls.some(([, delay]) => delay === 10_000)).toBe(false);
   });
 
   it("never turns scores loaded from GET into pending submissions", async () => {
