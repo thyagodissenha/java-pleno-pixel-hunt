@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { type CSSProperties, type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 type Actor = {
@@ -1777,6 +1778,10 @@ export default function Home() {
             Apoie o jogo
           </button>
           <small>Pix e links em breve</small>
+          <nav className="sponsor-links" aria-label="Links institucionais">
+            <Link href="/privacidade">Privacidade</Link>
+            <Link href="/sobre">Sobre</Link>
+          </nav>
         </aside>
       </section>
 
