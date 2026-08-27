@@ -204,6 +204,18 @@ function saveHighScores(scores: HighScore[]) {
   window.localStorage.setItem(HIGH_SCORE_KEY, JSON.stringify(scores.slice(0, 10)));
 }
 
+function scoreIdentity(score: HighScore) {
+  return `${score.createdAt}:${score.name}`;
+}
+
+function mergeHighScores(...scoreGroups: HighScore[][]) {
+  const uniqueScores = new Map<string, HighScore>();
+  for (const score of scoreGroups.flat()) uniqueScores.set(scoreIdentity(score), score);
+  return [...uniqueScores.values()]
+    .sort((a, b) => b.score - a.score || b.wave - a.wave || (b.resets ?? 0) - (a.resets ?? 0) || a.createdAt.localeCompare(b.createdAt))
+    .slice(0, 10);
+}
+
 function loadSoundSettings() {
   if (typeof window === "undefined") return { muted: false, volume: 0.35 };
   try {
@@ -360,7 +372,10 @@ export default function Home() {
   }, [playTone, stopMusic]);
 
   useEffect(() => {
-    refreshHighScores();
+    void refreshHighScores();
+    const retryPendingScores = () => void refreshHighScores();
+    window.addEventListener("online", retryPendingScores);
+    return () => window.removeEventListener("online", retryPendingScores);
   }, []);
 
   useEffect(() => {
@@ -400,21 +415,49 @@ export default function Home() {
     if (debugOpen) debugFirstActionRef.current?.focus();
   }, [debugOpen]);
 
-  function refreshHighScores() {
+  async function refreshHighScores() {
     setScoreMessage("Ranking global carregando...");
-    return fetch("/api/scores", { cache: "no-store" })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((payload: unknown) => {
-        const data = payload as { scores?: HighScore[] };
-        const scores = data.scores ?? [];
-        setHighScores(scores);
-        saveHighScores(scores);
-        setScoreMessage("Ranking global");
-      })
-      .catch(() => {
-        setHighScores(loadHighScores());
-        setScoreMessage("Ranking local offline");
-      });
+
+    try {
+      const response = await fetch("/api/scores", { cache: "no-store" });
+      if (!response.ok) throw new Error("Score API failed");
+      const payload = (await response.json()) as { scores?: HighScore[] };
+      const globalScores = payload.scores ?? [];
+      const localScores = loadHighScores();
+      const globalIds = new Set(globalScores.map(scoreIdentity));
+      const pendingScore = localScores.find((entry) => !globalIds.has(scoreIdentity(entry)));
+
+      if (pendingScore) {
+        try {
+          const syncResponse = await fetch("/api/scores", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(pendingScore),
+          });
+          if (!syncResponse.ok) throw new Error("Score sync failed");
+          const syncPayload = (await syncResponse.json()) as { scores: HighScore[]; storage?: "blob" | "local" };
+          const scores = mergeHighScores(syncPayload.scores, localScores.filter((entry) => entry !== pendingScore));
+          setHighScores(scores);
+          saveHighScores(scores);
+          setScoreMessage(syncPayload.storage === "local" ? "Ranking local aguardando sincronização" : "Ranking global atualizado");
+          return;
+        } catch {
+          const scores = mergeHighScores(globalScores, localScores);
+          setHighScores(scores);
+          saveHighScores(scores);
+          setScoreMessage("Ranking local aguardando sincronização");
+          return;
+        }
+      }
+
+      setHighScores(globalScores);
+      saveHighScores(globalScores);
+      setScoreMessage("Ranking global");
+    } catch {
+      const localScores = loadHighScores();
+      setHighScores(localScores);
+      setScoreMessage("Ranking local offline");
+    }
   }
 
   function startNewGame() {
@@ -509,10 +552,10 @@ export default function Home() {
         body: JSON.stringify(entry),
       });
       if (!response.ok) throw new Error("Score API failed");
-      const payload = (await response.json()) as { scores: HighScore[] };
+      const payload = (await response.json()) as { scores: HighScore[]; storage?: "blob" | "local" };
       setHighScores(payload.scores);
       saveHighScores(payload.scores);
-      setScoreMessage("Ranking global atualizado");
+      setScoreMessage(payload.storage === "local" ? "Ranking local aguardando sincronização" : "Ranking global atualizado");
       playSound("save");
       setScoreSaved(true);
     } catch {

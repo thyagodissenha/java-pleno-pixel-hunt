@@ -11,6 +11,8 @@ export type HighScore = {
   createdAt: string;
 };
 
+export type HighScoreStorage = "blob" | "local";
+
 const SCORE_PATH = "java-pleno-pixel-hunt/high-scores.json";
 const LOCAL_SCORE_FILE = path.join(process.cwd(), "data", "high-scores.json");
 
@@ -65,17 +67,26 @@ export async function addHighScore(score: HighScore) {
   const payload = JSON.stringify(nextScores, null, 2);
 
   if (process.env.BLOB_READ_WRITE_TOKEN) {
-    await put(SCORE_PATH, payload, {
-      access: "private",
-      allowOverwrite: true,
-      contentType: "application/json",
-      cacheControlMaxAge: 0,
-    });
-  } else if (process.env.VERCEL) {
-    throw new Error("BLOB_READ_WRITE_TOKEN is required in production");
-  } else {
-    await writeFile(LOCAL_SCORE_FILE, payload);
+    try {
+      await put(SCORE_PATH, payload, {
+        access: "private",
+        allowOverwrite: true,
+        contentType: "application/json",
+        cacheControlMaxAge: 0,
+      });
+      return { scores: nextScores, storage: "blob" as const };
+    } catch {
+      return { scores: nextScores, storage: "local" as const };
+    }
   }
 
-  return nextScores;
+  if (!process.env.VERCEL) {
+    try {
+      await writeFile(LOCAL_SCORE_FILE, payload);
+    } catch {
+      // The browser keeps the fallback copy when local server storage is unavailable.
+    }
+  }
+
+  return { scores: nextScores, storage: "local" as const };
 }
