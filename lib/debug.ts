@@ -8,14 +8,27 @@ export type DebugAction =
   | "win_game"
   | "reset";
 
+const DEBUG_ACTIONS: readonly DebugAction[] = [
+  "toggle_menu",
+  "spawn_boss",
+  "add_powerup",
+  "max_stamina",
+  "win_game",
+  "reset",
+];
+
 const DEBUG_KEYS: Readonly<Record<string, DebugAction>> = {
   F1: "toggle_menu",
   F2: "spawn_boss",
   F3: "add_powerup",
 };
 
-export function isDebugAllowed(search = typeof window === "undefined" ? "" : window.location.search) {
-  return process.env.NODE_ENV !== "production" || new URLSearchParams(search).get("debug") === "1";
+export function isDebugAllowed(_search = "") {
+  return process.env.NODE_ENV === "development";
+}
+
+export function isDebugAction(value: unknown): value is DebugAction {
+  return typeof value === "string" && DEBUG_ACTIONS.includes(value as DebugAction);
 }
 
 export function triggerDebugAction(action: DebugAction) {

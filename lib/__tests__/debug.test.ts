@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createDebugKeyHandler,
   DEBUG_ACTION_EVENT,
+  isDebugAction,
   isDebugAllowed,
+  triggerDebugAction,
   type DebugAction,
 } from "@/lib/debug";
 
@@ -18,10 +20,43 @@ describe("debug utilities", () => {
     expect(isDebugAllowed()).toBe(true);
   });
 
-  it("allows the explicit debug query flag in production", () => {
+  it("blocks the explicit debug query flag in production", () => {
     vi.stubEnv("NODE_ENV", "production");
 
-    expect(isDebugAllowed("?debug=1")).toBe(true);
+    expect(isDebugAllowed("?debug=1")).toBe(false);
+  });
+
+  it.each([
+    "toggle_menu",
+    "spawn_boss",
+    "add_powerup",
+    "max_stamina",
+    "win_game",
+    "reset",
+  ] satisfies DebugAction[])("accepts the canonical debug action %s", (action) => {
+    expect(isDebugAction(action)).toBe(true);
+  });
+
+  it.each([undefined, null, "", "spawn-boss", "unknown", 1, {}])(
+    "rejects the invalid debug action %j",
+    (action) => {
+      expect(isDebugAction(action)).toBe(false);
+    },
+  );
+
+  it("does not dispatch explicit debug actions in production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    window.history.replaceState({}, "", "/?debug=1");
+    const actions: DebugAction[] = [];
+    const collectAction = (event: Event) => {
+      actions.push((event as CustomEvent<DebugAction>).detail);
+    };
+    window.addEventListener(DEBUG_ACTION_EVENT, collectAction);
+
+    triggerDebugAction("spawn_boss");
+    window.removeEventListener(DEBUG_ACTION_EVENT, collectAction);
+
+    expect(actions).toEqual([]);
   });
 
   it("blocks debug actions in production without the query flag", () => {
