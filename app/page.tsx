@@ -134,6 +134,18 @@ function obstacleCount(resets: number) {
   return Math.min(MAX_OBSTACLES, 1 + resets);
 }
 
+function shotLanesForWeaponLevel(weaponLevel: number) {
+  if (weaponLevel >= 3) return [-0.16, 0, 0.16];
+  if (weaponLevel === 2) return [-0.1, 0.1];
+  return [0];
+}
+
+function weaponLevelForWave(wave: number) {
+  if (wave >= 4) return 3;
+  if (wave >= 2) return 2;
+  return 1;
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
@@ -1020,7 +1032,7 @@ export default function Home() {
       const aim = target
         ? normalize(target.x - player.x, target.y - player.y)
         : normalize(pointer.current.x - player.x, pointer.current.y - player.y);
-      const lanes = weaponLevel >= 3 ? [-0.16, 0, 0.16] : weaponLevel === 2 ? [-0.1, 0.1] : [0];
+      const lanes = shotLanesForWeaponLevel(weaponLevel);
       const shotSpeed = player.focus > 0 ? 500 : 430;
       for (const spread of lanes) {
         const angle = Math.atan2(aim.y, aim.x) + spread;
@@ -1050,7 +1062,7 @@ export default function Home() {
       shake = Math.max(0, shake - delta * 60);
       bossBanner = Math.max(0, bossBanner - delta * 60);
       effectBanner = Math.max(0, effectBanner - delta * 60);
-      weaponLevel = localWave >= 4 ? 3 : localWave >= 2 ? 2 : 1;
+      weaponLevel = weaponLevelForWave(localWave);
       const wantsBurst = keys.current.has(" ");
       const burstActive = !choosingFinalReward && wantsBurst && burstStamina > 0;
       if (burstActive) {
