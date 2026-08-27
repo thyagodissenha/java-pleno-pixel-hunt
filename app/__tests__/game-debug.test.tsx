@@ -54,10 +54,23 @@ describe("game debug tools", () => {
 
     fireEvent.keyDown(window, { key: "F1" });
 
-    expect(screen.getByRole("dialog", { name: "Ferramentas de debug" })).toBeVisible();
+    const dialog = screen.getByRole("dialog", { name: "Ferramentas de debug" });
+    expect(dialog.tagName).toBe("DIALOG");
+    expect(dialog).toHaveAttribute("open");
+    expect(dialog).toBeVisible();
     expect(screen.getByRole("button", { name: "Invocar Boss" })).toHaveFocus();
 
     fireEvent.keyDown(window, { key: "F1" });
+
+    expect(screen.queryByRole("dialog", { name: "Ferramentas de debug" })).not.toBeInTheDocument();
+  });
+
+  it("updates debug state when the native dialog closes", () => {
+    render(<Home />);
+    fireEvent.keyDown(window, { key: "F1" });
+    const dialog = screen.getByRole("dialog", { name: "Ferramentas de debug" });
+
+    fireEvent(dialog, new Event("close"));
 
     expect(screen.queryByRole("dialog", { name: "Ferramentas de debug" })).not.toBeInTheDocument();
   });

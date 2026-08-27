@@ -2240,7 +2240,12 @@ export default function Home() {
           </div>
         )}
         {debugOpen && (
-          <div className="pause-menu-overlay" role="dialog" aria-modal="true" aria-label="Ferramentas de debug">
+          <dialog
+            open
+            className="pause-menu-overlay"
+            aria-label="Ferramentas de debug"
+            onClose={() => setDebugOpen(false)}
+          >
             <div className="pause-panel">
               <p className="menu-kicker">Developer tools</p>
               <h2>DEBUG</h2>
@@ -2259,7 +2264,7 @@ export default function Home() {
                 </button>
               </div>
             </div>
-          </div>
+          </dialog>
         )}
         {promotionScreen && (
           <div className="frame-screen" role="dialog" aria-modal="true" aria-label="Promoção para sênior">
