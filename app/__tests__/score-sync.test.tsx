@@ -15,6 +15,14 @@ const pendingScore = {
   outcome: "over" as const,
   createdAt: "2026-08-27T12:00:00.000Z",
 };
+const pendingEntry = {
+  version: 1,
+  submissionId: "11111111-1111-4111-8111-111111111111",
+  score: pendingScore,
+  enqueuedAt: "2026-08-27T12:00:01.000Z",
+  attempts: 0,
+  lastAttemptAt: null,
+};
 const server = setupServer();
 const canvasContext = {
   fillRect: vi.fn(),
@@ -57,6 +65,7 @@ describe("offline score synchronization", () => {
     let frameTime = performance.now();
     vi.spyOn(Math, "random").mockReturnValue(0);
     vi.spyOn(Math, "atan2").mockReturnValue(0);
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("22222222-2222-4222-8222-222222222222");
     vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
       animationFrames.push(callback);
       return animationFrames.length;
@@ -81,14 +90,23 @@ describe("offline score synchronization", () => {
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
 
     await waitFor(() => {
-      expect(JSON.parse(localStorage.getItem(HIGH_SCORE_KEY) ?? "[]")).toEqual([
+      const savedScore = {
+        name: "OFFLINE DEV",
+        score: 0,
+        wave: 1,
+        resets: 0,
+        outcome: "over",
+        createdAt: expect.any(String),
+      };
+      expect(JSON.parse(localStorage.getItem(HIGH_SCORE_KEY) ?? "[]")).toEqual([savedScore]);
+      expect(JSON.parse(localStorage.getItem(PENDING_SCORE_KEY) ?? "[]")).toEqual([
         {
-          name: "OFFLINE DEV",
-          score: 0,
-          wave: 1,
-          resets: 0,
-          outcome: "over",
-          createdAt: expect.any(String),
+          version: 1,
+          submissionId: "22222222-2222-4222-8222-222222222222",
+          score: savedScore,
+          enqueuedAt: expect.any(String),
+          attempts: 0,
+          lastAttemptAt: null,
         },
       ]);
     });
@@ -119,13 +137,16 @@ describe("offline score synchronization", () => {
     expect(localStorage.getItem(PENDING_SCORE_KEY)).toBeNull();
   });
 
-  it("retries a pending local score when the page loads", async () => {
+  it("retries a pending own score with its stable id when the page loads", async () => {
     localStorage.setItem(HIGH_SCORE_KEY, JSON.stringify([pendingScore]));
+    localStorage.setItem(PENDING_SCORE_KEY, JSON.stringify([pendingEntry]));
     let syncedBody: unknown;
+    let idempotencyKey: string | null = null;
     server.use(
       http.get("http://localhost/api/scores", () => HttpResponse.json({ scores: [] })),
       http.post("http://localhost/api/scores", async ({ request }) => {
         syncedBody = await request.json();
+        idempotencyKey = request.headers.get("Idempotency-Key");
         return HttpResponse.json({ scores: [pendingScore], storage: "blob" }, { status: 201 });
       }),
     );
@@ -133,11 +154,13 @@ describe("offline score synchronization", () => {
     render(<Home />);
 
     await waitFor(() => expect(syncedBody).toEqual(pendingScore));
+    expect(idempotencyKey).toBe(pendingEntry.submissionId);
+    expect(JSON.parse(localStorage.getItem(PENDING_SCORE_KEY) ?? "[]")).toEqual([]);
     expect(JSON.parse(localStorage.getItem(HIGH_SCORE_KEY) ?? "[]")).toEqual([pendingScore]);
   });
 
   it("retries a pending local score when the browser comes online", async () => {
-    localStorage.setItem(HIGH_SCORE_KEY, JSON.stringify([pendingScore]));
+    localStorage.setItem(PENDING_SCORE_KEY, JSON.stringify([pendingEntry]));
     let getAttempts = 0;
     let postAttempts = 0;
     server.use(
@@ -156,6 +179,41 @@ describe("offline score synchronization", () => {
     act(() => window.dispatchEvent(new Event("online")));
 
     await waitFor(() => expect(postAttempts).toBe(1));
-    expect(JSON.parse(localStorage.getItem(HIGH_SCORE_KEY) ?? "[]")).toEqual([pendingScore]);
+    expect(JSON.parse(localStorage.getItem(PENDING_SCORE_KEY) ?? "[]")).toEqual([]);
+  });
+
+  it("never turns scores loaded from GET into pending submissions", async () => {
+    server.use(
+      http.get("http://localhost/api/scores", () => HttpResponse.json({ scores: [pendingScore] })),
+    );
+
+    render(<Home />);
+
+    await waitFor(() => {
+      expect(JSON.parse(localStorage.getItem(HIGH_SCORE_KEY) ?? "[]")).toEqual([pendingScore]);
+    });
+    expect(localStorage.getItem(PENDING_SCORE_KEY)).toBeNull();
+  });
+
+  it("keeps one valid pending entry per submission id and ignores malformed data", async () => {
+    localStorage.setItem(PENDING_SCORE_KEY, JSON.stringify([
+      pendingEntry,
+      { ...pendingEntry },
+      pendingScore,
+      { ...pendingEntry, submissionId: "", score: { ...pendingScore, score: "third-party" } },
+    ]));
+    const submittedIds: Array<string | null> = [];
+    server.use(
+      http.get("http://localhost/api/scores", () => HttpResponse.json({ scores: [] })),
+      http.post("http://localhost/api/scores", ({ request }) => {
+        submittedIds.push(request.headers.get("Idempotency-Key"));
+        return HttpResponse.json({ scores: [pendingScore], storage: "blob" }, { status: 201 });
+      }),
+    );
+
+    render(<Home />);
+
+    await waitFor(() => expect(submittedIds).toEqual([pendingEntry.submissionId]));
+    expect(JSON.parse(localStorage.getItem(PENDING_SCORE_KEY) ?? "[]")).toEqual([]);
   });
 });

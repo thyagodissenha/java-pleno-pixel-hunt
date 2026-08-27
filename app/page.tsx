@@ -68,6 +68,15 @@ type HighScore = {
   createdAt: string;
 };
 
+type PendingScoreEntry = {
+  version: 1;
+  submissionId: string;
+  score: HighScore;
+  enqueuedAt: string;
+  attempts: number;
+  lastAttemptAt: string | null;
+};
+
 type PowerUp = {
   x: number;
   y: number;
@@ -87,6 +96,7 @@ type Obstacle = {
 
 const WORLD = { width: 960, height: 540 };
 const HIGH_SCORE_KEY = "java-pleno-pixel-hunt-high-scores";
+const PENDING_SCORE_KEY = "java-pleno-pixel-hunt-pending-scores";
 const SOUND_KEY = "java-pleno-pixel-hunt-sound";
 const bossNames = [
   "Gerente de Sprint",
@@ -204,6 +214,64 @@ function loadHighScores(): HighScore[] {
 
 function saveHighScores(scores: HighScore[]) {
   window.localStorage.setItem(HIGH_SCORE_KEY, JSON.stringify(scores.slice(0, 10)));
+}
+
+function isHighScore(value: unknown): value is HighScore {
+  if (!value || typeof value !== "object") return false;
+  const score = value as Partial<HighScore>;
+  return typeof score.name === "string"
+    && Number.isFinite(score.score)
+    && Number.isFinite(score.wave)
+    && (score.resets === undefined || Number.isFinite(score.resets))
+    && (score.outcome === "over" || score.outcome === "won")
+    && typeof score.createdAt === "string";
+}
+
+function isPendingScoreEntry(value: unknown): value is PendingScoreEntry {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Partial<PendingScoreEntry>;
+  return entry.version === 1
+    && typeof entry.submissionId === "string"
+    && entry.submissionId.length > 0
+    && isHighScore(entry.score)
+    && typeof entry.enqueuedAt === "string"
+    && Number.isInteger(entry.attempts)
+    && Number(entry.attempts) >= 0
+    && (entry.lastAttemptAt === null || typeof entry.lastAttemptAt === "string");
+}
+
+function loadPendingScores(): PendingScoreEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const stored = window.localStorage.getItem(PENDING_SCORE_KEY);
+    if (!stored) return [];
+    const parsed = JSON.parse(stored) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const unique = new Map<string, PendingScoreEntry>();
+    for (const entry of parsed) {
+      if (isPendingScoreEntry(entry) && !unique.has(entry.submissionId)) {
+        unique.set(entry.submissionId, entry);
+      }
+    }
+    return [...unique.values()];
+  } catch {
+    return [];
+  }
+}
+
+function savePendingScores(entries: PendingScoreEntry[]) {
+  window.localStorage.setItem(PENDING_SCORE_KEY, JSON.stringify(entries));
+}
+
+function enqueuePendingScore(entry: PendingScoreEntry) {
+  const pending = loadPendingScores();
+  if (!pending.some((candidate) => candidate.submissionId === entry.submissionId)) {
+    savePendingScores([...pending, entry]);
+  }
+}
+
+function removePendingScore(submissionId: string) {
+  savePendingScores(loadPendingScores().filter((entry) => entry.submissionId !== submissionId));
 }
 
 function scoreIdentity(score: HighScore) {
@@ -429,19 +497,22 @@ export default function Home() {
       const payload = (await response.json()) as { scores?: HighScore[] };
       const globalScores = payload.scores ?? [];
       const localScores = loadHighScores();
-      const globalIds = new Set(globalScores.map(scoreIdentity));
-      const pendingScore = localScores.find((entry) => !globalIds.has(scoreIdentity(entry)));
+      const pendingScore = loadPendingScores()[0];
 
       if (pendingScore) {
         try {
           const syncResponse = await fetch("/api/scores", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(pendingScore),
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": pendingScore.submissionId,
+            },
+            body: JSON.stringify(pendingScore.score),
           });
           if (!syncResponse.ok) throw new Error("Score sync failed");
           const syncPayload = (await syncResponse.json()) as { scores: HighScore[]; storage?: "blob" | "local" };
-          const scores = mergeHighScores(syncPayload.scores, localScores.filter((entry) => entry !== pendingScore));
+          removePendingScore(pendingScore.submissionId);
+          const scores = mergeHighScores(syncPayload.scores, localScores);
           setHighScores(scores);
           saveHighScores(scores);
           setScoreMessage(syncPayload.storage === "local" ? "Ranking local aguardando sincronização" : "Ranking global atualizado");
@@ -554,12 +625,23 @@ export default function Home() {
       outcome: lastOutcome,
       createdAt: new Date().toISOString(),
     };
+    const pendingEntry: PendingScoreEntry = {
+      version: 1,
+      submissionId: crypto.randomUUID(),
+      score: entry,
+      enqueuedAt: new Date().toISOString(),
+      attempts: 0,
+      lastAttemptAt: null,
+    };
 
     setScoreMessage("Salvando score...");
     try {
       const response = await fetch("/api/scores", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": pendingEntry.submissionId,
+        },
         body: JSON.stringify(entry),
       });
       if (!response.ok) throw new Error("Score API failed");
@@ -573,6 +655,7 @@ export default function Home() {
       const nextScores = [entry, ...highScores]
         .sort((a, b) => b.score - a.score || b.wave - a.wave || (b.resets ?? 0) - (a.resets ?? 0))
         .slice(0, 10);
+      enqueuePendingScore(pendingEntry);
       saveHighScores(nextScores);
       setHighScores(nextScores);
       setScoreMessage("Ranking local salvo. Global indisponível.");
