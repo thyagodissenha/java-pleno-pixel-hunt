@@ -2,6 +2,12 @@
 
 import Link from "next/link";
 import { type CSSProperties, type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  createDebugKeyHandler,
+  DEBUG_ACTION_EVENT,
+  triggerDebugAction,
+  type DebugAction,
+} from "@/lib/debug";
 
 type Actor = {
   x: number;
@@ -211,6 +217,7 @@ export default function Home() {
   const startGameRef = useRef<() => void>(() => undefined);
   const audioRef = useRef<AudioContext | null>(null);
   const musicTimerRef = useRef<number | null>(null);
+  const debugFirstActionRef = useRef<HTMLButtonElement | null>(null);
   const musicStepRef = useRef(0);
   const soundHydratedRef = useRef(false);
   const mutedRef = useRef(false);
@@ -246,6 +253,7 @@ export default function Home() {
   const [bossProgress, setBossProgress] = useState("0/14 mobs");
   const [burstStaminaPct, setBurstStaminaPct] = useState(BURST_STAMINA_MAX);
   const [promotionCountdown, setPromotionCountdown] = useState(3);
+  const [debugOpen, setDebugOpen] = useState(false);
 
   useEffect(() => {
     stateRef.current = gameState;
@@ -369,6 +377,16 @@ export default function Home() {
     if (gameState === "playing") startMusic();
     else stopMusic();
   }, [gameState, startMusic, stopMusic]);
+
+  useEffect(() => {
+    const handler = createDebugKeyHandler();
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  useEffect(() => {
+    if (debugOpen) debugFirstActionRef.current?.focus();
+  }, [debugOpen]);
 
   function refreshHighScores() {
     setScoreMessage("Ranking global carregando...");
@@ -874,6 +892,43 @@ export default function Home() {
     }
     startGameRef.current = start;
 
+    const onDebugAction = (event: Event) => {
+      const action = (event as CustomEvent<DebugAction>).detail;
+      if (action === "toggle_menu") {
+        setDebugOpen((current) => !current);
+        return;
+      }
+
+      setDebugOpen(false);
+      if (action === "spawn_boss") {
+        if (stateRef.current !== "playing") start();
+        if (!bossSpawned) {
+          bossKills = bossKillTarget(localWave, callLoops);
+          bossSpawned = true;
+          spawnEnemy("boss");
+          syncHud();
+        }
+      } else if (action === "add_powerup") {
+        if (stateRef.current !== "playing") start();
+        spawnPowerUp();
+        announceEffect("DEBUG: power-up liberado");
+      } else if (action === "max_stamina") {
+        burstStamina = BURST_STAMINA_MAX;
+        syncHud();
+      } else if (action === "win_game") {
+        setScore(localScore);
+        setWave(localWave);
+        setLastOutcome("won");
+        setScoreSaved(false);
+        playSound("won");
+        stopMusic();
+        stateRef.current = "won";
+        setGameState("won");
+      } else if (action === "reset") {
+        start();
+      }
+    };
+
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isTyping =
@@ -951,6 +1006,7 @@ export default function Home() {
 
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener(DEBUG_ACTION_EVENT, onDebugAction);
     canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("pointerup", onPointerUp);
@@ -1694,6 +1750,7 @@ export default function Home() {
       cancelAnimationFrame(raf);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener(DEBUG_ACTION_EVENT, onDebugAction);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("pointerup", onPointerUp);
@@ -1973,6 +2030,28 @@ export default function Home() {
               <div className="menu-actions two">
                 <button type="button" onClick={resumeGame}>Continuar</button>
                 <button type="button" onClick={returnToTitle}>Sair do jogo</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {debugOpen && (
+          <div className="pause-menu-overlay" role="dialog" aria-modal="true" aria-label="Ferramentas de debug">
+            <div className="pause-panel">
+              <p className="menu-kicker">Developer tools</p>
+              <h2>DEBUG</h2>
+              <div className="menu-actions">
+                <button ref={debugFirstActionRef} type="button" onClick={() => triggerDebugAction("spawn_boss")}>
+                  Invocar Boss
+                </button>
+                <button type="button" onClick={() => triggerDebugAction("max_stamina")}>
+                  Max Estamina
+                </button>
+                <button type="button" onClick={() => triggerDebugAction("win_game")}>
+                  Testar Tela de Vitória
+                </button>
+                <button type="button" onClick={() => triggerDebugAction("toggle_menu")}>
+                  Fechar
+                </button>
               </div>
             </div>
           </div>
