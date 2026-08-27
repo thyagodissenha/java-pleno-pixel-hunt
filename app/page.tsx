@@ -279,6 +279,7 @@ export default function Home() {
   const [upgrade, setUpgrade] = useState("JDK 8");
   const [bossProgress, setBossProgress] = useState("0/14 mobs");
   const [debugBossHealth, setDebugBossHealth] = useState<{ hp: number; maxHp: number } | null>(null);
+  const [debugPowerUpCount, setDebugPowerUpCount] = useState(0);
   const [burstStaminaPct, setBurstStaminaPct] = useState(BURST_STAMINA_MAX);
   const [promotionCountdown, setPromotionCountdown] = useState(3);
   const [debugOpen, setDebugOpen] = useState(false);
@@ -952,6 +953,7 @@ export default function Home() {
     function start() {
       resetGame();
       setDebugBossHealth(null);
+      setDebugPowerUpCount(0);
       runOriginRef.current = "normal";
       stateRef.current = "playing";
       setGameState("playing");
@@ -987,6 +989,7 @@ export default function Home() {
         }
       } else if (action === "add_powerup") {
         spawnPowerUp();
+        setDebugPowerUpCount(powerUps.length);
         announceEffect("DEBUG: power-up liberado");
       } else if (action === "max_stamina") {
         burstStamina = BURST_STAMINA_MAX;
@@ -1853,6 +1856,11 @@ export default function Home() {
         {debugBossHealth && (
           <output aria-label="Vida do boss debug">
             {debugBossHealth.hp}/{debugBossHealth.maxHp} HP
+          </output>
+        )}
+        {debugPowerUpCount > 0 && (
+          <output aria-label="Power-ups debug">
+            {debugPowerUpCount} power-up disponível
           </output>
         )}
         <div className="hud-card jdk-card">

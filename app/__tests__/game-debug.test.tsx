@@ -81,6 +81,15 @@ describe("game debug tools", () => {
     expect(screen.getByRole("status", { name: "Vida do boss debug" })).toHaveTextContent("188/188 HP");
   });
 
+  it("exposes the power-up created in the arena by F3", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    render(<Home />);
+
+    fireEvent.keyDown(window, { key: "F3" });
+
+    expect(screen.getByRole("status", { name: "Power-ups debug" })).toHaveTextContent("1 power-up disponível");
+  });
+
   it("restores stamina after it has been consumed", () => {
     render(<Home />);
     fireEvent.keyDown(window, { key: "F1" });
