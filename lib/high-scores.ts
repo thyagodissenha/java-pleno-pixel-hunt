@@ -13,8 +13,24 @@ export type HighScore = {
 
 export type HighScoreStorage = "blob" | "local";
 
+export type StoredHighScore = HighScore & {
+  submissionId?: string;
+};
+
+export interface ProcessedSubmission {
+  submissionId: string;
+  persistedAt: string;
+}
+
+export interface RankingDocumentV2 {
+  version: 2;
+  scores: StoredHighScore[];
+  processedSubmissions: ProcessedSubmission[];
+}
+
 const SCORE_PATH = "java-pleno-pixel-hunt/high-scores.json";
 const LOCAL_SCORE_FILE = path.join(process.cwd(), "data", "high-scores.json");
+const PROCESSED_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1_000;
 
 export function cleanScores(scores: HighScore[]) {
   return scores
@@ -42,13 +58,85 @@ export function sanitizeScore(input: unknown): HighScore {
   };
 }
 
+function isRecord(input: unknown): input is Record<string, unknown> {
+  return Boolean(input) && typeof input === "object";
+}
+
+function validDateString(value: unknown) {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value));
+}
+
+function validSubmissionId(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function sanitizeStoredScore(input: unknown): StoredHighScore {
+  const sanitized = sanitizeScore(input);
+
+  if (!isRecord(input)) return sanitized;
+
+  const stored: StoredHighScore = {
+    ...sanitized,
+    createdAt: validDateString(input.createdAt) ? input.createdAt : sanitized.createdAt,
+  };
+
+  if (validSubmissionId(input.submissionId)) {
+    stored.submissionId = input.submissionId;
+  }
+
+  return stored;
+}
+
+function cleanStoredScores(scores: StoredHighScore[]) {
+  return cleanScores(scores).map((entry) => entry as StoredHighScore);
+}
+
+function normalizeProcessedSubmissions(input: unknown, now: number): ProcessedSubmission[] {
+  if (!Array.isArray(input)) return [];
+
+  return input.filter((entry): entry is ProcessedSubmission => {
+    if (!isRecord(entry) || !validSubmissionId(entry.submissionId) || !validDateString(entry.persistedAt)) {
+      return false;
+    }
+
+    return now - Date.parse(entry.persistedAt) < PROCESSED_SUBMISSION_TTL_MS;
+  }).map((entry) => ({
+    submissionId: entry.submissionId,
+    persistedAt: entry.persistedAt,
+  }));
+}
+
+export function decodeRankingDocument(input: unknown, now = Date.now()): RankingDocumentV2 {
+  if (Array.isArray(input)) {
+    return {
+      version: 2,
+      scores: cleanStoredScores(input.map(sanitizeStoredScore)),
+      processedSubmissions: [],
+    };
+  }
+
+  if (!isRecord(input) || input.version !== 2) {
+    return { version: 2, scores: [], processedSubmissions: [] };
+  }
+
+  return {
+    version: 2,
+    scores: cleanStoredScores(Array.isArray(input.scores) ? input.scores.map(sanitizeStoredScore) : []),
+    processedSubmissions: normalizeProcessedSubmissions(input.processedSubmissions, now),
+  };
+}
+
+export function publicHighScores(document: RankingDocumentV2): HighScore[] {
+  return cleanScores(document.scores.map(({ submissionId: _submissionId, ...score }) => score));
+}
+
 export async function readHighScores() {
   if (process.env.BLOB_READ_WRITE_TOKEN) {
     try {
       const blob = await get(SCORE_PATH, { access: "private" });
       if (!blob) return [];
       const content = await new Response(blob.stream).text();
-      return cleanScores(JSON.parse(content) as HighScore[]);
+      return publicHighScores(decodeRankingDocument(JSON.parse(content)));
     } catch {
       return [];
     }
@@ -56,7 +144,7 @@ export async function readHighScores() {
 
   try {
     const content = await readFile(LOCAL_SCORE_FILE, "utf8");
-    return cleanScores(JSON.parse(content) as HighScore[]);
+    return publicHighScores(decodeRankingDocument(JSON.parse(content)));
   } catch {
     return [];
   }
