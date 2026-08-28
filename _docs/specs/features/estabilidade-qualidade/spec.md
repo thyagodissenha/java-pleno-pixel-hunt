@@ -35,6 +35,8 @@ O jogo *Java Pleno Pixel Hunt* possui o seu loop principal de gameplay funcional
 | Posse do claim idempotente | Token exclusivo por aquisição; `complete` e `release` somente alteram o claim quando o token ainda é o proprietário | Impede que um worker antigo conclua ou libere o claim adquirido por outro após expiração. | Sim — ciclo interno 2, 2026-08-28 |
 | Dedupe no armazenamento autoritativo | `submissionId` persistido junto ao score e escrita condicional por ETag no Vercel Blob | Faz o Blob decidir a unicidade mesmo quando a gravação termina e a confirmação Redis falha. | Sim — ciclo interno 2, 2026-08-28 |
 | Aprovação de qualidade | Quality Gate verde para código novo; dívida histórica fora do diff não bloqueia | Fecha as três violações novas S3776/S1871/S7776 sem expandir a rodada para dívida anterior. | Sim — ciclo interno 2, 2026-08-28 |
+| Preflight antiabuso | Redis compartilhado limita cada IP a 60 POSTs validados por janela de 60 segundos antes de qualquer leitura privada do Blob; duplicatas também consomem a cota | Impede que IDs rotativos ou repetidos amplifiquem leituras privadas sem alterar o throttle funcional de score. | Sim — ciclo interno 3, 2026-08-28 |
+| Particionamento do ledger autoritativo | 64 shards Blob selecionados deterministicamente pelo `submissionId`, com retenção lógica exata de 24 horas e CAS/ETag independente por shard | Limita contenção e crescimento de cada documento sem enfraquecer a dedupe autoritativa. | Sim — ciclo interno 3, 2026-08-28 |
 
 ---
 
@@ -123,6 +125,8 @@ O jogo *Java Pleno Pixel Hunt* possui o seu loop principal de gameplay funcional
 | `ESTAB-16` | P2: Ownership exclusivo do claim Redis | Design | Pending |
 | `ESTAB-17` | P2: Dedupe autoritativa e recuperação de falha parcial | Design | Pending |
 | `ESTAB-18` | P1/P2/P3: Evidência discriminante e Quality Gate verde | Design | Pending |
+| `ESTAB-19` | P2: Preflight antiabuso antes do Blob | Design | Pending |
+| `ESTAB-20` | P2: Ledger autoritativo particionado e limitado | Design | Pending |
 
 ---
 
@@ -295,3 +299,50 @@ Esta emenda preserva integralmente os requisitos e o histórico anteriores. Ela 
 **Open questions:** none — as decisões de ownership, dedupe autoritativa e Quality Gate foram aprovadas pelo usuário em 2026-08-28.
 
 **Cobertura após a emenda do ciclo 2:** 18 requisitos totais; `ESTAB-16` a `ESTAB-18` seguem para Design/Tasks, e `ESTAB-01` a `ESTAB-15` preservam requisitos e evidências históricas.
+
+---
+
+## Emenda do Ciclo Interno 3 — Preflight Antiabuso e Limites do Ledger
+
+Esta emenda preserva integralmente os requisitos, ACs e evidências dos ciclos anteriores. Ela resolve somente os dois gaps categoria (b) que interromperam o ciclo 3: proteção Redis antes de leituras privadas do Blob e particionamento com retenção definida do ledger autoritativo. Os achados categoria (a) e as melhorias categoria (c) já registrados permanecem fora desta fase Specify.
+
+### Requisitos e critérios de aceite adicionais
+
+#### `ESTAB-19` — Preflight antiabuso antes de leituras privadas do Blob
+
+1. WHEN `POST /api/scores` concluir as validações existentes de payload debug e `Idempotency-Key` THEN a API SHALL executar um preflight compartilhado por IP antes de consultar o status idempotente Redis, ler qualquer Blob privado, adquirir o throttle funcional ou reivindicar um claim.
+2. WHEN chegar a primeira requisição validada de um IP sem janela ativa THEN o preflight SHALL abrir atomicamente uma janela de 60 segundos e SHALL contabilizar essa requisição como a primeira de no máximo 60; as requisições validadas 1 a 60 dessa janela SHALL poder seguir para os fast paths existentes.
+3. WHEN uma requisição validada reutilizar um `submissionId` concluído, em voo ou presente no ledger THEN ela SHALL consumir uma unidade do mesmo limite de 60 requisições por minuto antes de receber qualquer resultado idempotente; trocar ou repetir `submissionId` SHALL not contornar o preflight.
+4. WHEN a 61ª ou qualquer requisição validada posterior do mesmo IP chegar antes do fim da janela THEN a API SHALL responder HTTP `429` com `{ "error": "Muitas tentativas. Tente novamente em breve.", "retryAfterMs": <milissegundos restantes> }` e `Retry-After: <ceil(retryAfterMs / 1000)>`, calculados a partir do TTL restante da janela no instante da decisão; a rejeição SHALL not renovar a janela, ler ou escrever Blob, adquirir o throttle de 10 segundos nem tocar em claim.
+5. WHEN a janela de 60 segundos expirar THEN a próxima requisição validada daquele IP SHALL abrir atomicamente uma nova janela e voltar a ser contabilizada como a primeira, sem carregar contagem da janela anterior.
+6. WHEN o preflight aprovar a requisição THEN os fast paths Redis `completed` e ledger SHALL continuar antes do throttle funcional de score; uma duplicata resolvida por fast path SHALL not consumir a janela funcional de 10 segundos, enquanto um ID ainda não concluído SHALL permanecer sujeito ao throttle definido em `ESTAB-08`.
+7. WHEN credenciais ou serviço Redis do preflight estiverem indisponíveis em produção THEN a API SHALL responder HTTP `503` com o contrato amigável já vigente, SHALL not acessar Blob privado nem alterar throttle, claim ou ranking, e o cliente SHALL manter a submissão pendente; fora de produção, a API MAY usar store local injetável com a mesma janela, cota, TTL restante e semântica atômica, identificado em observabilidade como não distribuído.
+
+#### `ESTAB-20` — Ledger autoritativo Blob particionado em 64 shards
+
+1. WHEN um `submissionId` validado precisar ser consultado ou persistido no ledger THEN o sistema SHALL selecionar exatamente um dos 64 shards estáveis pelo índice formado pelos seis bits mais significativos do SHA-256 dos bytes UTF-8 do valor após o `trim` já exigido, preservando caixa e caracteres; o índice SHALL pertencer a `0..63`, e o mesmo ID SHALL sempre selecionar o mesmo shard em qualquer instância.
+2. WHEN o fast path autoritativo consultar uma submissão após aprovação no preflight THEN SHALL ler somente o shard selecionado para decidir a presença daquele `submissionId`; a ausência no shard SHALL encaminhar o ID novo ao throttle funcional de 10 segundos, sem varrer os outros 63 shards.
+3. WHEN uma entrada for criada no ledger THEN ela SHALL registrar o `submissionId` e `persistedAt` necessários à dedupe e SHALL permanecer autoritativa exatamente enquanto `now < persistedAt + 24 horas`; em `now >= persistedAt + 24 horas` ela SHALL ser tratada como expirada e não poderá produzir sucesso idempotente.
+4. WHEN um shard for lido ou preparado para escrita THEN entradas expiradas SHALL ser excluídas da visão autoritativa; a próxima escrita CAS bem-sucedida naquele shard SHALL removê-las fisicamente, sem exigir varredura global ou alterar scores válidos do ranking público.
+5. WHEN um shard for alterado THEN a escrita SHALL usar a ETag da versão lida como precondição; em conflito, o writer SHALL reler o mesmo shard, reaplicar expiração e merge sobre a versão fresca e SHALL not sobrescrever cegamente alterações concorrentes.
+6. WHEN writers concorrentes processarem o mesmo `submissionId` dentro da janela de 24 horas THEN no máximo uma ocorrência autoritativa SHALL ser criada; writers com IDs diferentes que colidirem no mesmo shard SHALL preservar todas as entradas válidas após os retries CAS, ou SHALL retornar falha retryable sem declarar persistência quando o limite de retries vigente for esgotado.
+7. WHEN ocorrer falha parcial entre a persistência do score, a atualização do shard e o `complete` Redis THEN a API SHALL preservar o contrato de `ESTAB-17`: não responder sucesso antes de haver confirmação Blob autoritativa recuperável, não liberar claim de outro owner, e resolver retries dentro de 24 horas pelo mesmo shard sem segunda ocorrência nem perda do efeito elegível no ranking.
+8. WHEN o ranking público for lido ou devolvido por POST THEN SHALL continuar expondo somente `HighScore[]` saneado, ordenado e limitado por `cleanScores`; número do shard, `submissionId`, `persistedAt`, ETag e demais metadados internos SHALL not aparecer na resposta, e registros legados SHALL permanecer compatíveis conforme `ESTAB-17`.
+
+### Dimensions sweep do ciclo interno 3
+
+| Dimensão | Resolução |
+| --- | --- |
+| Input validation & bounds | O preflight conta somente POSTs que passaram pelas validações existentes de debug e `Idempotency-Key`; body size e antecipação do parse continuam categoria (c), sem alteração neste ciclo. |
+| Auth boundaries & rate limits | Cada IP recebe 60 requisições por janela de 60 segundos; duplicatas e IDs rotativos obedecem a mesma cota, separada do throttle funcional de 10 segundos. |
+| Idempotency / retry / duplicate handling | Duplicatas passam pelo preflight, mas fast paths aprovados continuam antes do throttle funcional; o shard determinístico mantém dedupe exata durante 24 horas. |
+| Concurrency / ordering | Preflight abre/contabiliza a janela atomicamente; cada shard usa CAS/ETag independente e merge sobre versão fresca. |
+| Data lifecycle / expiry | A validade do ledger termina exatamente em `persistedAt + 24 horas`; entradas expiradas deixam imediatamente a visão autoritativa e são removidas fisicamente na próxima escrita do shard. |
+| Failure / partial-failure states | Preflight Redis falha fechado em produção sem Blob I/O; falhas entre score, ledger e Redis preservam os outcomes de sucesso, retry e ownership de `ESTAB-16`/`ESTAB-17`. |
+| External-dependency failure | Redis indisponível produz `503` e fila preservada; conflito/indisponibilidade Blob não pode ser apresentado como persistência confirmada. |
+| Observability | Backend do preflight, classe de erro, rejeição e shard index MAY ser observados sem IP, hash completo, `submissionId`, payload, owner token ou conteúdo do ledger. |
+| State-transition integrity | `preflight approved → fast path → throttle funcional → claim → persistência` é a única ordem válida para IDs novos; rejeição em qualquer etapa não executa etapas posteriores. |
+
+**Open questions:** none — limite, ordem, tratamento de duplicatas, política Redis, número/seleção de shards, retenção e CAS foram aprovados pelo usuário em 2026-08-28.
+
+**Cobertura após a emenda do ciclo 3:** 20 requisitos totais e 75 ACs totais; `ESTAB-19` possui 7 ACs e `ESTAB-20` possui 8 ACs. `ESTAB-01` a `ESTAB-18` preservam integralmente requisitos, ACs e evidências históricas.
