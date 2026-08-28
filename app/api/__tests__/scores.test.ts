@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const adapters = vi.hoisted(() => ({ acquire: vi.fn(), claim: vi.fn(), complete: vi.fn(), release: vi.fn() }));
-const scores = vi.hoisted(() => ({ add: vi.fn(), read: vi.fn() }));
+const adapters = vi.hoisted(() => ({
+  acquire: vi.fn(),
+  claim: vi.fn(),
+  complete: vi.fn(),
+  release: vi.fn(),
+  status: vi.fn(),
+}));
+const scores = vi.hoisted(() => ({ persist: vi.fn(), read: vi.fn(), snapshot: vi.fn() }));
 
 vi.mock("@/lib/score-rate-limit", () => ({
   createRateLimitStore: () => ({ acquire: adapters.acquire }),
@@ -12,16 +18,19 @@ vi.mock("@/lib/score-idempotency", () => ({
     claim: adapters.claim,
     complete: adapters.complete,
     release: adapters.release,
+    status: adapters.status,
   }),
 }));
 
 vi.mock("@/lib/high-scores", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/high-scores")>()),
-  addHighScore: scores.add,
+  persistHighScore: scores.persist,
   readHighScores: scores.read,
+  readRankingSnapshot: scores.snapshot,
 }));
 
 const scorePayload = { name: "DEV", score: 1200, wave: 4, resets: 1, outcome: "over" };
+const emptySnapshot = { document: { version: 2, scores: [], processedSubmissions: [] }, etag: null };
 
 async function loadRoute() {
   return import("@/app/api/scores/route");
@@ -46,11 +55,13 @@ describe("/api/scores", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-27T12:00:00.000Z"));
     adapters.acquire.mockReset().mockResolvedValue({ allowed: true, backend: "redis", retryAfterMs: 10_000 });
-    adapters.claim.mockReset().mockResolvedValue("claimed");
-    adapters.complete.mockReset().mockResolvedValue(undefined);
-    adapters.release.mockReset().mockResolvedValue(undefined);
+    adapters.claim.mockReset().mockResolvedValue({ state: "claimed", ownerToken: "owner-token-1" });
+    adapters.complete.mockReset().mockResolvedValue("applied");
+    adapters.release.mockReset().mockResolvedValue("applied");
+    adapters.status.mockReset().mockResolvedValue({ state: "other" });
     scores.read.mockReset().mockResolvedValue([]);
-    scores.add.mockReset().mockImplementation(async (score) => ({ scores: [score], storage: "blob" }));
+    scores.snapshot.mockReset().mockResolvedValue(emptySnapshot);
+    scores.persist.mockReset().mockImplementation(async (score) => ({ scores: [score], storage: "blob", idempotent: false }));
   });
 
   afterEach(() => {
@@ -75,7 +86,7 @@ describe("/api/scores", () => {
     });
   });
 
-  it("sanitizes POST payloads before persistence and completes the claim", async () => {
+  it("sanitizes POST payloads before authoritative persistence and completes the owner claim", async () => {
     const { POST } = await loadRoute();
 
     const response = await POST(scoreRequest({
@@ -83,27 +94,39 @@ describe("/api/scores", () => {
     }));
 
     expect(response.status).toBe(201);
-    expect(scores.add).toHaveBeenCalledWith({
+    expect(scores.persist).toHaveBeenCalledWith({
       name: "JAVA PLENO",
       score: 999_999,
       wave: 1,
       resets: 0,
       outcome: "over",
       createdAt: "2026-08-27T12:00:00.000Z",
-    });
-    expect(adapters.complete).toHaveBeenCalledWith("submission-1");
+    }, "submission-1");
+    expect(adapters.complete).toHaveBeenCalledWith("submission-1", "owner-token-1");
     expect(adapters.release).not.toHaveBeenCalled();
+    expect(adapters.status.mock.invocationCallOrder[0]).toBeLessThan(scores.snapshot.mock.invocationCallOrder[0]);
+    expect(scores.snapshot.mock.invocationCallOrder[0]).toBeLessThan(adapters.acquire.mock.invocationCallOrder[0]);
+    expect(adapters.acquire.mock.invocationCallOrder[0]).toBeLessThan(adapters.claim.mock.invocationCallOrder[0]);
   });
 
-  it("rejects an explicitly debug-originated payload without persistence", async () => {
+  it.each([
+    ["origin marker", { ...scorePayload, origin: "debug" }],
+    ["boolean marker", { ...scorePayload, debug: true }],
+  ])("rejects an explicitly debug-originated payload by %s without adapters or Blob", async (_label, body) => {
     const { POST } = await loadRoute();
 
-    const response = await POST(scoreRequest({ body: { ...scorePayload, origin: "debug" } }));
+    const response = await POST(scoreRequest({ body }));
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "Scores de debug não são aceitos." });
+    expect(adapters.status).not.toHaveBeenCalled();
     expect(adapters.acquire).not.toHaveBeenCalled();
-    expect(scores.add).not.toHaveBeenCalled();
+    expect(adapters.claim).not.toHaveBeenCalled();
+    expect(adapters.complete).not.toHaveBeenCalled();
+    expect(adapters.release).not.toHaveBeenCalled();
+    expect(scores.read).not.toHaveBeenCalled();
+    expect(scores.snapshot).not.toHaveBeenCalled();
+    expect(scores.persist).not.toHaveBeenCalled();
   });
 
   it("requires a valid Idempotency-Key before acquiring the throttle", async () => {
@@ -113,8 +136,49 @@ describe("/api/scores", () => {
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "Idempotency-Key inválido." });
+    expect(adapters.status).not.toHaveBeenCalled();
     expect(adapters.acquire).not.toHaveBeenCalled();
-    expect(scores.add).not.toHaveBeenCalled();
+    expect(scores.persist).not.toHaveBeenCalled();
+  });
+
+  it("returns Redis completed idempotent success before throttle and without a Blob write", async () => {
+    adapters.status.mockResolvedValue({ state: "completed" });
+    scores.read.mockResolvedValue([{ ...scorePayload, createdAt: "2026-08-26T12:00:00.000Z" }]);
+    const { POST } = await loadRoute();
+
+    const response = await POST(scoreRequest());
+    const body = await response.json() as { idempotent: boolean; scores: unknown[]; storage: string };
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({ idempotent: true, storage: "blob" });
+    expect(body.scores).toHaveLength(1);
+    expect(adapters.acquire).not.toHaveBeenCalled();
+    expect(adapters.claim).not.toHaveBeenCalled();
+    expect(scores.persist).not.toHaveBeenCalled();
+  });
+
+  it("returns Blob ledger idempotent success before throttle and without a write", async () => {
+    scores.snapshot.mockResolvedValue({
+      document: {
+        version: 2,
+        scores: [{ ...scorePayload, createdAt: "2026-08-26T12:00:00.000Z", submissionId: "submission-1" }],
+        processedSubmissions: [{ submissionId: "submission-1", persistedAt: "2026-08-27T11:00:00.000Z" }],
+      },
+      etag: "etag-ledger",
+    });
+    const { POST } = await loadRoute();
+
+    const response = await POST(scoreRequest());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      scores: [{ ...scorePayload, createdAt: "2026-08-26T12:00:00.000Z" }],
+      storage: "blob",
+      idempotent: true,
+    });
+    expect(adapters.acquire).not.toHaveBeenCalled();
+    expect(adapters.claim).not.toHaveBeenCalled();
+    expect(scores.persist).not.toHaveBeenCalled();
   });
 
   it("returns the exact 429 contract without claiming or persisting", async () => {
@@ -127,69 +191,82 @@ describe("/api/scores", () => {
     expect(response.headers.get("Retry-After")).toBe("10");
     expect(await response.json()).toEqual({ error: "Aguarde antes de enviar outro score.", retryAfterMs: 10_000 });
     expect(adapters.claim).not.toHaveBeenCalled();
-    expect(scores.add).not.toHaveBeenCalled();
+    expect(scores.persist).not.toHaveBeenCalled();
   });
 
   it("returns 503 on a Redis error without persisting", async () => {
-    adapters.acquire.mockRejectedValue(new Error("Redis unavailable"));
+    adapters.status.mockRejectedValue(new Error("Redis unavailable"));
     const { POST } = await loadRoute();
 
     const response = await POST(scoreRequest());
 
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: "Não foi possível salvar o ranking agora." });
-    expect(scores.add).not.toHaveBeenCalled();
-  });
-
-  it("returns an idempotent success without a second write", async () => {
-    adapters.claim.mockResolvedValue("completed");
-    scores.read.mockResolvedValue([{ ...scorePayload, createdAt: "2026-08-26T12:00:00.000Z" }]);
-    const { POST } = await loadRoute();
-
-    const response = await POST(scoreRequest());
-    const body = await response.json() as { idempotent: boolean; scores: unknown[] };
-
-    expect(response.status).toBe(200);
-    expect(body.idempotent).toBe(true);
-    expect(body.scores).toHaveLength(1);
-    expect(scores.add).not.toHaveBeenCalled();
-    expect(adapters.complete).not.toHaveBeenCalled();
+    expect(scores.persist).not.toHaveBeenCalled();
   });
 
   it("returns a transient conflict for an in-flight claim without persistence", async () => {
-    adapters.claim.mockResolvedValue("in-flight");
+    adapters.claim.mockResolvedValue({ state: "in-flight" });
     const { POST } = await loadRoute();
 
     const response = await POST(scoreRequest());
 
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ error: "Submissão em processamento." });
-    expect(scores.add).not.toHaveBeenCalled();
+    expect(scores.persist).not.toHaveBeenCalled();
   });
 
-  it("releases the claim when Blob persistence falls back to local storage", async () => {
-    scores.add.mockResolvedValue({
+  it("returns success after Blob confirmation and deduplicates the retry when Redis complete throws", async () => {
+    adapters.complete.mockRejectedValue(new Error("complete failed"));
+    scores.snapshot
+      .mockResolvedValueOnce(emptySnapshot)
+      .mockResolvedValue({
+        document: {
+          version: 2,
+          scores: [{ ...scorePayload, createdAt: "2026-08-27T12:00:00.000Z", submissionId: "submission-1" }],
+          processedSubmissions: [{ submissionId: "submission-1", persistedAt: "2026-08-27T12:00:00.000Z" }],
+        },
+        etag: "etag-confirmed",
+      });
+    const { POST } = await loadRoute();
+
+    const firstResponse = await POST(scoreRequest());
+    const retryResponse = await POST(scoreRequest());
+
+    expect(firstResponse.status).toBe(201);
+    expect((await firstResponse.json() as { storage: string }).storage).toBe("blob");
+    expect(retryResponse.status).toBe(200);
+    expect(await retryResponse.json()).toEqual({
       scores: [{ ...scorePayload, createdAt: "2026-08-27T12:00:00.000Z" }],
-      storage: "local",
+      storage: "blob",
+      idempotent: true,
     });
+    expect(adapters.complete).toHaveBeenCalledWith("submission-1", "owner-token-1");
+    expect(adapters.release).not.toHaveBeenCalled();
+    expect(adapters.acquire).toHaveBeenCalledTimes(1);
+    expect(adapters.claim).toHaveBeenCalledTimes(1);
+    expect(scores.persist).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns success after Blob confirmation when Redis complete reports ownership-lost", async () => {
+    adapters.complete.mockResolvedValue("ownership-lost");
     const { POST } = await loadRoute();
 
     const response = await POST(scoreRequest());
 
-    expect(response.status).toBe(200);
-    expect((await response.json() as { storage: string }).storage).toBe("local");
-    expect(adapters.release).toHaveBeenCalledWith("submission-1");
-    expect(adapters.complete).not.toHaveBeenCalled();
+    expect(response.status).toBe(201);
+    expect((await response.json() as { storage: string }).storage).toBe("blob");
+    expect(adapters.release).not.toHaveBeenCalled();
   });
 
-  it("releases the claim when score persistence throws", async () => {
-    scores.add.mockRejectedValue(new Error("Blob failed"));
+  it("releases the owner claim and returns 503 when Blob persistence fails before confirmation", async () => {
+    scores.persist.mockRejectedValue(new Error("Blob failed"));
     const { POST } = await loadRoute();
 
     const response = await POST(scoreRequest());
 
     expect(response.status).toBe(503);
-    expect(adapters.release).toHaveBeenCalledWith("submission-1");
+    expect(adapters.release).toHaveBeenCalledWith("submission-1", "owner-token-1");
     expect(adapters.complete).not.toHaveBeenCalled();
   });
 });
