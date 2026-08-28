@@ -395,11 +395,44 @@ Fase 3: T9 ──→ T10
 
 ## Questões abertas
 
+### Verifier e code review — ciclo interno 1
+
+- **Status (2026-08-27):** Verifier `FAIL` em `b8217af` com 38/42 ACs, 74/74 Vitest, 74/74 coverage, build PASS, lint PASS com 2 warnings, 2/2 E2E e sensor 3/3 killed. Code review read-only concluído por 7 dimensões; Sonar `SUCCESS`, cobertura total 64,7%, nova 87,1% e Quality Gate `ERROR`.
+
+#### (a) Viola AC/design existente — fix tasks do ciclo atual após decisão dos gaps (b)
+
+- `ESTAB-09` AC1 / `ESTAB-10` AC3: preservar ou criar pendência quando a API responder `storage: "local"`; remover somente após Blob ou sucesso idempotente confirmado.
+- `ESTAB-09` AC1: provar enqueue de uma nova submissão em rede, HTTP 429 e HTTP 503.
+- `ESTAB-10` AC4: provar retry posterior da mesma entrada e `submissionId` após novo `load`/`online`.
+- `ESTAB-06` AC3: provar conjuntamente zero alteração em estado, entidades, HUD, POST, ranking e storage para eventos não autorizados/fora da allowlist.
+- `ESTAB-10` AC5: provar uma única sequência de timers sob `load`/`online` sobrepostos.
+- `ESTAB-09` AC4: fast path de chave já concluída antes do throttle, sem novo Blob write nem resposta 429.
+- `ESTAB-07` AC1: provar que uma nova run normal após restart volta a ser elegível para POST.
+- `ESTAB-13` AC1: tornar o E2E discriminante para `100dvh` variando a altura do viewport, sem aceitar valor fixo equivalente ao viewport configurado.
+- `ESTAB-07` AC3: cobrir os dois marcadores de payload debug aceitos pela rota, com zero throttle/claim/persistência.
+
+#### (b) Gap de spec/design — resolvido documentalmente no ciclo interno 2
+
+- **Ownership do claim após TTL:** a interface vigente retorna apenas `claimed | completed | in-flight` e usa marcador compartilhado. A spec não define token de posse, compare-and-set de `complete/release`, renovação ou comportamento quando um claim expira durante persistência. O review demonstrou que um worker antigo pode completar/apagar o claim novo.
+- **Falha parcial Blob → idempotência:** a spec/design não define estado durável nem resposta quando o Blob grava com sucesso e `complete()` falha. Responder 503 e liberar o claim permite retry e duplicação; corrigir exige decidir dedupe por `submissionId` no armazenamento autoritativo, outbox/protocolo equivalente ou outra semântica explícita.
+- **Critério do Quality Gate:** `ESTAB-15` exige somente importação de cobertura maior que 0%, mas o objetivo P3 é qualidade e o gate permanece `ERROR` por `S3776`, `S1871` e `S7776`. Definir se aprovação exige Quality Gate verde/zero violações novas ou se esses smells permanecem fora dos ACs.
+
+**Decisão (2026-08-28):** o usuário aprovou token exclusivo de ownership com compare-and-set/delete; dedupe autoritativa por `submissionId` cobrindo Blob confirmado seguido de falha Redis; e Quality Gate verde para código novo. As decisões foram incorporadas como `ESTAB-16` a `ESTAB-18` na spec e no design do ciclo 2.
+
+#### (c) Melhoria/refactor fora dos ACs — registrar e não implementar
+
+- Aplicar throttle/limite de tamanho antes de `request.json()` para payload inválido/custoso.
+- Reduzir os 2–3 round trips Redis do claim com script atômico, além do necessário para a decisão de ownership.
+- Otimizar a drenagem de `localStorage` de O(N²) para estado em memória durante o drain.
+- Cobrir caminhos LCOV adicionais de factory/credenciais/release já representados por contratos de integração, salvo os que entrarem nos fixes (a)/(b).
+- Preservar as questões categoria (c) anteriores, inclusive extração da sincronização de `Home`, mock direto de fetch e foco do diálogo.
+
 - **Resolvida — T2 / `ESTAB-02` (2026-08-27)**: aprovado incluir `lib/high-scores.ts` no escopo de T2 e exportar `cleanScores` para viabilizar o teste direto exigido pela task.
 - **Resolvida — T6 / `ESTAB-03` (2026-08-27)**: aprovado incluir `app/__tests__/game-debug.test.tsx` para verificar o toggle por `F1` e as ações de Boss, Max Estamina e Vitória.
 - **Resolvida — T9 / `ESTAB-04` (2026-08-27)**: aprovado throttle de 10 segundos por IP (`x-forwarded-for`, fallback `x-real-ip`), resposta HTTP `429` com `Retry-After` e `{ error, retryAfterMs }`, persistência na chave existente `java-pleno-pixel-hunt-high-scores` e retry no carregamento/evento `online`. Escopo ampliado para API, cliente e respectivos testes.
 - **Resolvida — T9 / infraestrutura de testes (2026-08-27)**: aprovado incluir `package.json` e `package-lock.json` no escopo de T9 e instalar `msw` como dependência de desenvolvimento.
 - **Resolvida — integridade de teste T6/T9 (2026-08-27)**: aprovado substituir a expectativa intermediária fixa de `81%` por uma verificação de que a estamina não está em `100%`, mantendo a expectativa final exata em `100%`. Correção rastreada em T6-F1.
+- **Resolvida — C1-T2 / integridade de teste existente (2026-08-27)**: o usuário autorizou substituir o setup debug por uma run normal elegível e determinística, ajustar exclusivamente a expectativa de `outcome` de `won` para `over`, preservar as demais asserções de fallback e adicionar prova separada de zero POST/zero enqueue para vitória debug. Nenhum hook/cheat de teste foi criado.
 
 ### Code review pós-Verifier — classificação
 
@@ -437,7 +470,7 @@ Fase 3: T9 ──→ T10
 
 **Spec emendada:** `_docs/specs/features/estabilidade-qualidade/spec.md`
 **Design emendado:** `_docs/specs/features/estabilidade-qualidade/design.md`
-**Status:** Approved para execução sequencial; nenhuma task nova concluída
+**Status:** Ciclo 1 em `FAIL`; Verifier e code review concluídos, execução bloqueada aguardando decisão dos gaps categoria (b)
 **Escopo:** somente categoria (a) e decisões categoria (b); categoria (c) permanece em Questões abertas
 **Execução:** agente único, sem subagentes, conforme autorização do usuário
 
@@ -496,6 +529,8 @@ Fase 5 — Cobertura e Quality:    C1-T12
 **Tools/Skills:** Context7 somente se a API de ambiente do Next.js exigir confirmação; `testing-a11y` para outcomes
 **Commit:** `fix(cycle-1): harden debug authorization`
 
+**Execução:** Concluída em `e219e28`; 42 testes passaram, 0 falharam e 0 foram ignorados.
+
 #### C1-T2: Proteger o listener e excluir runs debug do ranking
 
 **O que:** revalidar ambiente/payload no consumidor, marcar a origem da run e impedir POST/enqueue de score debug.
@@ -505,15 +540,17 @@ Fase 5 — Cobertura e Quality:    C1-T12
 **Requisito:** `ESTAB-06`, `ESTAB-07`
 
 **Done when:**
-- [ ] Evento forjado em production e detail inválido não alteram estado/HUD/entidades.
-- [ ] Qualquer ação debug marca a run até o próximo start/reset normal.
-- [ ] Final de run debug não chama POST nem grava `pending-scores`; teste MSW prova zero requests.
-- [ ] Mínimo 3 casos novos por comportamento visível/contrato e gate full passa com baseline preservado.
+- [x] Evento forjado em production e detail inválido não alteram estado/HUD/entidades.
+- [x] Qualquer ação debug marca a run até o próximo start/reset normal.
+- [x] Final de run debug não chama POST nem grava `pending-scores`; teste MSW prova zero requests.
+- [x] Mínimo 3 casos novos por comportamento visível/contrato e gate full passa com baseline preservado.
 
 **Testes:** unit/integration RTL + MSW, co-localizados
 **Gate:** full
 **Tools/Skills:** `testing-a11y`
 **Commit:** `fix(cycle-1): exclude debug scores from ranking`
+
+**Execução:** Concluída em `9dd52ff`; setup/expectativa do teste existente corrigidos com autorização explícita. A resposta compacta do worker foi perdida por limite de uso antes de informar a contagem do gate; o commit e a sequência foram preservados para revalidação independente.
 
 #### C1-T3: Tornar o teste de boss discriminante
 
@@ -533,6 +570,8 @@ Fase 5 — Cobertura e Quality:    C1-T12
 **Tools/Skills:** `testing-a11y`
 **Commit:** `fix(cycle-1): prove full-health boss spawn`
 
+**Execução:** Concluída em `270ab08`; contagem do gate pendente de revalidação independente após interrupção do worker por limite de uso.
+
 #### C1-T4: Provar o efeito de F3 na arena
 
 **O que:** verificar o side effect observável de power-up disparado por F3, além do mapeamento da tecla.
@@ -550,6 +589,8 @@ Fase 5 — Cobertura e Quality:    C1-T12
 **Gate:** full
 **Tools/Skills:** `testing-a11y`
 **Commit:** `fix(cycle-1): prove f3 power-up effect`
+
+**Execução:** Concluída em `e0bb13f`; contagem do gate pendente de revalidação independente após interrupção do worker por limite de uso.
 
 ### Fase 2 — API distribuída
 
@@ -573,6 +614,8 @@ Fase 5 — Cobertura e Quality:    C1-T12
 **Tools/Skills:** Context7 `@upstash/redis`; nenhuma API vendor deve ser assumida sem consulta
 **Commit:** `fix(cycle-1): add distributed score throttle`
 
+**Execução:** Concluída em `3f9a897`; 54/54 testes passaram.
+
 #### C1-T6: Criar contrato idempotente compartilhado
 
 **O que:** implementar claim/complete/release por `submissionId` no adapter compartilhado, com marcador concluído por 24 horas.
@@ -593,6 +636,8 @@ Fase 5 — Cobertura e Quality:    C1-T12
 **Tools/Skills:** Context7 `@upstash/redis`
 **Commit:** `fix(cycle-1): add score idempotency store`
 
+**Execução:** Concluída em `ed09da2`; 60/60 testes passaram.
+
 #### C1-T7: Integrar throttle, idempotência e sanitização na rota scores
 
 **O que:** substituir o `Map`, aplicar adapters no POST e fechar contratos GET/POST/debug.
@@ -612,6 +657,8 @@ Fase 5 — Cobertura e Quality:    C1-T12
 **Gate:** full
 **Tools/Skills:** Context7 para SDK; mocks no boundary do adapter, sem rede real
 **Commit:** `fix(cycle-1): enforce score api contracts`
+
+**Execução:** Concluída em `842b3a0`; 65/65 testes, build e lint passaram. Warning preexistente em `lib/debug.ts:26`.
 
 ### Fase 3 — Fila offline
 
@@ -635,6 +682,8 @@ Fase 5 — Cobertura e Quality:    C1-T12
 **Tools/Skills:** `testing-a11y`
 **Commit:** `fix(cycle-1): separate pending score queue`
 
+**Execução:** Concluída em `93d4758`; 67/67 testes, build e lint passaram.
+
 #### C1-T9: Drenar a fila sequencialmente no load e online
 
 **O que:** implementar mutex lógico, FIFO, um POST em voo e intervalo mínimo de 10 segundos entre envios.
@@ -654,6 +703,8 @@ Fase 5 — Cobertura e Quality:    C1-T12
 **Gate:** full
 **Tools/Skills:** `testing-a11y`
 **Commit:** `fix(cycle-1): drain pending scores sequentially`
+
+**Execução:** Concluída em `58295dc`; 73/73 testes, build e lint passaram.
 
 ### Fase 4 — UI e mobile
 
@@ -676,6 +727,8 @@ Fase 5 — Cobertura e Quality:    C1-T12
 **Tools/Skills:** `component-architecture`, `testing-a11y`
 **Commit:** `fix(cycle-1): use native debug dialog`
 
+**Execução:** Concluída em `c22467d`; 74/74 testes, build e lint passaram. Sonar deixou de reportar `typescript:S6819` para o painel.
+
 #### C1-T11: Adicionar validação Playwright mobile das páginas legais
 
 **O que:** configurar Playwright e validar viewport/rolagem real de `/privacidade` e `/sobre`.
@@ -694,6 +747,8 @@ Fase 5 — Cobertura e Quality:    C1-T12
 **Gate:** e2e
 **Tools/Skills:** Context7 para Playwright atual; `testing-a11y`
 **Commit:** `fix(cycle-1): verify legal pages on mobile`
+
+**Execução:** Concluída em `551027d`; 2/2 fluxos E2E mobile, build e lint passaram.
 
 ### Fase 5 — Cobertura e Quality Gate
 
@@ -716,6 +771,8 @@ Fase 5 — Cobertura e Quality:    C1-T12
 **Gate:** coverage + build
 **Tools/Skills:** Context7 Vitest coverage; scanner Sonar existente
 **Commit:** `fix(cycle-1): publish lcov to sonar`
+
+**Execução:** Concluída em `b8217af`; 74/74 testes com cobertura, LCOV válido de 39.334 bytes, build e lint passaram. Sonar processou a análise com sucesso e importou LCOV: cobertura total 64,5%, nova 87,1%. Quality Gate `ERROR` por três novas violações (`S3776`, `S1871`, `S7776`); JaCoCo N/A para TypeScript.
 
 ### Mapa completo de dependências
 
@@ -800,3 +857,307 @@ C1-T1 → C1-T2 → C1-T3 → C1-T4 → C1-T5 → C1-T6
 - **Categoria (c):** permanece integralmente em Questões abertas e não aparece no breakdown de implementação.
 
 **Contagem final do ciclo 1:** 12 fix tasks pendentes em 5 fases inteiras (4 + 3 + 2 + 2 + 1), execução estritamente sequencial.
+
+---
+
+## Plano de Fixes — Ciclo Interno 2
+
+**Spec emendada:** `_docs/specs/features/estabilidade-qualidade/spec.md` (`ESTAB-16` a `ESTAB-18`)
+**Design emendado:** `_docs/specs/features/estabilidade-qualidade/design.md` — seção “Emenda de Design — Ciclo Interno 2”
+**Status:** pronto para Execute sequencial; nenhuma task C2 implementada
+**Escopo:** fixes categoria (a) + decisões categoria (b) aprovadas; categoria (c) permanece somente em Questões abertas
+
+### Baseline e política de testes
+
+- Baseline de implementação: `b8217af`; baseline documental do ciclo 2: commit de Tasks desta rodada.
+- Suíte vigente: 74 testes Vitest, 2 fluxos Playwright mobile, LCOV importado; build e lint verdes no último Verifier.
+- Cada task altera o teste discriminante junto do comportamento; nenhum teste é apagado, enfraquecido ou marcado skip.
+- Gate `quick` executa o arquivo focado e `npm run test`; gate `full` acrescenta build/lint; E2E e Sonar ficam nos pontos indicados.
+- APIs externas permanecem limitadas às confirmadas: `@upstash/redis` 1.38.3 (`SET NX EX`, `EVAL`) e `@vercel/blob` 2.8.0 (`get` sem cache, ETag, `put ifMatch`, `BlobPreconditionFailedError`).
+
+### Matriz de cobertura do ciclo 2
+
+| Requirement / AC | Behavior under test | Test type | Arquivo | Discrimination strategy |
+| --- | --- | --- | --- | --- |
+| `ESTAB-16` AC1-AC4 | Token único, TTL 60, CAS complete/release, owner antigo rejeitado e completed 24 h | unit | `lib/__tests__/score-idempotency.test.ts` | Simular expiração + segundo owner; mutar token antigo para igual ao novo deve falhar o teste. |
+| `ESTAB-16` AC5 | Store local reproduz ownership/TTL sem alegar distribuição | unit | `lib/__tests__/score-idempotency.test.ts` | Relógio fake e dois tokens; remover comparação deve alterar outcome. |
+| `ESTAB-17` AC1-AC3 | Documento v2, array legado, ledger 24 h, ETag concorrente e dedupe por ID | unit | `lib/__tests__/high-scores.test.ts` | Dois snapshots com mesma ETag; writer perdedor relê e preserva ambos/identifica duplicata. |
+| `ESTAB-17` AC4, AC7 | Blob confirmado + complete falha continua sucesso; completed/ledger ocorre antes do throttle | integration | `app/api/__tests__/scores.test.ts` | Fazer `complete` lançar e depois retry; exigir um write e zero throttle no retry idempotente. |
+| `ESTAB-17` AC5-AC6 | Storage local/rede/429/503 cria ou mantém fila e novo trigger reenvia mesmo ID | RTL + MSW | `app/__tests__/score-sync.test.tsx` | Começar sem fila, comparar ID/header antes/depois e exigir item retido/removido apenas após Blob. |
+| `ESTAB-18` AC1 | Evento inválido/production não altera UI, entidades, POST ou storage | RTL + MSW | `app/__tests__/game-debug.test.tsx` | Snapshots conjuntos antes/depois; qualquer side effect isolado quebra o caso. |
+| `ESTAB-18` AC2 | `origin:debug` e `debug:true` rejeitados antes dos adapters | integration | `app/api/__tests__/scores.test.ts` | `it.each` com dois payloads e zero throttle/claim/write. |
+| `ESTAB-18` AC3 | Restart normal após debug volta a enviar uma vez com novo ID | RTL + MSW | `app/__tests__/score-sync.test.tsx` | Run debug exige zero POST; nova run normal exige exatamente um POST e ID diferente. |
+| `ESTAB-18` AC4 | Load/online compartilham POST e uma sequência de timers | RTL + fake timers | `app/__tests__/score-sync.test.tsx` | Contar waits de 10 s e in-flight; segundo timer ou POST concorrente falha. |
+| `ESTAB-18` AC5 | `100dvh` acompanha duas alturas e mantém foco visível | E2E | `e2e/legal-pages-mobile.spec.ts` | Alterar viewport; valor fixo 844 px falha na segunda altura. |
+| `ESTAB-18` AC6 | S3776/S1871/S7776 ausentes e Quality Gate new code `OK` | static + coverage | Sonar/LCOV | Scanner fresco no HEAD; issue nova ou gate `ERROR` reprova. |
+
+### Gate por fase
+
+| Fase | Gate mínimo após cada task | Gate de fechamento da fase |
+| --- | --- | --- |
+| 1 — Ownership Redis | arquivo unitário + `npm run test` | `npm run build` e `npm run lint` |
+| 2 — Blob e rota | arquivo unitário/integration + `npm run test` | `npm run build` e `npm run lint` |
+| 3 — Cliente e debug | RTL/MSW focado + `npm run test` | `npm run build` e `npm run lint` |
+| 4 — Sonar e mobile | teste focado + `npm run test` quando aplicável | `npm run test:coverage`, build, lint, E2E e análise Sonar fresca |
+
+### Plano de fases
+
+```text
+Fase 1 — Ownership Redis:           C2-T1 → C2-T2
+Fase 2 — Blob e contrato da API:   C2-T3 → C2-T4 → C2-T5
+Fase 3 — Cliente e debug:           C2-T6 → C2-T7 → C2-T8
+Fase 4 — Sonar e mobile:            C2-T9 → C2-T10 → C2-T11
+Validação independente:             Verifier → Sonar/JaCoCo N/A → code-review
+```
+
+### Fase 1 — Ownership Redis
+
+#### C2-T1: Introduzir owner token no adapter Redis
+
+**O que:** substituir o marcador compartilhado por token exclusivo e fazer complete/release condicionais retornarem outcome de ownership.
+**Onde:** `lib/score-idempotency.ts`, `lib/__tests__/score-idempotency.test.ts`
+**Depende de:** nenhuma
+**Reutiliza:** chave SHA-256, TTLs e cliente `eval` existentes
+**Requisito:** `ESTAB-16` AC1-AC4
+
+**Done when:**
+- [ ] Dois claims adquiridos em momentos distintos recebem tokens diferentes e não expõem o token em logs.
+- [ ] Redis recebe `in-flight:<token>` com `NX` e `EX 60`; complete proprietário grava `completed` com `EX 86400`.
+- [ ] Complete/release com token antigo retornam `ownership-lost`; testes afirmam retorno Lua `0` e claim novo intacto.
+- [ ] Corrida `SET NX=false` seguida de leitura `completed`/`in-flight` mantém outcomes existentes.
+- [ ] Teste focado e `npm run test` passam sem reduzir o baseline.
+
+**Testes:** unit, cliente Redis fake com scripts/outcomes observáveis
+**Gate:** quick
+**Commit:** `fix(cycle-2): enforce redis claim ownership`
+
+#### C2-T2: Alinhar o store local ao contrato de ownership
+
+**O que:** aplicar token, TTL e perda de posse equivalentes ao fallback exclusivo de development/test.
+**Onde:** `lib/score-idempotency.ts`, `lib/__tests__/score-idempotency.test.ts`
+**Depende de:** C2-T1
+**Reutiliza:** relógio injetável e `Map` local existentes
+**Requisito:** `ESTAB-16` AC3-AC5
+
+**Done when:**
+- [ ] Expiração em 60 s permite novo owner e o owner anterior não completa nem remove a entrada nova.
+- [ ] Owner atual conclui por 24 h; fronteiras exatas de ambos os TTLs são verificadas com relógio fake.
+- [ ] Backend continua identificado como `local-memory` e somente fora de production.
+- [ ] Teste focado, suíte completa, build e lint passam.
+
+**Testes:** unit com fake clock
+**Gate:** full
+**Commit:** `fix(cycle-2): mirror claim ownership locally`
+
+### Fase 2 — Blob e contrato da API
+
+#### C2-T3: Versionar o documento autoritativo de ranking
+
+**O que:** introduzir codec dual para array legado/documento v2, ledger 24 h e projeção pública sem metadados internos.
+**Onde:** `lib/high-scores.ts`, `lib/__tests__/high-scores.test.ts`
+**Depende de:** C2-T2
+**Reutiliza:** `HighScore`, `sanitizeScore`, `cleanScores` e `SCORE_PATH`
+**Requisito:** `ESTAB-17` AC1, AC3
+
+**Done when:**
+- [ ] Array legado continua produzindo o mesmo `HighScore[]` saneado/ordenado.
+- [ ] Documento v2 preserva `submissionId` e ledger internamente, mas GET/read público não vaza `version`, token ou ledger.
+- [ ] Ledger remove IDs anteriores a 24 h e conserva IDs válidos mesmo quando o score não entra no top 10.
+- [ ] Casos nulo/malformado não inventam ID nem quebram compatibilidade.
+- [ ] Teste focado e `npm run test` passam.
+
+**Testes:** unit de codec/modelo
+**Gate:** quick
+**Commit:** `fix(cycle-2): version authoritative ranking data`
+
+#### C2-T4: Persistir ranking com ETag e dedupe autoritativa
+
+**O que:** implementar read/merge/conditional-write com no máximo três tentativas e dedupe pelo ledger.
+**Onde:** `lib/high-scores.ts`, `lib/__tests__/high-scores.test.ts`
+**Depende de:** C2-T3
+**Reutiliza:** `get`, `put`, ETag e `BlobPreconditionFailedError` confirmados na versão instalada
+**Requisito:** `ESTAB-17` AC2-AC4
+
+**Done when:**
+- [ ] Blob existente é lido com `useCache:false` e atualizado com `ifMatch` igual à ETag lida.
+- [ ] Blob ausente usa criação sem overwrite; conflito de criação ou ETag relê a versão atual.
+- [ ] Concorrência com IDs distintos preserva os dois merges; mesmo ID produz uma ocorrência e outcome idempotente.
+- [ ] Após três conflitos sem confirmação, a função falha sem declarar persistência; nenhum retry é ilimitado.
+- [ ] Teste focado e `npm run test` passam.
+
+**Testes:** unit do boundary Blob, incluindo conflito e criação concorrente
+**Gate:** quick
+**Tools/Skills:** APIs já confirmadas por codebase, Context7 e docs oficiais
+**Commit:** `fix(cycle-2): deduplicate scores in blob`
+
+#### C2-T5: Reordenar idempotência, throttle e falha parcial na rota
+
+**O que:** integrar status/ledger antes do throttle, propagar owner token e responder sucesso após Blob confirmado mesmo se complete falhar.
+**Onde:** `app/api/scores/route.ts`, `app/api/__tests__/scores.test.ts`
+**Depende de:** C2-T1, C2-T4
+**Reutiliza:** adapters e sanitização existentes
+**Requisito:** `ESTAB-17` AC3-AC4, AC7; `ESTAB-18` AC2
+
+**Done when:**
+- [ ] Redis `completed` e ledger Blob já contendo ID retornam `200`, `storage:"blob"`, `idempotent:true`, zero throttle e zero write.
+- [ ] ID novo passa por throttle e claim; token acompanha complete/release.
+- [ ] Blob confirmado + complete throw/`ownership-lost` retorna sucesso, não libera claim e retry não duplica.
+- [ ] Falha antes de confirmação Blob libera somente com token proprietário e retorna 503.
+- [ ] `it.each` cobre `origin:"debug"` e `debug:true` com 400 e zero throttle/claim/Blob.
+- [ ] Teste focado, suíte completa, build e lint passam.
+
+**Testes:** integration da Route Handler com adapters mockados
+**Gate:** full
+**Commit:** `fix(cycle-2): make score post authoritatively idempotent`
+
+### Fase 3 — Cliente e debug
+
+#### C2-T6: Preservar pendência em storage local e falhas diretas
+
+**O que:** classificar resposta persistida e enfileirar submissão própria nova em rede/429/503/storage local.
+**Onde:** `app/page.tsx`, `app/__tests__/score-sync.test.tsx`
+**Depende de:** C2-T5
+**Reutiliza:** `PendingScoreEntry`, enqueue/dedupe e MSW existentes
+**Requisito:** `ESTAB-17` AC5-AC6
+
+**Done when:**
+- [ ] Envio inicial sem fila cria uma entrada para cada outcome rede, 429, 503 e `200 storage:"local"`.
+- [ ] O mesmo `submissionId` aparece no header, na entrada e em tentativas posteriores; nenhum segundo item é criado.
+- [ ] Somente `storage:"blob"` ou `idempotent:true` remove/dispensa a pendência.
+- [ ] Mensagem de UI permanece coerente com sincronização pendente.
+- [ ] Teste focado e `npm run test` passam.
+
+**Testes:** RTL + MSW parametrizado
+**Gate:** quick
+**Commit:** `fix(cycle-2): retain unpersisted score submissions`
+
+#### C2-T7: Provar retry posterior e uma única sequência de timers
+
+**O que:** fechar os gaps de recuperação load/online e isolar o fluxo mínimo de espera/envio que reduz S3776.
+**Onde:** `app/page.tsx`, `app/__tests__/score-sync.test.tsx`
+**Depende de:** C2-T6
+**Reutiliza:** mutex/promise ref, fake timers e fila FIFO
+**Requisito:** `ESTAB-10` AC4-AC5; `ESTAB-17` AC6; `ESTAB-18` AC4, AC6/S3776
+
+**Done when:**
+- [ ] Após rede/429/503/storage local, novo `online` reenvia a mesma primeira entrada e ID; sucesso posterior a remove.
+- [ ] Load + múltiplos online mantêm `maxInFlight === 1` e exatamente uma espera de 10 s entre duas entradas.
+- [ ] Fila vazia não agenda espera; falha encerra a sequência corrente.
+- [ ] A extração permanece limitada a helpers do drain e Sonar não reporta S3776 no local apontado.
+- [ ] Teste focado e `npm run test` passam.
+
+**Testes:** RTL/MSW + fake timers
+**Gate:** quick; confirmação Sonar na fase 4
+**Commit:** `fix(cycle-2): prove deterministic score retries`
+
+#### C2-T8: Fechar evidências de isolamento e restart do debug
+
+**O que:** ampliar somente as provas faltantes de side effects e retorno de elegibilidade após nova run normal.
+**Onde:** `app/__tests__/game-debug.test.tsx`, `app/__tests__/score-sync.test.tsx`; `app/page.tsx` somente se a prova revelar violação do AC
+**Depende de:** C2-T7
+**Reutiliza:** status observável de entidades, ações acessíveis, MSW e fluxo normal aprovado no ciclo 1
+**Requisito:** `ESTAB-06` AC3; `ESTAB-07` AC1-AC2; `ESTAB-18` AC1, AC3
+
+**Done when:**
+- [ ] Evento production e action inválida preservam conjuntamente heading/HUD, boss/power-up, zero POST e ambas as chaves de storage.
+- [ ] Run debug encerrada produz zero POST/fila; nova run normal produz exatamente um POST elegível com novo ID e outcome normal determinístico `over`.
+- [ ] Nenhum hook/cheat de teste é criado e as asserções existentes não são enfraquecidas.
+- [ ] Testes focados, suíte completa, build e lint passam.
+
+**Testes:** RTL + MSW, queries por role/texto
+**Gate:** full
+**Commit:** `fix(cycle-2): prove debug run isolation`
+
+### Fase 4 — Sonar e mobile
+
+#### C2-T9: Consolidar branches equivalentes do dispatcher debug
+
+**O que:** eliminar somente a duplicação de branches que chamam `start()` sem mudar actions ou transições.
+**Onde:** `app/page.tsx`, `app/__tests__/game-debug.test.tsx`
+**Depende de:** C2-T8
+**Reutiliza:** testes discriminantes de boss, power-up, reset e vitória
+**Requisito:** `ESTAB-18` AC6/S1871
+
+**Done when:**
+- [ ] `spawn_boss`, `add_powerup` e `reset` preservam exatamente seus outcomes anteriores.
+- [ ] Branches com corpo `start()` equivalente são consolidados e S1871 deixa de existir no local novo.
+- [ ] Teste focado e `npm run test` passam.
+
+**Testes:** RTL regressão debug
+**Gate:** quick; confirmação Sonar no fechamento
+**Commit:** `fix(cycle-2): consolidate debug start branches`
+
+#### C2-T10: Tornar a allowlist debug um ReadonlySet
+
+**O que:** substituir lookup por array/includes por `ReadonlySet<DebugAction>`/`has` sem alterar valores aceitos.
+**Onde:** `lib/debug.ts`, `lib/__tests__/debug.test.ts`
+**Depende de:** C2-T9
+**Reutiliza:** type guard e casos positivos/negativos existentes
+**Requisito:** `ESTAB-18` AC6/S7776
+
+**Done when:**
+- [ ] A allowlist contém exatamente as actions vigentes e usa `.has()`.
+- [ ] Valores válidos/ inválidos e bloqueio em production preservam outcomes.
+- [ ] S7776 deixa de existir no local novo; teste focado e `npm run test` passam.
+
+**Testes:** unit
+**Gate:** quick; confirmação Sonar no fechamento
+**Commit:** `fix(cycle-2): use set for debug actions`
+
+#### C2-T11: Tornar o E2E 100dvh discriminante e fechar Quality Gate
+
+**O que:** variar a altura do viewport nas duas páginas legais e executar os gates finais com LCOV/Sonar fresco.
+**Onde:** `e2e/legal-pages-mobile.spec.ts`; nenhum arquivo de produção salvo se o comportamento já estiver correto
+**Depende de:** C2-T10
+**Reutiliza:** configuração Playwright, `.legal-shell`, coverage e scanner existentes
+**Requisito:** `ESTAB-13` AC1; `ESTAB-18` AC5-AC6
+
+**Done when:**
+- [ ] Cada rota é validada em duas alturas distintas e `min-height` acompanha `window.innerHeight` após resize.
+- [ ] Em ambas as alturas, overflow/scroll e último link focável permanecem visíveis; valor fixo 844 px faria o teste falhar.
+- [ ] `npm run test`, `npm run test:coverage`, build, lint e E2E passam sem redução da contagem de testes.
+- [ ] Sonar fresco no HEAD importa LCOV, não encontra S3776/S1871/S7776 nas linhas novas e retorna Quality Gate `OK` para new code.
+- [ ] JaCoCo é registrado como N/A para TypeScript; dívida histórica fora do diff é reportada sem fix.
+
+**Testes:** Playwright E2E + gates completos + análise estática
+**Gate:** full + coverage + E2E + Sonar
+**Commit:** `fix(cycle-2): verify dynamic viewport quality gate`
+
+### Dependências e batching sugerido
+
+```text
+C2-T1 → C2-T2 → C2-T3 → C2-T4 → C2-T5
+      → C2-T6 → C2-T7 → C2-T8 → C2-T9 → C2-T10 → C2-T11
+```
+
+- **Batch 1:** fases 1-2 inteiras, C2-T1 a C2-T5 — 5 tasks.
+- **Batch 2:** fases 3-4 inteiras, C2-T6 a C2-T11 — 6 tasks.
+- Lotes estritamente sequenciais; nenhuma fase é partida e não existe lote-cauda de 1-2 tasks.
+- Cada worker executa tasks na ordem, roda o gate definido e cria um commit atômico por task; workers não abrem subagentes.
+
+### Rastreabilidade requirement → tasks
+
+| Requirement | Tasks |
+| --- | --- |
+| `ESTAB-06` | C2-T8 |
+| `ESTAB-07` | C2-T5, C2-T8 |
+| `ESTAB-09` | C2-T5, C2-T6 |
+| `ESTAB-10` | C2-T6, C2-T7 |
+| `ESTAB-13` | C2-T11 |
+| `ESTAB-16` | C2-T1, C2-T2 |
+| `ESTAB-17` | C2-T3, C2-T4, C2-T5, C2-T6, C2-T7 |
+| `ESTAB-18` | C2-T5, C2-T7, C2-T8, C2-T9, C2-T10, C2-T11 |
+
+**Coverage:** 3/3 requisitos novos e 5/5 requisitos anteriores reabertos estão mapeados; 0 não mapeados.
+
+### Validação independente pós-Execute
+
+Após C2-T11, um Verifier autor diferente SHALL rederivar evidência por AC, executar gates e sensor de discriminação em scratch, preservar o histórico append-only de `validation.md` e registrar a seção do ciclo 2. Em seguida, `/code-review` roda read-only na mesma branch, incluindo o revisor Sonar; JaCoCo permanece N/A para TypeScript. Gaps categoria (a) entram no próximo fix cycle dentro do limite de três; gap categoria (b) ou `SPEC_DEVIATION` interrompe a execução para decisão do usuário; categoria (c) volta apenas para Questões abertas.
+
+### Categoria (c) preservada, sem tasks
+
+- Parse/limite de body antes do throttle; otimização O(N²) da fila; redução extra de round trips Redis.
+- Cobertura adicional não exigida pelos ACs; extração de `Home`/sync; foco do diálogo; migração de mock fetch; ordenação compartilhada.
+- Limpeza do `Map` local, uso/remoção de `HighScoreStorage` e qualquer refactor histórico fora das linhas necessárias ao Quality Gate de new code.
+
+**Contagem final do ciclo 2:** 11 fix tasks pendentes em 4 fases inteiras (2 + 3 + 3 + 3), sugeridas em 2 batches sequenciais (5 + 6).
