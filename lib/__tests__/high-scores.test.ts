@@ -2,16 +2,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cleanScores,
   decodeRankingDocument,
+  persistHighScore,
   publicHighScores,
   readHighScores,
+  readRankingSnapshot,
   sanitizeScore,
   type HighScore,
 } from "@/lib/high-scores";
 
 const blobGet = vi.hoisted(() => vi.fn());
 const blobPut = vi.hoisted(() => vi.fn());
+const BlobPreconditionFailedError = vi.hoisted(() => class BlobPreconditionFailedError extends Error {});
 
 vi.mock("@vercel/blob", () => ({
+  BlobPreconditionFailedError,
   get: blobGet,
   put: blobPut,
 }));
@@ -25,6 +29,21 @@ const score = (overrides: Partial<HighScore>): HighScore => ({
   createdAt: "2026-01-01T00:00:00.000Z",
   ...overrides,
 });
+
+function blobStream(payload: unknown) {
+  const text = JSON.stringify(payload);
+  const stream = new Response(text).body;
+  if (!stream) throw new Error("Missing test response body");
+
+  return stream;
+}
+
+function blobSnapshot(payload: unknown, etag: string) {
+  return {
+    stream: blobStream(payload),
+    blob: { etag },
+  };
+}
 
 describe("sanitizeScore", () => {
   afterEach(() => {
@@ -195,12 +214,8 @@ describe("ranking document codec", () => {
       processedSubmissions: [{ submissionId: "blob-submission", persistedAt: "2026-08-28T10:00:00.000Z" }],
     });
     blobGet.mockResolvedValue({
-      stream: new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode(blobPayload));
-          controller.close();
-        },
-      }),
+      stream: new Response(blobPayload).body,
+      blob: { etag: "blob-etag" },
     });
 
     const scores = await readHighScores();
@@ -208,5 +223,131 @@ describe("ranking document codec", () => {
     expect(scores).toEqual([score({ name: "BLOB", score: 300 })]);
     expect(scores[0]).not.toHaveProperty("submissionId");
     expect(JSON.stringify(scores)).not.toContain("blob-submission");
+  });
+});
+
+describe("authoritative blob persistence", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    blobGet.mockReset();
+    blobPut.mockReset();
+  });
+
+  it("reads existing blob snapshots without cache and writes with the same ETag", async () => {
+    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "blob-token");
+    blobGet.mockResolvedValue(blobSnapshot({
+      version: 2,
+      scores: [score({ name: "OLD", score: 100 })],
+      processedSubmissions: [],
+    }, "etag-1"));
+    blobPut.mockResolvedValue({ etag: "etag-2" });
+
+    const result = await persistHighScore(score({ name: "NEW", score: 200 }), "submission-new", Date.parse("2026-08-28T12:00:00.000Z"));
+
+    expect(blobGet).toHaveBeenCalledWith("java-pleno-pixel-hunt/high-scores.json", {
+      access: "private",
+      useCache: false,
+    });
+    expect(blobPut).toHaveBeenCalledWith(
+      "java-pleno-pixel-hunt/high-scores.json",
+      expect.stringContaining('"submissionId": "submission-new"'),
+      {
+        access: "private",
+        allowOverwrite: true,
+        cacheControlMaxAge: 0,
+        contentType: "application/json",
+        ifMatch: "etag-1",
+      },
+    );
+    expect(result).toEqual({
+      scores: [score({ name: "NEW", score: 200 }), score({ name: "OLD", score: 100 })],
+      storage: "blob",
+      idempotent: false,
+    });
+  });
+
+  it("creates an absent blob without overwrite", async () => {
+    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "blob-token");
+    blobGet.mockResolvedValue(null);
+    blobPut.mockResolvedValue({ etag: "created" });
+
+    await expect(persistHighScore(score({ name: "FIRST" }), "first-id", Date.parse("2026-08-28T12:00:00.000Z"))).resolves.toMatchObject({
+      storage: "blob",
+      idempotent: false,
+    });
+    expect(blobPut).toHaveBeenCalledWith(
+      "java-pleno-pixel-hunt/high-scores.json",
+      expect.stringContaining('"submissionId": "first-id"'),
+      expect.objectContaining({ allowOverwrite: false }),
+    );
+  });
+
+  it("returns idempotent success without writing when the same submission id is already in the ledger", async () => {
+    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "blob-token");
+    blobGet.mockResolvedValue(blobSnapshot({
+      version: 2,
+      scores: [{ ...score({ name: "DONE", score: 500 }), submissionId: "same-id" }],
+      processedSubmissions: [{ submissionId: "same-id", persistedAt: "2026-08-28T10:00:00.000Z" }],
+    }, "etag-done"));
+
+    const result = await persistHighScore(score({ name: "DUP", score: 999 }), "same-id", Date.parse("2026-08-28T12:00:00.000Z"));
+
+    expect(result).toEqual({
+      scores: [score({ name: "DONE", score: 500 })],
+      storage: "blob",
+      idempotent: true,
+    });
+    expect(blobPut).not.toHaveBeenCalled();
+  });
+
+  it("retries ETag conflicts and preserves distinct submission ids in the merged document", async () => {
+    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "blob-token");
+    blobGet
+      .mockResolvedValueOnce(blobSnapshot({ version: 2, scores: [], processedSubmissions: [] }, "etag-empty"))
+      .mockResolvedValueOnce(blobSnapshot({
+        version: 2,
+        scores: [{ ...score({ name: "OTHER", score: 300 }), submissionId: "other-id" }],
+        processedSubmissions: [{ submissionId: "other-id", persistedAt: "2026-08-28T11:59:00.000Z" }],
+      }, "etag-other"));
+    blobPut
+      .mockRejectedValueOnce(new BlobPreconditionFailedError())
+      .mockResolvedValueOnce({ etag: "etag-merged" });
+
+    await expect(persistHighScore(score({ name: "MINE", score: 400 }), "mine-id", Date.parse("2026-08-28T12:00:00.000Z"))).resolves.toMatchObject({
+      scores: [score({ name: "MINE", score: 400 }), score({ name: "OTHER", score: 300 })],
+      storage: "blob",
+      idempotent: false,
+    });
+
+    const merged = JSON.parse(blobPut.mock.calls[1][1]);
+    expect(merged.scores.map((entry: { submissionId?: string }) => entry.submissionId)).toEqual(["mine-id", "other-id"]);
+    expect(merged.processedSubmissions.map((entry: { submissionId: string }) => entry.submissionId)).toEqual(["other-id", "mine-id"]);
+    expect(blobPut).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails after three ETag conflicts without declaring persistence", async () => {
+    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "blob-token");
+    blobGet.mockImplementation(async () => blobSnapshot({ version: 2, scores: [], processedSubmissions: [] }, "etag-conflict"));
+    blobPut.mockRejectedValue(new BlobPreconditionFailedError());
+
+    await expect(persistHighScore(score({ name: "LIMIT" }), "limited-id", Date.parse("2026-08-28T12:00:00.000Z"))).rejects.toBeInstanceOf(BlobPreconditionFailedError);
+    expect(blobGet).toHaveBeenCalledTimes(3);
+    expect(blobPut).toHaveBeenCalledTimes(3);
+  });
+
+  it("returns snapshot ETags from the authoritative blob document", async () => {
+    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "blob-token");
+    blobGet.mockResolvedValue(blobSnapshot({
+      version: 2,
+      scores: [{ ...score({ name: "SNAPSHOT" }), submissionId: "snapshot-id" }],
+      processedSubmissions: [{ submissionId: "snapshot-id", persistedAt: "2026-08-28T10:00:00.000Z" }],
+    }, "etag-snapshot"));
+
+    await expect(readRankingSnapshot()).resolves.toMatchObject({
+      etag: "etag-snapshot",
+      document: {
+        processedSubmissions: [{ submissionId: "snapshot-id", persistedAt: "2026-08-28T10:00:00.000Z" }],
+      },
+    });
   });
 });

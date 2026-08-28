@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { get, put } from "@vercel/blob";
+import { BlobPreconditionFailedError, get, put } from "@vercel/blob";
 
 export type HighScore = {
   name: string;
@@ -28,9 +28,15 @@ export interface RankingDocumentV2 {
   processedSubmissions: ProcessedSubmission[];
 }
 
+export interface RankingSnapshot {
+  document: RankingDocumentV2;
+  etag: string | null;
+}
+
 const SCORE_PATH = "java-pleno-pixel-hunt/high-scores.json";
 const LOCAL_SCORE_FILE = path.join(process.cwd(), "data", "high-scores.json");
 const PROCESSED_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1_000;
+const MAX_BLOB_WRITE_ATTEMPTS = 3;
 
 export function cleanScores(scores: HighScore[]) {
   return scores
@@ -77,11 +83,11 @@ function sanitizeStoredScore(input: unknown): StoredHighScore {
 
   const stored: StoredHighScore = {
     ...sanitized,
-    createdAt: validDateString(input.createdAt) ? input.createdAt : sanitized.createdAt,
+    createdAt: validDateString(input.createdAt) ? String(input.createdAt) : sanitized.createdAt,
   };
 
   if (validSubmissionId(input.submissionId)) {
-    stored.submissionId = input.submissionId;
+    stored.submissionId = String(input.submissionId);
   }
 
   return stored;
@@ -94,16 +100,18 @@ function cleanStoredScores(scores: StoredHighScore[]) {
 function normalizeProcessedSubmissions(input: unknown, now: number): ProcessedSubmission[] {
   if (!Array.isArray(input)) return [];
 
-  return input.filter((entry): entry is ProcessedSubmission => {
+  return input.flatMap((entry): ProcessedSubmission[] => {
     if (!isRecord(entry) || !validSubmissionId(entry.submissionId) || !validDateString(entry.persistedAt)) {
-      return false;
+      return [];
     }
 
-    return now - Date.parse(entry.persistedAt) < PROCESSED_SUBMISSION_TTL_MS;
-  }).map((entry) => ({
-    submissionId: entry.submissionId,
-    persistedAt: entry.persistedAt,
-  }));
+    const persistedAt = String(entry.persistedAt);
+    if (now - Date.parse(persistedAt) >= PROCESSED_SUBMISSION_TTL_MS) {
+      return [];
+    }
+
+    return [{ submissionId: String(entry.submissionId), persistedAt }];
+  });
 }
 
 export function decodeRankingDocument(input: unknown, now = Date.now()): RankingDocumentV2 {
@@ -127,16 +135,93 @@ export function decodeRankingDocument(input: unknown, now = Date.now()): Ranking
 }
 
 export function publicHighScores(document: RankingDocumentV2): HighScore[] {
-  return cleanScores(document.scores.map(({ submissionId: _submissionId, ...score }) => score));
+  return cleanScores(document.scores.map((score) => ({
+    name: score.name,
+    score: score.score,
+    wave: score.wave,
+    resets: score.resets,
+    outcome: score.outcome,
+    createdAt: score.createdAt,
+  })));
+}
+
+export function hasProcessedSubmission(document: RankingDocumentV2, submissionId: string) {
+  return document.processedSubmissions.some((entry) => entry.submissionId === submissionId);
+}
+
+export async function readRankingSnapshot(): Promise<RankingSnapshot> {
+  const blob = await get(SCORE_PATH, { access: "private", useCache: false });
+  if (!blob) return { document: decodeRankingDocument(null), etag: null };
+
+  const content = blob.stream ? await new Response(blob.stream).text() : "null";
+  return {
+    document: decodeRankingDocument(JSON.parse(content)),
+    etag: blob.blob.etag || null,
+  };
+}
+
+function nextDocument(
+  document: RankingDocumentV2,
+  score: HighScore,
+  submissionId: string,
+  persistedAt: string,
+): RankingDocumentV2 {
+  return {
+    version: 2,
+    scores: cleanStoredScores([{ ...score, submissionId }, ...document.scores]),
+    processedSubmissions: [
+      ...document.processedSubmissions,
+      { submissionId, persistedAt },
+    ],
+  };
+}
+
+function writeOptions(etag: string | null) {
+  return {
+    access: "private" as const,
+    allowOverwrite: etag !== null,
+    cacheControlMaxAge: 0,
+    contentType: "application/json",
+    ...(etag ? { ifMatch: etag } : {}),
+  };
+}
+
+export async function persistHighScore(score: HighScore, submissionId: string, now = Date.now()) {
+  let lastConflict: unknown;
+
+  for (let attempt = 0; attempt < MAX_BLOB_WRITE_ATTEMPTS; attempt += 1) {
+    const snapshot = await readRankingSnapshot();
+    if (hasProcessedSubmission(snapshot.document, submissionId)) {
+      return {
+        scores: publicHighScores(snapshot.document),
+        storage: "blob" as const,
+        idempotent: true,
+      };
+    }
+
+    const document = nextDocument(snapshot.document, score, submissionId, new Date(now).toISOString());
+    const payload = JSON.stringify(document, null, 2);
+
+    try {
+      await put(SCORE_PATH, payload, writeOptions(snapshot.etag));
+      return {
+        scores: publicHighScores(document),
+        storage: "blob" as const,
+        idempotent: false,
+      };
+    } catch (error) {
+      if (!(error instanceof BlobPreconditionFailedError)) throw error;
+      lastConflict = error;
+    }
+  }
+
+  throw lastConflict;
 }
 
 export async function readHighScores() {
   if (process.env.BLOB_READ_WRITE_TOKEN) {
     try {
-      const blob = await get(SCORE_PATH, { access: "private" });
-      if (!blob) return [];
-      const content = await new Response(blob.stream).text();
-      return publicHighScores(decodeRankingDocument(JSON.parse(content)));
+      return publicHighScores((await readRankingSnapshot()).document);
     } catch {
       return [];
     }
