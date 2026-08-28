@@ -1,15 +1,24 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Redis } from "@upstash/redis";
 
 const CLAIM_TTL_SECONDS = 60;
 const COMPLETED_TTL_SECONDS = 24 * 60 * 60;
 
-export type IdempotencyClaim = "claimed" | "completed" | "in-flight";
+export type IdempotencyClaim =
+  | { state: "claimed"; ownerToken: string }
+  | { state: "completed" }
+  | { state: "in-flight" }
+  | "claimed"
+  | "completed"
+  | "in-flight";
+
+export type OwnershipResult = "applied" | "ownership-lost";
 
 export interface IdempotencyStore {
   claim(submissionId: string): Promise<IdempotencyClaim>;
-  complete(submissionId: string): Promise<void>;
-  release(submissionId: string): Promise<void>;
+  status(submissionId: string): Promise<{ state: "completed" } | { state: "other" }>;
+  complete(submissionId: string, ownerToken?: string): Promise<OwnershipResult>;
+  release(submissionId: string, ownerToken?: string): Promise<OwnershipResult>;
 }
 
 interface RedisIdempotencyClient {
@@ -28,6 +37,7 @@ interface CreateIdempotencyStoreOptions {
   environment?: string;
   logger?: IdempotencyLogger;
   now?: () => number;
+  ownerTokenFactory?: () => string;
   redis?: RedisIdempotencyClient;
   redisFactory?: () => RedisIdempotencyClient;
 }
@@ -35,6 +45,7 @@ interface CreateIdempotencyStoreOptions {
 interface LocalEntry {
   state: "in-flight" | "completed";
   expiresAt: number;
+  ownerToken?: string;
 }
 
 const COMPLETE_SCRIPT = `
@@ -69,15 +80,35 @@ function errorClass(error: unknown) {
 }
 
 function unavailableStore(logger: IdempotencyLogger, reason: string): IdempotencyStore {
-  const fail = async () => {
+  const fail = async (): Promise<never> => {
     logger.error("Score idempotency unavailable", { backend: "redis", error: reason });
     throw new IdempotencyUnavailableError();
   };
 
-  return { claim: fail, complete: fail, release: fail };
+  return { claim: fail, status: fail, complete: fail, release: fail };
 }
 
-function redisStore(redis: RedisIdempotencyClient, logger: IdempotencyLogger): IdempotencyStore {
+function isCompleted(value: unknown) {
+  return value === "completed";
+}
+
+function isInFlight(value: unknown) {
+  return typeof value === "string" && value.startsWith("in-flight:");
+}
+
+function ownerValue(ownerToken: string | undefined) {
+  return `in-flight:${ownerToken}`;
+}
+
+function ownershipResult(value: unknown): OwnershipResult {
+  return value === 1 ? "applied" : "ownership-lost";
+}
+
+function redisStore(
+  redis: RedisIdempotencyClient,
+  logger: IdempotencyLogger,
+  ownerTokenFactory: () => string,
+): IdempotencyStore {
   const run = async <T>(operation: () => Promise<T>) => {
     try {
       return await operation();
@@ -92,33 +123,40 @@ function redisStore(redis: RedisIdempotencyClient, logger: IdempotencyLogger): I
       return run(async () => {
         const key = idempotencyKey(submissionId);
         const current = await redis.get(key);
-        if (current === "completed") return "completed";
-        if (current === "in-flight") return "in-flight";
+        if (isCompleted(current)) return { state: "completed" };
+        if (isInFlight(current)) return { state: "in-flight" };
 
-        const acquired = await redis.set(key, "in-flight", { nx: true, ex: CLAIM_TTL_SECONDS });
-        if (acquired) return "claimed";
+        const ownerToken = ownerTokenFactory();
+        const acquired = await redis.set(key, ownerValue(ownerToken), { nx: true, ex: CLAIM_TTL_SECONDS });
+        if (acquired) return { state: "claimed", ownerToken };
 
-        return (await redis.get(key)) === "completed" ? "completed" : "in-flight";
+        return isCompleted(await redis.get(key)) ? { state: "completed" } : { state: "in-flight" };
       });
     },
-    complete(submissionId) {
+    status(submissionId) {
       return run(async () => {
-        await redis.eval(COMPLETE_SCRIPT, [idempotencyKey(submissionId)], [
-          "in-flight",
+        return isCompleted(await redis.get(idempotencyKey(submissionId))) ? { state: "completed" } : { state: "other" };
+      });
+    },
+    complete(submissionId, ownerToken) {
+      return run(async () => {
+        const result = await redis.eval(COMPLETE_SCRIPT, [idempotencyKey(submissionId)], [
+          ownerValue(ownerToken),
           "completed",
           String(COMPLETED_TTL_SECONDS),
         ]);
+        return ownershipResult(result);
       });
     },
-    release(submissionId) {
+    release(submissionId, ownerToken) {
       return run(async () => {
-        await redis.eval(RELEASE_SCRIPT, [idempotencyKey(submissionId)], ["in-flight"]);
+        return ownershipResult(await redis.eval(RELEASE_SCRIPT, [idempotencyKey(submissionId)], [ownerValue(ownerToken)]));
       });
     },
   };
 }
 
-function localMemoryStore(now: () => number, logger: IdempotencyLogger): IdempotencyStore {
+function localMemoryStore(now: () => number, logger: IdempotencyLogger, ownerTokenFactory: () => string): IdempotencyStore {
   const entries = new Map<string, LocalEntry>();
   logger.warn("Using non-distributed score idempotency", { backend: "local-memory" });
 
@@ -134,19 +172,29 @@ function localMemoryStore(now: () => number, logger: IdempotencyLogger): Idempot
   return {
     async claim(submissionId) {
       const entry = currentEntry(submissionId);
-      if (entry?.state === "completed") return "completed";
-      if (entry?.state === "in-flight") return "in-flight";
+      if (entry?.state === "completed") return { state: "completed" };
+      if (entry?.state === "in-flight") return { state: "in-flight" };
 
-      entries.set(submissionId, { state: "in-flight", expiresAt: now() + CLAIM_TTL_SECONDS * 1_000 });
-      return "claimed";
+      const ownerToken = ownerTokenFactory();
+      entries.set(submissionId, { state: "in-flight", ownerToken, expiresAt: now() + CLAIM_TTL_SECONDS * 1_000 });
+      return { state: "claimed", ownerToken };
+    },
+    async status(submissionId) {
+      return currentEntry(submissionId)?.state === "completed" ? { state: "completed" } : { state: "other" };
     },
     async complete(submissionId) {
       if (currentEntry(submissionId)?.state === "in-flight") {
         entries.set(submissionId, { state: "completed", expiresAt: now() + COMPLETED_TTL_SECONDS * 1_000 });
+        return "applied";
       }
+      return "ownership-lost";
     },
     async release(submissionId) {
-      if (currentEntry(submissionId)?.state === "in-flight") entries.delete(submissionId);
+      if (currentEntry(submissionId)?.state === "in-flight") {
+        entries.delete(submissionId);
+        return "applied";
+      }
+      return "ownership-lost";
     },
   };
 }
@@ -155,9 +203,10 @@ export function createIdempotencyStore(options: CreateIdempotencyStoreOptions = 
   const environment = options.environment ?? process.env.NODE_ENV;
   const env = options.env ?? process.env;
   const logger = options.logger ?? console;
+  const ownerTokenFactory = options.ownerTokenFactory ?? randomUUID;
 
   if (environment !== "production") {
-    return localMemoryStore(options.now ?? Date.now, logger);
+    return localMemoryStore(options.now ?? Date.now, logger, ownerTokenFactory);
   }
 
   if (!env.UPSTASH_REDIS_REST_URL || !env.UPSTASH_REDIS_REST_TOKEN) {
@@ -166,7 +215,7 @@ export function createIdempotencyStore(options: CreateIdempotencyStoreOptions = 
 
   try {
     const redis = options.redis ?? (options.redisFactory ?? (() => Redis.fromEnv()))();
-    return redisStore(redis, logger);
+    return redisStore(redis, logger, ownerTokenFactory);
   } catch (error) {
     return unavailableStore(logger, errorClass(error));
   }
