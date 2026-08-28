@@ -264,3 +264,176 @@ type IdempotencyClaim = "claimed" | "completed" | "in-flight";
 | Orquestração | FIFO, mutex e 10 segundos entre inícios | Respeita rate limit sem concorrência entre load/online. |
 
 Essas escolhas são locais à feature de ranking/estabilidade. Nenhuma nova AD projeto-level é necessária; `STATE.md` e seu Handoff permanecem inalterados.
+
+---
+
+## Emenda de Design — Ciclo Interno 2
+
+**Spec:** `_docs/specs/features/estabilidade-qualidade/spec.md` (`ESTAB-16` a `ESTAB-18`)
+**Status:** Approved para decomposição em tasks
+**Decisões do usuário:** ownership token, dedupe autoritativa por `submissionId` e Quality Gate verde para código novo, aprovadas em 2026-08-28.
+
+Esta emenda substitui somente os contratos de idempotência/persistência e as provas incompletas do ciclo 1. O restante do design e todo o histórico permanecem válidos.
+
+### Knowledge Verification Chain
+
+| Etapa | Evidência consultada | Conclusão |
+| --- | --- | --- |
+| Codebase | `package.json`, `package-lock.json`, `lib/score-idempotency.ts`, `lib/high-scores.ts`, `app/api/scores/route.ts`, `app/page.tsx` e testes C1 | A stack instalada é `@upstash/redis` 1.38.3 e `@vercel/blob` 2.8.0. O claim atual usa o marcador compartilhado `in-flight`; Blob grava um array top-10 sem ID e qualquer 2xx remove a pendência. |
+| Docs do projeto | `AGENTS.md`, `README.md`, `STATE.md`, spec/design/tasks/validation e Sonar local | Blob é a fonte global; Redis é coordenação fail-closed; LCOV é o formato de cobertura; nenhuma AD ativa conflita com a solução. Não há lessons confirmadas; L-005 a L-008 permanecem candidatas e foram usadas apenas como evidência dos gaps, não como regra. |
+| Context7 | Upstash Redis `SET`/`EVAL`; Vercel Storage `get`/`head`/`put` e conditional writes | `redis.set(key, value, { nx: true, ex })` e `redis.eval(script, keys, args)` existem. `put(..., { ifMatch: etag })` fornece concorrência otimista e lança `BlobPreconditionFailedError`; `get(..., { useCache: false })` permite ler a versão atual. |
+| Web oficial | Vercel Blob conditional writes; Upstash TypeScript `SET` e `EVAL` | As docs oficiais confirmam ETag/`ifMatch`, `BlobPreconditionFailedError`, `SET NX EX` e Lua server-side. A versão instalada expõe esses tipos/APIs, portanto não há `SPEC_DEVIATION`. |
+
+Fontes externas: `https://vercel.com/docs/vercel-blob`, `https://vercel.com/docs/vercel-blob/using-blob-sdk`, `https://upstash.com/docs/redis/sdks/ts/commands/string/set` e `https://upstash.com/docs/redis/sdks/ts/commands/scripts/eval`.
+
+### Arquitetura escolhida
+
+```mermaid
+flowchart TD
+    A[POST validado] --> B{Redis status completed?}
+    B -->|sim| C[200 idempotent]
+    B -->|não| D{Ledger Blob contém submissionId?}
+    D -->|sim| C
+    D -->|não| E[Throttle por IP]
+    E --> F[Claim Redis com owner token]
+    F -->|in-flight| G[409 transitório]
+    F -->|claimed token| H[Persistência Blob CAS por ETag]
+    H -->|conflito| I[Reler, deduplicar e tentar novamente]
+    I --> H
+    H -->|confirmado| J[Complete Redis compare-and-set]
+    J -->|ok, ownership-lost ou erro Redis| K[201 storage blob]
+    H -->|não confirmado| L[Release compare-and-delete]
+    L --> M[503; cliente mantém fila]
+```
+
+O Vercel Blob permanece a fonte autoritativa do ranking e passa a manter, no mesmo documento, um ledger de submissões processadas por 24 horas. O Redis continua sendo a coordenação rápida, mas não é a única prova de dedupe. Essa combinação fecha a janela “Blob gravado → complete Redis falha” sem exigir transação distribuída.
+
+### Documento autoritativo e compatibilidade
+
+```typescript
+interface StoredHighScore extends HighScore {
+  submissionId?: string;
+}
+
+interface ProcessedSubmission {
+  submissionId: string;
+  persistedAt: string;
+}
+
+interface RankingDocumentV2 {
+  version: 2;
+  scores: StoredHighScore[];
+  processedSubmissions: ProcessedSubmission[];
+}
+
+interface RankingSnapshot {
+  document: RankingDocumentV2;
+  etag: string | null;
+}
+```
+
+- `readRankingSnapshot()` usa `get(SCORE_PATH, { access: "private", useCache: false })` e recebe o ETag retornado pelo Blob.
+- Um array legado é interpretado como `version: 2`, com scores saneados e ledger vazio; não há migração destrutiva separada.
+- `scores` permanece limitado/ordenado por `cleanScores`; `processedSubmissions` conserva IDs por 24 horas mesmo quando o score não entra no top 10.
+- `readHighScores()` projeta somente `HighScore[]`; `submissionId`, ledger e versão nunca entram no contrato GET.
+- O primeiro write, quando o Blob não existe, usa criação sem overwrite (`allowOverwrite: false`). Um conflito de criação é tratado como conflito otimista e provoca releitura.
+- Writes subsequentes usam `put(..., { access: "private", ifMatch: snapshot.etag, contentType: "application/json", cacheControlMaxAge: 0 })`.
+- `persistHighScore(score, submissionId)` tenta no máximo três ciclos read/merge/conditional-write. Em conflito, relê; se encontrar o ID no ledger, retorna idempotente. Após três conflitos sem confirmação, falha como retryable sem afirmar persistência.
+
+### Ownership token no Redis
+
+```typescript
+type ClaimResult =
+  | { state: "claimed"; ownerToken: string }
+  | { state: "completed" }
+  | { state: "in-flight" };
+
+type OwnershipResult = "applied" | "ownership-lost";
+
+interface IdempotencyStore {
+  status(submissionId: string): Promise<"completed" | "other">;
+  claim(submissionId: string): Promise<ClaimResult>;
+  complete(submissionId: string, ownerToken: string): Promise<OwnershipResult>;
+  release(submissionId: string, ownerToken: string): Promise<OwnershipResult>;
+}
+```
+
+- Cada `claim` gera token com `crypto.randomUUID()` e grava um valor distinguível, por exemplo `in-flight:<token>`, com `SET NX EX 60`.
+- `complete` executa Lua via `redis.eval`: compara o valor completo esperado, grava `completed` com `EX 86400` e retorna `applied`; retorno `0` vira `ownership-lost`.
+- `release` compara o mesmo valor e remove somente a chave própria; retorno `0` vira `ownership-lost`.
+- Nenhum log inclui token, `submissionId`, chave completa, IP ou score.
+- O store local usa o mesmo contrato e relógio injetável. Ele continua explicitamente não distribuído.
+
+### Ordenação da rota POST
+
+1. Validar os marcadores debug e `Idempotency-Key` conforme contratos existentes.
+2. Consultar `idempotencyStore.status`; `completed` retorna `200 { storage: "blob", idempotent: true }` sem throttle.
+3. Consultar o ledger Blob pelo `submissionId`; presença retorna o mesmo sucesso idempotente, cobrindo Redis ausente, expirado ou falha de complete.
+4. Adquirir throttle somente para ID ainda não concluído.
+5. Adquirir claim. `in-flight` retorna `409`; `completed` retorna sucesso; `claimed` carrega o token até a saída.
+6. Sanear e persistir com CAS/ledger. Resultado `persisted` ou `already-present` é sucesso Blob.
+7. Tentar `complete(submissionId, token)`. `ownership-lost` ou indisponibilidade Redis depois de Blob confirmado é observado sem liberar e não converte a resposta em `503`.
+8. Somente falha antes de confirmação Blob tenta `release(submissionId, token)` e retorna `503`; perda de ownership no release não toca o claim atual.
+
+O fast path autoritativo antes do throttle é deliberado para garantir retry idempotente. A otimização de round trips além deste contrato permanece categoria (c).
+
+### Contrato cliente e drenagem
+
+- `isPersistedResponse(body)` é verdadeiro somente para `storage === "blob"` ou `idempotent === true`.
+- Envio inicial por rede/429/503 ou `storage: "local"` chama `enqueuePendingScore` com o ID já criado; não gera segundo ID.
+- Drain remove a entrada somente quando `isPersistedResponse` for verdadeiro. `storage: "local"`, rede, 429 e 503 atualizam a tentativa, preservam a entrada e encerram a rodada.
+- Novo `load`/`online` reutiliza a mesma entrada e header. O mutex existente continua responsável por uma promise; a espera de 10 segundos será isolada em helper único para tornar contável uma única sequência de timers e fechar S3776 sem extrair toda a feature.
+
+### Debug, mobile e Quality Gate
+
+- Testes de evento debug inválido capturam snapshots antes/depois de heading/HUD, status observável de boss/power-up, POSTs e ambas as chaves de storage.
+- O teste de rota é parametrizado para `origin: "debug"` e `debug: true`, exigindo zero throttle/claim/persistência.
+- O teste de restart encerra uma run debug, inicia nova run normal pelo fluxo real e prova exatamente um POST com novo ID.
+- O E2E executa cada página legal em duas alturas distintas e compara `getComputedStyle(main).minHeight` com `window.innerHeight` após cada `setViewportSize`.
+- S3776 é fechado extraindo apenas interpretação/envio de uma entrada e espera do throttle; S1871 consolida ações debug que chamam `start()`; S7776 troca a allowlist por `ReadonlySet`/`.has()`.
+- A validação final gera LCOV fresco, executa Sonar no HEAD e exige Quality Gate `OK` para new code. Issues históricas fora do diff são registradas, não corrigidas.
+
+### Tratamento de erros e transições
+
+| Cenário | Outcome | Estado seguinte |
+| --- | --- | --- |
+| Token proprietário completa | `applied` | Redis `completed` por 24 h. |
+| Worker antigo completa/libera após novo claim | `ownership-lost` | Claim novo permanece byte a byte. |
+| ETag conflita e outro writer gravou o mesmo ID | Sucesso idempotente | Nenhuma segunda ocorrência. |
+| ETag conflita com outro ID | Reler/merge/retry, até 3 tentativas | Ambos os scores preservados quando uma tentativa vence. |
+| Blob confirma e complete Redis falha | HTTP 201/200 persistido | Não liberar; retry encontra ID no ledger. |
+| Blob não confirma após retries | HTTP 503 | Release apenas com token proprietário; cliente conserva fila. |
+| API retorna storage local | Resposta não autoritativa | Cliente cria/mantém pendência e para drain. |
+| Redis completed ou ledger contém ID | HTTP 200 idempotente antes do throttle | Sem novo Blob write e sem consumo de janela. |
+
+### Riscos e preocupações
+
+| Preocupação | Localização | Impacto | Mitigação |
+| --- | --- | --- | --- |
+| Overwrite concorrente do array Blob | `lib/high-scores.ts` | Lost update e dedupe não confiável | ETag/`ifMatch`, `useCache: false`, merge em snapshot fresco e retry limitado. |
+| Ledger cresce sem limite | documento Blob | Custo e payload crescentes | Remover IDs com `persistedAt` anterior a 24 h em cada merge; scores continuam top 10. |
+| Complete Redis falha após Blob | rota + adapters | Retry pode duplicar ou receber erro falso | Blob ledger é autoridade; responder sucesso e nunca liberar após write confirmado. |
+| Worker perde claim | `lib/score-idempotency.ts` | Worker antigo altera posse nova | Token único e scripts compare-and-set/delete com resultado obrigatório. |
+| Leitura extra antes do throttle | rota/Blob | Latência e custo | Necessária ao AC de dedupe após falha parcial; otimização fica categoria (c). |
+| `Home` continua monolítico | `app/page.tsx` | Complexidade de manutenção | Extrair somente helpers mínimos exigidos por S3776; extração estrutural permanece fora de escopo. |
+| Testes antigos provam apenas parte das conjunções | testes C1 | Falso PASS | Casos discriminantes para cada marcador, storage local, retry posterior, timer, restart e viewport variável. |
+
+### Rastreabilidade do design do ciclo 2
+
+| Requirement | Componentes / decisões |
+| --- | --- |
+| `ESTAB-16` | `IdempotencyStore`, owner token, Lua CAS/delete, TTLs e store local equivalente |
+| `ESTAB-17` | `RankingDocumentV2`, ETag/`ifMatch`, ledger 24 h, ordenação POST e contrato cliente |
+| `ESTAB-18` | testes debug/restart/timer/mobile, helpers mínimos Sonar e validação LCOV/Sonar |
+
+### Decisões técnicas do ciclo 2
+
+| Decisão | Escolha | Justificativa |
+| --- | --- | --- |
+| Ownership Redis | `in-flight:<uuid>` + Lua compare-and-set/delete | API confirmada, atomicidade server-side e rejeição observável de owner antigo. |
+| Autoridade de dedupe | Ledger 24 h no mesmo documento Blob v2 | Cobre falha entre Blob e Redis sem novo serviço nem transação inventada. |
+| Concorrência Blob | ETag + `ifMatch`, três tentativas | Capacidade confirmada em `@vercel/blob` 2.8.0; evita lost update com limite determinístico. |
+| Compatibilidade | Leitura dual de array legado e documento v2; GET projeta `HighScore[]` | Sem migração obrigatória nem mudança do consumidor público. |
+| Quality Gate | `OK` para new code no HEAD | Decisão aprovada; dívida histórica permanece registrada e fora do fix. |
+
+As decisões são específicas ao ranking desta feature e não estabelecem padrão obrigatório para outros domínios; `STATE.md` permanece inalterado.
