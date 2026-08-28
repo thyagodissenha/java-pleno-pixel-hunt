@@ -36,6 +36,12 @@ function claimState(claim: IdempotencyClaim): RouteClaim {
   return claim;
 }
 
+function isDebugPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object") return false;
+  const record = payload as Record<string, unknown>;
+  return record.origin === "debug" || record.debug === true;
+}
+
 export async function GET() {
   const scores = cleanScores((await readHighScores()).map((score) => sanitizeScore(score)));
 
@@ -45,8 +51,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const payload: unknown = await request.json();
-    const payloadRecord = payload && typeof payload === "object" ? payload as Record<string, unknown> : undefined;
-    if (payloadRecord?.origin === "debug" || payloadRecord?.debug === true) {
+    if (isDebugPayload(payload)) {
       return Response.json({ error: "Scores de debug não são aceitos." }, { status: 400 });
     }
 
