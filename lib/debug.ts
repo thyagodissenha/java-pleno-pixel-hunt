@@ -8,14 +8,14 @@ export type DebugAction =
   | "win_game"
   | "reset";
 
-const DEBUG_ACTIONS: readonly DebugAction[] = [
+const DEBUG_ACTIONS: ReadonlySet<DebugAction> = new Set([
   "toggle_menu",
   "spawn_boss",
   "add_powerup",
   "max_stamina",
   "win_game",
   "reset",
-];
+]);
 
 const DEBUG_KEYS: Readonly<Record<string, DebugAction>> = {
   F1: "toggle_menu",
@@ -28,7 +28,7 @@ export function isDebugAllowed(_search = "") {
 }
 
 export function isDebugAction(value: unknown): value is DebugAction {
-  return typeof value === "string" && DEBUG_ACTIONS.includes(value as DebugAction);
+  return typeof value === "string" && DEBUG_ACTIONS.has(value as DebugAction);
 }
 
 export function triggerDebugAction(action: DebugAction) {
