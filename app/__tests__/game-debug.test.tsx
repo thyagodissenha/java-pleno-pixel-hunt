@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "@/app/page";
 import { DEBUG_ACTION_EVENT } from "@/lib/debug";
@@ -26,8 +26,23 @@ function advanceFrames(amount: number) {
   });
 }
 
+function snapshotGameState() {
+  const fetchMock = vi.mocked(globalThis.fetch);
+  return {
+    heading: screen.getByRole("heading", { level: 1 }).textContent,
+    bossProgress: screen.getByText("0/14 mobs").textContent,
+    stamina: screen.getByText("100%").textContent,
+    bossHealth: screen.queryByRole("status", { name: "Vida do boss debug" })?.textContent ?? null,
+    powerUps: screen.queryByRole("status", { name: "Power-ups debug" })?.textContent ?? null,
+    postAttempts: fetchMock.mock.calls.filter(([, init]) => init?.method === "POST").length,
+    highScores: localStorage.getItem("java-pleno-pixel-hunt-high-scores"),
+    pendingScores: localStorage.getItem("java-pleno-pixel-hunt-pending-scores"),
+  };
+}
+
 describe("game debug tools", () => {
   beforeEach(() => {
+    localStorage.clear();
     vi.stubEnv("NODE_ENV", "development");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ scores: [] })));
     animationFrames = [];
@@ -129,22 +144,28 @@ describe("game debug tools", () => {
     expect(screen.getByRole("textbox", { name: "Digite seu nome" })).toBeVisible();
   });
 
-  it("ignores a forged debug event in production", () => {
+  it("ignores a forged debug event in production without side effects", async () => {
     vi.stubEnv("NODE_ENV", "production");
     render(<Home />);
+    await waitFor(() => expect(localStorage.getItem("java-pleno-pixel-hunt-high-scores")).toBe("[]"));
+    const before = snapshotGameState();
 
     fireEvent(window, new CustomEvent(DEBUG_ACTION_EVENT, { detail: "spawn_boss" }));
 
     expect(screen.getByRole("heading", { level: 1, name: "Pronto" })).toBeVisible();
     expect(screen.queryByText("Chefe em combate")).not.toBeInTheDocument();
+    expect(snapshotGameState()).toEqual(before);
   });
 
-  it("ignores a debug event whose detail is outside the allowlist", () => {
+  it("ignores a debug event outside the allowlist without side effects", async () => {
     render(<Home />);
+    await waitFor(() => expect(localStorage.getItem("java-pleno-pixel-hunt-high-scores")).toBe("[]"));
+    const before = snapshotGameState();
 
     fireEvent(window, new CustomEvent(DEBUG_ACTION_EVENT, { detail: "spawn-anything" }));
 
     expect(screen.getByRole("heading", { level: 1, name: "Pronto" })).toBeVisible();
     expect(screen.queryByRole("dialog", { name: "Ferramentas de debug" })).not.toBeInTheDocument();
+    expect(snapshotGameState()).toEqual(before);
   });
 });

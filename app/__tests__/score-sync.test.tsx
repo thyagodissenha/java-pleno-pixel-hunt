@@ -141,13 +141,26 @@ describe("offline score synchronization", () => {
     });
   });
 
-  it("does not submit or enqueue a score from a debug run", async () => {
+  it("isolates a debug score and restores eligibility on the next normal run", async () => {
+    const animationFrames: FrameRequestCallback[] = [];
+    let frameTime = performance.now();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    vi.spyOn(Math, "atan2").mockReturnValue(0);
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("44444444-4444-4444-8444-444444444444");
+    vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
+      animationFrames.push(callback);
+      return animationFrames.length;
+    }));
     let postAttempts = 0;
+    let submittedBody: unknown;
+    let submittedId: string | null = null;
     server.use(
       http.get("http://localhost/api/scores", () => HttpResponse.json({ scores: [] })),
-      http.post("http://localhost/api/scores", () => {
+      http.post("http://localhost/api/scores", async ({ request }) => {
         postAttempts += 1;
-        return HttpResponse.json({ scores: [] }, { status: 201 });
+        submittedBody = await request.json();
+        submittedId = request.headers.get("Idempotency-Key");
+        return HttpResponse.json({ scores: [], storage: "blob" }, { status: 201 });
       }),
     );
     render(<Home />);
@@ -163,6 +176,26 @@ describe("offline score synchronization", () => {
 
     await waitFor(() => expect(screen.getByText("Score de debug não enviado.")).toBeVisible());
     expect(postAttempts).toBe(0);
+    expect(localStorage.getItem(PENDING_SCORE_KEY)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Jogar de novo" }));
+    for (let batch = 0; batch < 20 && !screen.queryByRole("textbox", { name: "Digite seu nome" }); batch += 1) {
+      act(() => {
+        for (let frame = 0; frame < 100; frame += 1) {
+          const callback = animationFrames.shift();
+          frameTime += 33;
+          callback?.(frameTime);
+        }
+      });
+    }
+    fireEvent.change(screen.getByRole("textbox", { name: "Digite seu nome" }), {
+      target: { value: "Normal Dev" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await waitFor(() => expect(postAttempts).toBe(1));
+    expect(submittedId).toBe("44444444-4444-4444-8444-444444444444");
+    expect(submittedBody).toMatchObject({ name: "NORMAL DEV", outcome: "over" });
     expect(localStorage.getItem(PENDING_SCORE_KEY)).toBeNull();
   });
 
