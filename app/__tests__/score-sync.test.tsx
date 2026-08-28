@@ -73,7 +73,12 @@ describe("offline score synchronization", () => {
     vi.unstubAllGlobals();
   });
 
-  it("preserves a submitted score in localStorage when the network fails", async () => {
+  it.each([
+    ["network", () => HttpResponse.error()],
+    ["429", () => HttpResponse.json({ error: "wait" }, { status: 429 })],
+    ["503", () => HttpResponse.json({ error: "unavailable" }, { status: 503 })],
+    ["local storage", () => HttpResponse.json({ scores: [], storage: "local" }, { status: 200 })],
+  ])("preserves a submitted score in localStorage after a %s response", async (_kind, response) => {
     const animationFrames: FrameRequestCallback[] = [];
     let frameTime = performance.now();
     vi.spyOn(Math, "random").mockReturnValue(0);
@@ -83,11 +88,20 @@ describe("offline score synchronization", () => {
       animationFrames.push(callback);
       return animationFrames.length;
     }));
+    let idempotencyKey: string | null = null;
+    let getAttempts = 0;
     server.use(
-      http.get("http://localhost/api/scores", () => HttpResponse.json({ scores: [] })),
-      http.post("http://localhost/api/scores", () => HttpResponse.error()),
+      http.get("http://localhost/api/scores", () => {
+        getAttempts += 1;
+        return HttpResponse.json({ scores: [] });
+      }),
+      http.post("http://localhost/api/scores", ({ request }) => {
+        idempotencyKey = request.headers.get("Idempotency-Key");
+        return response();
+      }),
     );
     render(<Home />);
+    await waitFor(() => expect(getAttempts).toBe(1));
     fireEvent.click(screen.getByRole("menuitem", { name: "▶ Jogar" }));
     for (let batch = 0; batch < 20 && !screen.queryByRole("textbox", { name: "Digite seu nome" }); batch += 1) {
       act(() => {
@@ -122,6 +136,8 @@ describe("offline score synchronization", () => {
           lastAttemptAt: null,
         },
       ]);
+      expect(idempotencyKey).toBe("22222222-2222-4222-8222-222222222222");
+      expect(screen.getByText("Ranking local salvo. Global indisponível.")).toBeVisible();
     });
   });
 

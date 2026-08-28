@@ -520,6 +520,10 @@ export default function Home() {
     }
   }
 
+  function isPersistedScoreResponse(payload: { storage?: "blob" | "local"; idempotent?: boolean }) {
+    return payload.storage === "blob" || payload.idempotent === true;
+  }
+
   function drainPendingScores() {
     if (drainPromiseRef.current) return drainPromiseRef.current;
 
@@ -548,7 +552,14 @@ export default function Home() {
             body: JSON.stringify(pendingScore.score),
           });
           if (!response.ok) throw new Error("Score sync failed");
-          const payload = (await response.json()) as { scores?: HighScore[]; storage?: "blob" | "local" };
+          const payload = (await response.json()) as {
+            scores?: HighScore[];
+            storage?: "blob" | "local";
+            idempotent?: boolean;
+          };
+          if (!isPersistedScoreResponse(payload)) {
+            throw new Error("Score sync not persisted");
+          }
           removePendingScore(pendingScore.submissionId);
           if (payload.scores) {
             setHighScores(payload.scores);
@@ -680,7 +691,14 @@ export default function Home() {
         body: JSON.stringify(entry),
       });
       if (!response.ok) throw new Error("Score API failed");
-      const payload = (await response.json()) as { scores: HighScore[]; storage?: "blob" | "local" };
+      const payload = (await response.json()) as {
+        scores: HighScore[];
+        storage?: "blob" | "local";
+        idempotent?: boolean;
+      };
+      if (!isPersistedScoreResponse(payload)) {
+        throw new Error("Score not persisted");
+      }
       setHighScores(payload.scores);
       saveHighScores(payload.scores);
       setScoreMessage(payload.storage === "local" ? "Ranking local aguardando sincronização" : "Ranking global atualizado");
