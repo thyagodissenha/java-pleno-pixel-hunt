@@ -1116,9 +1116,9 @@ export default function Home() {
       }
 
       setDebugOpen(false);
-      if ((action === "spawn_boss" || action === "add_powerup") && stateRef.current !== "playing") {
-        start();
-      } else if (action === "reset") {
+      const startsRun = action === "reset"
+        || ((action === "spawn_boss" || action === "add_powerup") && stateRef.current !== "playing");
+      if (startsRun) {
         start();
       }
       runOriginRef.current = "debug";

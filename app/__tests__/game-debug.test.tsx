@@ -118,6 +118,19 @@ describe("game debug tools", () => {
     expect(screen.getByRole("status", { name: "Power-ups debug" })).toHaveTextContent("1 power-up disponível");
   });
 
+  it("resets the current debug run without retaining spawned entities", () => {
+    render(<Home />);
+    fireEvent.keyDown(window, { key: "F2" });
+    expect(screen.getByRole("status", { name: "Vida do boss debug" })).toHaveTextContent("188/188 HP");
+
+    fireEvent(window, new CustomEvent(DEBUG_ACTION_EVENT, { detail: "reset" }));
+
+    expect(screen.getByRole("heading", { level: 1, name: "Em combate" })).toBeVisible();
+    expect(screen.queryByRole("status", { name: "Vida do boss debug" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Power-ups debug" })).not.toBeInTheDocument();
+    expect(screen.getByText("0/14 mobs")).toBeVisible();
+  });
+
   it("restores stamina after it has been consumed", () => {
     render(<Home />);
     fireEvent.keyDown(window, { key: "F1" });
