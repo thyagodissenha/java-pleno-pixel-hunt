@@ -32,6 +32,9 @@ O jogo *Java Pleno Pixel Hunt* possui o seu loop principal de gameplay funcional
 | Throttle em produção | Armazenamento Redis compartilhado, operação atômica e TTL de 10 segundos por IP | Garante o intervalo entre instâncias serverless da Vercel. | Sim — ciclo interno 1 |
 | Pendências offline | Fila separada `java-pleno-pixel-hunt-pending-scores`, contendo somente submissões criadas pelo jogador neste cliente | Impede que entradas globais/localmente exibidas sejam reenviadas como próprias. | Sim — ciclo interno 1 |
 | Drenagem da fila | Sequencial no carregamento e no evento `online`, com no mínimo 10 segundos entre inícios de POST até esvaziar | Mantém ordenação, respeita o throttle e evita rajadas concorrentes. | Sim — ciclo interno 1 |
+| Posse do claim idempotente | Token exclusivo por aquisição; `complete` e `release` somente alteram o claim quando o token ainda é o proprietário | Impede que um worker antigo conclua ou libere o claim adquirido por outro após expiração. | Sim — ciclo interno 2, 2026-08-28 |
+| Dedupe no armazenamento autoritativo | `submissionId` persistido junto ao score e escrita condicional por ETag no Vercel Blob | Faz o Blob decidir a unicidade mesmo quando a gravação termina e a confirmação Redis falha. | Sim — ciclo interno 2, 2026-08-28 |
+| Aprovação de qualidade | Quality Gate verde para código novo; dívida histórica fora do diff não bloqueia | Fecha as três violações novas S3776/S1871/S7776 sem expandir a rodada para dívida anterior. | Sim — ciclo interno 2, 2026-08-28 |
 
 ---
 
@@ -117,6 +120,9 @@ O jogo *Java Pleno Pixel Hunt* possui o seu loop principal de gameplay funcional
 | `ESTAB-13` | P3: Validação mobile real | Design | Pending |
 | `ESTAB-14` | P3: Semântica do diálogo de debug | Design | Pending |
 | `ESTAB-15` | P3: Cobertura LCOV no Quality Gate | Design | Pending |
+| `ESTAB-16` | P2: Ownership exclusivo do claim Redis | Design | Pending |
+| `ESTAB-17` | P2: Dedupe autoritativa e recuperação de falha parcial | Design | Pending |
+| `ESTAB-18` | P1/P2/P3: Evidência discriminante e Quality Gate verde | Design | Pending |
 
 ---
 
@@ -225,3 +231,67 @@ Esta emenda preserva os requisitos e a evidência do ciclo anterior e resolve so
 - `CR-F4 / ESTAB-05` está concluído como evidência: o SonarQube registrou redução de **54 para 52 Code Smells** entre `2026-08-27T10:41:07Z` e `2026-08-27T15:11:39Z`. Isso não cria fix task no ciclo interno 1.
 
 **Cobertura após a emenda:** 15 requisitos totais; `ESTAB-06` a `ESTAB-15` seguem para Design/Tasks; `ESTAB-01` a `ESTAB-05` preservam histórico e evidências anteriores.
+
+---
+
+## Emenda do Ciclo Interno 2 — Integridade de Concorrência e Fechamento de Qualidade
+
+Esta emenda preserva integralmente os requisitos e o histórico anteriores. Ela incorpora somente os fixes categoria (a) registrados pelo Verifier/code review e as três decisões categoria (b) aprovadas pelo usuário em 2026-08-28. Melhorias categoria (c) permanecem explicitamente fora da implementação.
+
+### Requisitos e critérios de aceite adicionais
+
+#### `ESTAB-16` — Ownership exclusivo do claim Redis
+
+1. WHEN um `submissionId` sem estado ativo for reivindicado THEN o store SHALL criar um token de posse imprevisível e exclusivo daquela aquisição, armazená-lo no valor `in-flight` com TTL de 60 segundos e devolvê-lo ao chamador.
+2. WHEN `complete` ou `release` for chamado THEN a operação SHALL usar compare-and-set/delete atômico e SHALL alterar a chave somente se o token informado for igual ao token de posse armazenado.
+3. WHEN o TTL de um claim expirar e outro worker adquirir o mesmo `submissionId` com novo token THEN tentativas posteriores do worker antigo de concluir ou liberar SHALL retornar `ownership-lost`, SHALL preservar integralmente o claim novo e SHALL not marcar a submissão como concluída.
+4. WHEN um token proprietário concluir o claim THEN o estado SHALL transicionar atomicamente para `completed` com TTL de 24 horas; retries do mesmo `submissionId` nesse período SHALL observar `completed` sem adquirir novo claim.
+5. WHEN o store local de development/test for usado THEN SHALL aplicar as mesmas transições e verificações de token, TTL e `ownership-lost`, sem ser tratado como coordenação distribuída.
+
+#### `ESTAB-17` — Dedupe autoritativa e recuperação de falha parcial
+
+1. WHEN um score for persistido no Vercel Blob THEN o registro autoritativo SHALL incluir seu `submissionId`, e a resposta pública de GET SHALL continuar expondo somente o contrato `HighScore` saneado e ordenado, sem exigir migração dos registros legados que não possuem ID.
+2. WHEN dois writers concorrentes lerem a mesma versão do ranking THEN cada escrita SHALL usar a ETag lida como precondição; no máximo uma escrita daquela versão SHALL vencer, e o perdedor SHALL reler o Blob, detectar `submissionId` já persistido ou reaplicar sua alteração sobre a versão mais recente antes de nova escrita condicional.
+3. WHEN o Blob já contiver o mesmo `submissionId` THEN a persistência SHALL retornar sucesso idempotente com o ranking atual e SHALL not adicionar outra ocorrência, inclusive se o marcador Redis estiver ausente, expirado ou ainda `in-flight`.
+4. WHEN a escrita no Blob for confirmada e `complete` no Redis falhar ou retornar `ownership-lost` THEN a API SHALL responder sucesso persistido/idempotente, SHALL not liberar claim pertencente a outro worker e um retry SHALL ser resolvido pela dedupe autoritativa sem segunda ocorrência.
+5. WHEN a API responder HTTP `200` com `storage: "local"` THEN o cliente SHALL tratar a submissão como ainda pendente: no envio inicial SHALL criar/manter uma única entrada e, durante drain, SHALL manter a entrada corrente e encerrar a drenagem; somente `storage: "blob"` ou `idempotent: true` SHALL remover a pendência.
+6. WHEN uma submissão própria nova falhar por rede, HTTP `429` ou HTTP `503` THEN o cliente SHALL criar imediatamente a entrada pendente com o mesmo `submissionId`; WHEN um `load` ou `online` posterior ocorrer THEN SHALL reenviar essa mesma entrada e ID, atualizando tentativa sem criar duplicata.
+7. WHEN a API reconhecer um `submissionId` como `completed` THEN SHALL retornar sucesso idempotente antes de consumir a janela de throttle daquele IP, sem novo Blob write; IDs ainda não concluídos continuam sujeitos ao throttle antes de persistir.
+
+#### `ESTAB-18` — Evidência discriminante e aprovação de qualidade
+
+1. WHEN evento debug for recebido em production ou com action fora da allowlist THEN os testes SHALL provar conjuntamente que estado/HUD, coleção observável de entidades, chamadas POST e chaves de ranking/fila no `localStorage` permanecem inalterados.
+2. WHEN `POST /api/scores` receber `origin: "debug"` ou `debug: true` THEN cada marcador SHALL produzir HTTP `400`, payload de erro definido em `ESTAB-07` e zero chamadas a throttle, idempotência ou Blob.
+3. WHEN uma run debug terminar e uma nova run normal for iniciada THEN a nova run SHALL voltar a ser elegível e seu encerramento normal SHALL produzir exatamente um POST com novo `submissionId`.
+4. WHEN `load` e um ou mais eventos `online` se sobrepuserem durante a drenagem THEN os testes SHALL observar no máximo um POST em voo e exatamente uma sequência de espera de 10 segundos entre entradas, sem timer concorrente adicional.
+5. WHEN o E2E alterar a altura do viewport mobile entre dois valores distintos THEN o `min-height` computado de `.legal-shell` em `/privacidade` e `/sobre` SHALL acompanhar `window.innerHeight` em ambos os valores, e o último conteúdo focável SHALL permanecer visível após scroll.
+6. WHEN a análise SonarQube for executada com LCOV fresco no HEAD do ciclo 2 THEN o Quality Gate para código novo SHALL estar `OK`, com `typescript:S3776` em `app/page.tsx:526`, `typescript:S1871` em `app/page.tsx:1094` e `typescript:S7776` em `lib/debug.ts:11` ausentes; issues históricas fora das linhas alteradas SHALL not bloquear este critério.
+
+### Dimensions sweep do ciclo interno 2
+
+| Dimensão | Resolução |
+| --- | --- |
+| Estado / persistência | O registro Blob passa a carregar `submissionId`; leitura pública remove metadados internos e aceita registros legados sem ID. |
+| Concorrência / ordenação | Redis protege ownership por token; Blob usa ETag e retry limitado sobre versão fresca; cliente mantém mutex, FIFO e uma sequência de timers. |
+| Falha / falha parcial | Blob confirmado prevalece sobre falha posterior do Redis; a API responde sucesso e o Blob resolve retries por ID. |
+| Idempotência / retry | Redis oferece fast path de `completed`; Blob é a autoridade final para dedupe; cliente conserva ID em rede, 429, 503 e storage local. |
+| TTL / lifecycle | Claim proprietário expira em 60 segundos; completed Redis em 24 horas; `submissionId` acompanha o score enquanto ele permanecer no ranking autoritativo. |
+| Auth / abuso | Ambos os marcadores debug são rejeitados antes de throttle/persistência; parse/body throttle permanece questão categoria (c). |
+| Observabilidade | `ownership-lost`, conflito ETag e falha de complete são outcomes testáveis sem expor token, payload ou IP. |
+| Validação de entrada | Contrato público continua `HighScore`; `submissionId` interno é validado pelo contrato de Idempotency-Key vigente. |
+| Integridade de transição | `claimed(token) → completed` exige posse; `pending → removed` exige Blob ou resposta idempotente; nova run restaura origem normal. |
+| Dependência externa | APIs usadas foram confirmadas na stack instalada (`@upstash/redis` 1.38.3 e `@vercel/blob` 2.8.0); não há desvio de spec. |
+
+### Questões abertas preservadas — categoria (c), fora da implementação do ciclo 2
+
+- Limitar o tamanho/processamento do body e antecipar throttle ao parse de JSON inválido.
+- Otimizar a drenagem O(N²) de `localStorage` carregando a fila uma única vez.
+- Reduzir round trips Redis além do necessário para ownership correto.
+- Adicionar cobertura de indisponibilidade/factory que não seja necessária aos ACs deste ciclo.
+- Extrair a sincronização offline do componente monolítico `Home` ou extrair `Home` em componentes menores.
+- Migrar mock direto de `fetch` para MSW, conter/restaurar foco do diálogo e extrair ordenação compartilhada.
+- Limpar/limitar o `Map` local e usar/remover `HighScoreStorage` quando houver escopo próprio.
+
+**Open questions:** none — as decisões de ownership, dedupe autoritativa e Quality Gate foram aprovadas pelo usuário em 2026-08-28.
+
+**Cobertura após a emenda do ciclo 2:** 18 requisitos totais; `ESTAB-16` a `ESTAB-18` seguem para Design/Tasks, e `ESTAB-01` a `ESTAB-15` preservam requisitos e evidências históricas.
