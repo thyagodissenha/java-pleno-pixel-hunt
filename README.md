@@ -79,7 +79,9 @@ GOOGLE_ADSENSE_PUBLISHER_ID=pub-0000000000000000
 
 Também funciona se o valor vier no formato `ca-pub-0000000000000000`; o projeto normaliza automaticamente.
 
-Com a variável configurada, o layout carrega o script do AdSense em todas as páginas, adiciona a meta tag `google-adsense-account` e expõe o arquivo `/ads.txt` com o publisher ID correto.
+Com a variável configurada, o layout adiciona a meta tag `google-adsense-account` e expõe o arquivo `/ads.txt` com o publisher ID correto.
+
+Durante a revisão do AdSense, o site mantém apenas os sinais de propriedade. Blocos de anúncio devem ser adicionados manualmente somente após aprovação, evitando a arena do jogo e qualquer tela sem conteúdo editorial suficiente.
 
 ## Stack
 
