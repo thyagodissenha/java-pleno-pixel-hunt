@@ -182,15 +182,17 @@ function localMemoryStore(now: () => number, logger: IdempotencyLogger, ownerTok
     async status(submissionId) {
       return currentEntry(submissionId)?.state === "completed" ? { state: "completed" } : { state: "other" };
     },
-    async complete(submissionId) {
-      if (currentEntry(submissionId)?.state === "in-flight") {
+    async complete(submissionId, ownerToken) {
+      const entry = currentEntry(submissionId);
+      if (entry?.state === "in-flight" && entry.ownerToken === ownerToken) {
         entries.set(submissionId, { state: "completed", expiresAt: now() + COMPLETED_TTL_SECONDS * 1_000 });
         return "applied";
       }
       return "ownership-lost";
     },
-    async release(submissionId) {
-      if (currentEntry(submissionId)?.state === "in-flight") {
+    async release(submissionId, ownerToken) {
+      const entry = currentEntry(submissionId);
+      if (entry?.state === "in-flight" && entry.ownerToken === ownerToken) {
         entries.delete(submissionId);
         return "applied";
       }

@@ -141,6 +141,62 @@ describe("score idempotency store", () => {
     await expect(store.claim("submission-3")).resolves.toEqual({ state: "claimed", ownerToken: "local-owner-2" });
   });
 
+  it("mirrors owner-token loss and TTL boundaries in the local store", async () => {
+    let now = 10_000;
+    const ownerTokenFactory = vi.fn<() => string>()
+      .mockReturnValueOnce("local-owner-old")
+      .mockReturnValueOnce("local-owner-current")
+      .mockReturnValueOnce("local-owner-after-complete");
+    const logger = { error: vi.fn(), warn: vi.fn() };
+    const store = createIdempotencyStore({
+      environment: "test",
+      logger,
+      now: () => now,
+      ownerTokenFactory,
+    });
+
+    await expect(store.claim("local-submission")).resolves.toEqual({
+      state: "claimed",
+      ownerToken: "local-owner-old",
+    });
+    now += 59_999;
+    await expect(store.claim("local-submission")).resolves.toEqual({ state: "in-flight" });
+
+    now += 1;
+    await expect(store.claim("local-submission")).resolves.toEqual({
+      state: "claimed",
+      ownerToken: "local-owner-current",
+    });
+    await expect(store.complete("local-submission", "local-owner-old")).resolves.toBe("ownership-lost");
+    await expect(store.release("local-submission", "local-owner-old")).resolves.toBe("ownership-lost");
+    await expect(store.claim("local-submission")).resolves.toEqual({ state: "in-flight" });
+
+    await expect(store.complete("local-submission", "local-owner-current")).resolves.toBe("applied");
+    now += 86_399_999;
+    await expect(store.status("local-submission")).resolves.toEqual({ state: "completed" });
+    await expect(store.claim("local-submission")).resolves.toEqual({ state: "completed" });
+
+    now += 1;
+    await expect(store.status("local-submission")).resolves.toEqual({ state: "other" });
+    await expect(store.claim("local-submission")).resolves.toEqual({
+      state: "claimed",
+      ownerToken: "local-owner-after-complete",
+    });
+    expect(logger.warn).toHaveBeenCalledWith("Using non-distributed score idempotency", { backend: "local-memory" });
+  });
+
+  it("does not use local memory when production Redis credentials are missing", async () => {
+    const logger = { error: vi.fn(), warn: vi.fn() };
+    const store = createIdempotencyStore({ environment: "production", env: {}, logger });
+
+    await expect(store.claim("missing-redis")).rejects.toBeInstanceOf(IdempotencyUnavailableError);
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith("Score idempotency unavailable", {
+      backend: "redis",
+      error: "MissingCredentials",
+    });
+  });
+
   it("completes only the owned Redis claim with a 24-hour expiration", async () => {
     const redis = redisClient();
     const store = createIdempotencyStore({ environment: "production", env: credentials, redis });
