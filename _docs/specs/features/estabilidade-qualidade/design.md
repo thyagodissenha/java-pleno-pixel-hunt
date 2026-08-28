@@ -437,3 +437,196 @@ O fast path autoritativo antes do throttle é deliberado para garantir retry ide
 | Quality Gate | `OK` para new code no HEAD | Decisão aprovada; dívida histórica permanece registrada e fora do fix. |
 
 As decisões são específicas ao ranking desta feature e não estabelecem padrão obrigatório para outros domínios; `STATE.md` permanece inalterado.
+
+---
+
+## Emenda de Design — Ciclo Interno 3
+
+**Spec:** `_docs/specs/features/estabilidade-qualidade/spec.md` (`ESTAB-19` e `ESTAB-20`)
+**Baseline:** Specify `29fa03370e617417b19a00fea006ebcf2948c1c4`
+**Status:** Approved para decomposição em tasks
+
+Esta emenda preserva o histórico dos ciclos 1 e 2 e substitui somente a ordem do POST e o ledger monolítico de `RankingDocumentV2`. O ranking público continua em um único Blob; a dedupe autoritativa passa para 64 Blobs independentes. Os quatro achados categoria (a) do fechamento do ciclo 2 entram no plano de correção sem ampliar o comportamento aprovado.
+
+### Knowledge Verification Chain
+
+| Etapa | Evidência consultada | Conclusão |
+| --- | --- | --- |
+| Codebase | `app/api/scores/route.ts`, `lib/high-scores.ts`, `lib/score-idempotency.ts`, `lib/score-rate-limit.ts`, testes e lockfile | A rota hoje consulta Redis/ledger antes do throttle; o ledger ainda divide o Blob do ranking; os adapters já permitem Redis injetável, relógio local e `eval`; writes Blob já usam snapshot sem cache, ETag e até três tentativas. |
+| Docs do projeto | `AGENTS.md`, spec/design/tasks/validation vigentes e `STATE.md` | Nenhuma AD ativa conflita. O Verifier exige corrigir ownership obrigatório, release Redis antigo, ETag fresco e ausência real do token Blob. |
+| Stack instalada | `@upstash/redis` 1.38.3 e tipos de `@vercel/blob` 2.8.0 em `node_modules` | `eval(script, keys, args)`, `get(..., { useCache:false })`, ETag, `put(..., { ifMatch })` e `BlobPreconditionFailedError` estão confirmados localmente. Context7 não foi necessário. |
+
+Não há `SPEC_DEVIATION`: os contratos instalados permitem preflight atômico e CAS por shard. Não há transação multi-Blob; a consistência é obtida por uma intenção durável e recuperável no shard antes de qualquer alteração do ranking.
+
+### Alternativas avaliadas
+
+| Abordagem | Resultado | Motivo |
+| --- | --- | --- |
+| Manter ledger junto do ranking | Rejeitada | Preserva atomicidade de um Blob, mas não atende aos 64 shards nem reduz contenção/cardinalidade. |
+| Gravar ranking e depois shard | Rejeitada | Cria uma janela em que o score existe sem dedupe Blob recuperável, violando `ESTAB-17`/`ESTAB-20`. |
+| Gravar intenção recuperável no shard e depois ranking | Escolhida | Usa somente `get`/`put`/ETag atuais, permite retry determinístico e nunca grava score antes da prova de dedupe. |
+
+### Arquitetura e ordem do POST
+
+```mermaid
+flowchart TD
+    A[Payload debug e Idempotency-Key válidos] --> B[Preflight Redis 60 por 60 s]
+    B -->|bloqueado| C[429 com TTL restante]
+    B -->|indisponível em produção| D[503 sem Blob ou outros stores]
+    B -->|aprovado| E[Status Redis como hint]
+    E --> F[Ler somente o shard do submissionId]
+    F -->|entrada ativa| G[Garantir efeito no ranking por CAS]
+    G --> H[200 idempotente sem throttle de 10 s]
+    F -->|ausente ou expirada| I[Throttle funcional 10 s]
+    I --> J[Claim Redis com ownerToken]
+    J --> K[Reler o mesmo shard]
+    K -->|corrida encontrou entrada| G
+    K -->|continua ausente| L[CAS cria intenção recuperável no shard]
+    L --> M[CAS insere score no ranking]
+    M --> N[Complete Redis com ownerToken]
+    N --> O[201 Blob confirmado]
+```
+
+Ordem normativa:
+
+1. Fazer o parse já vigente e rejeitar `origin:"debug"`/`debug:true` e `Idempotency-Key` inválido. Body size e antecipação do parse continuam categoria (c).
+2. Consumir o preflight por IP. Rejeição ou indisponibilidade encerra a rota antes de status/claim Redis, throttle funcional ou qualquer Blob.
+3. Consultar `status` Redis apenas como hint e ler exatamente o shard derivado do ID. Somente uma entrada ativa do shard autoriza sucesso idempotente.
+4. Entrada ativa chama `ensureRankingEffect(entry)`: se o ranking já contiver o ID, não escreve; se estiver ausente, reaplica o score guardado na entrada por CAS. Esse recovery ocorre antes e sem consumo do throttle funcional.
+5. ID ausente/expirado adquire o throttle funcional de 10 segundos e depois o claim Redis. `ownerToken` acompanha todas as saídas proprietárias.
+6. Após o claim, reler o mesmo shard. Isso fecha a corrida entre IPs/claims distintos antes de criar uma intenção.
+7. Criar por CAS a entrada recuperável no shard e somente então inserir o score no ranking por CAS. Cada boundary tem no máximo três tentativas e relê sua própria ETag após conflito.
+8. Ranking confirmado permite tentar `complete`. Erro ou `ownership-lost` não libera claim e não converte sucesso em falha; retry usa o shard. Falha do ranking mantém a intenção, libera somente o claim ainda proprietário e retorna `503`; retry repara o efeito pelo mesmo shard.
+
+Um `completed` Redis sem entrada ativa no shard nunca produz sucesso. Isso mantém o TTL Blob como autoridade exata; após o throttle, se `claim` ainda observar um marcador Redis residual, a rota responde outcome transitório sem Blob write e sem declarar idempotência.
+
+### PreflightAbuseStore (`ESTAB-19`)
+
+- **Localização proposta:** `lib/score-abuse-preflight.ts`, integrado em `app/api/scores/route.ts`.
+- **Reuso:** factory/env/logger/injeção de Redis e `hashRateLimitIdentifier` do adapter de rate limit; cliente Redis expõe o `eval` já usado por idempotência.
+- **Chave:** `score:abuse:<sha256-ip>`; IP, hash completo e payload não aparecem em logs.
+- **Interface:**
+
+```typescript
+interface AbusePreflightDecision {
+  allowed: boolean;
+  retryAfterMs: number;
+  backend: "redis" | "local-memory";
+}
+
+interface AbusePreflightStore {
+  consume(ip: string): Promise<AbusePreflightDecision>;
+}
+```
+
+Produção executa um único script Lua. Dentro da mesma operação atômica, ele abre a chave com contador `1` e expiração de 60.000 ms quando ausente; permite e incrementa somente enquanto o contador é menor que 60; e, a partir da 61ª tentativa, devolve bloqueio e o `PTTL` vigente sem escrever nem renovar a chave. A decisão devolve o TTL lido no instante do script. A rota usa esse inteiro em `retryAfterMs` e `Math.ceil(retryAfterMs / 1000)` no `Retry-After`. TTL ausente/inválido em uma chave existente é erro do store, não permissão silenciosa.
+
+O store local injetável mantém `{ count, expiresAt }` por identificador e relógio injetado. `now >= expiresAt` abre nova janela; tentativas 1–60 passam e as posteriores retornam `expiresAt - now`. Ele existe somente fora de production e registra backend `local-memory`. Credencial ausente, factory inválida, erro Redis ou resultado Lua malformado falham fechado em production com o `503` amigável vigente e zero acesso posterior.
+
+### Ledger Blob em 64 shards (`ESTAB-20`)
+
+#### Seleção e paths
+
+```typescript
+function ledgerShardIndex(submissionId: string): number {
+  const digest = createHash("sha256").update(submissionId.trim(), "utf8").digest();
+  return digest[0] >>> 2;
+}
+```
+
+O valor validado preserva caixa e caracteres; apenas o `trim` vigente é aplicado. Os paths são estáveis, de `java-pleno-pixel-hunt/score-ledger/00.json` a `.../63.json`, com índice decimal de dois dígitos. Uma consulta lê o shard selecionado e nunca varre os outros 63.
+
+#### Modelo de dados
+
+```typescript
+interface LedgerEntryV1 {
+  submissionId: string;
+  persistedAt: string;
+  score?: StoredHighScore;
+  source: "cycle-3" | "legacy-v2";
+}
+
+interface LedgerShardV1 {
+  version: 1;
+  shard: number;
+  legacyImported: boolean;
+  entries: LedgerEntryV1[];
+}
+
+interface LedgerShardSnapshot {
+  document: LedgerShardV1;
+  etag: string | null;
+}
+```
+
+Entradas novas sempre guardam o score saneado com o mesmo `submissionId`; isso transforma o ledger em intenção de persistência recuperável, não em mero marcador. `persistedAt` é fixado na criação da intenção e nunca renovado por retry. A entrada é ativa somente quando `now < Date.parse(persistedAt) + 86_400_000`; na igualdade ou depois, decode/lookup a exclui da visão autoritativa.
+
+O ranking mantém `submissionId` internamente para que `ensureRankingEffect` seja idempotente, mas deixa de adicionar itens a `processedSubmissions`. A projeção pública continua sendo `cleanScores` e remove ID, shard, timestamp e ETag.
+
+#### Compatibilidade e cleanup lazy
+
+- Array legado e `RankingDocumentV2` continuam decodificáveis. Scores legados sem ID continuam apenas como ranking, conforme `ESTAB-17`.
+- Na primeira abertura de cada shard com `legacyImported:false`, o adapter lê o documento v2 vigente, filtra somente `processedSubmissions` ativos cujo hash pertence àquele índice e os incorpora por CAS como `source:"legacy-v2"`. Nenhum outro shard é lido. Entradas legacy sem score são confirmações de efeitos já concluídos; não são usadas para criar novo score.
+- O documento de ranking conserva o ledger v2 somente durante a janela de compatibilidade de 24 horas e não recebe IDs novos. Depois desse horizonte, o campo pode permanecer vazio sem migração destrutiva separada.
+- Toda leitura cria uma visão lógica sem expirados. Toda escrita serializa essa visão antes do merge, realizando cleanup físico apenas no shard tocado. Não existe cron nem varredura global.
+
+#### CAS e retries
+
+`readLedgerShard(index)` usa `get(path, { access:"private", useCache:false })` e captura `blob.etag`. Criação usa `allowOverwrite:false`; update usa `ifMatch` exatamente igual à ETag daquela leitura. `BlobPreconditionFailedError` provoca releitura do mesmo shard, nova expiração lógica e novo merge. O limite permanece em três tentativas por operação; esgotamento retorna falha retryable sem afirmar persistência.
+
+O ranking reutiliza o mesmo protocolo atual. O teste discriminante de conflito deve observar que a segunda chamada usa a ETag da segunda leitura, por exemplo `ifMatch:"etag-2"`, e falhar se repetir `etag-1`.
+
+### Contrato de falha parcial
+
+| Última confirmação durável | Outcome | Recuperação |
+| --- | --- | --- |
+| Nenhuma; preflight/throttle/claim falhou | `429`, `409` ou `503` conforme etapa | Zero Blob write; cliente mantém a submissão quando retryable. |
+| Intenção do shard não confirmou | `503` | Ranking não é tocado; release somente com `ownerToken` proprietário. |
+| Shard confirmou, ranking não confirmou | `503` | Entrada permanece com score; release proprietário permite retry, que encontra o shard e executa `ensureRankingEffect`. |
+| Ranking confirmou, resposta se perdeu | Sucesso pode não chegar ao cliente | Shard já existia antes do ranking; retry encontra a entrada e não duplica o score. |
+| Ranking confirmou, `complete` falhou/perdeu ownership | `201`/`200` Blob | Não liberar; shard resolve retry durante as 24 horas exatas. |
+| Entrada expirou | Não é idempotente | Lookup a ignora; novo processamento volta ao throttle/claim e cleanup ocorre no próximo CAS do shard. |
+
+Invariante: **nenhuma chamada de escrita do ranking é permitida antes de a entrada recuperável do mesmo `submissionId` estar confirmada no shard selecionado**. Portanto não existe janela de score persistido sem dedupe Blob recuperável.
+
+### Correções categoria (a) incorporadas
+
+1. `IdempotencyStore.complete` e `release` recebem `ownerToken: string` obrigatório; remover os unions string legados de `IdempotencyClaim` e os parâmetros opcionais. A rota não aceita claim `"claimed"` sem token.
+2. O teste Redis executa o script real/fake observável de `release` com owner antigo, exige retorno Lua `0` mapeado para `ownership-lost` e prova que o valor integral do claim novo permanece.
+3. O teste de retry CAS exige `ifMatch` fresco em cada tentativa, tanto no shard quanto no ranking.
+4. O teste real da rota remove/restaura `BLOB_READ_WRITE_TOKEN`, não mocka o outcome Blob e exige resposta amigável sem exceção não tratada nem sucesso autoritativo falso.
+
+### Riscos e mitigações
+
+| Risco | Localização | Impacto | Mitigação |
+| --- | --- | --- | --- |
+| Script de preflight renova janela por engano | novo adapter Redis | IP pode ficar bloqueado além de 60 s | Um `eval`, TTL criado uma vez, rejeição sem write e testes de 1ª/60ª/61ª/fronteira com TTL decrescente. |
+| Store local diverge do Redis | novo adapter local | Testes passam com semântica diferente | Mesmo contrato, relógio injetável e testes parametrizados de cota/TTL/backend. |
+| Hash/shard diverge entre instâncias | ledger adapter | Dedupe pode procurar o Blob errado | SHA-256 UTF-8 do ID trimado e `digest[0] >>> 2`, com vetores determinísticos e limites 0/63. |
+| Lost update dentro de um shard | ledger adapter | IDs válidos desaparecem | ETag fresco, merge após expiração lógica e três retries limitados. |
+| Shard confirmado sem ranking | rota + ranking | Efeito elegível pode faltar temporariamente | Entrada guarda score e todo fast path executa recovery antes de responder sucesso. |
+| Ranking confirmado sem dedupe | rota | Duplicação após falha parcial | Invariante shard-first; não há chamada de ranking antes do CAS do ledger. |
+| Cutover perde IDs do documento v2 | codec/migração lazy | Retry dentro de 24 h duplica | Importação por shard, filtrada pelo mesmo hash, antes de marcar `legacyImported`. |
+| Metadados vazam no contrato público | GET/POST | Exposição interna e quebra cliente | Única projeção `publicHighScores`/`cleanScores`; testes negam IDs, timestamps, shard e ETag. |
+| Redis completed sobrevive ao ledger | rota/idempotência | Sucesso depois do TTL exato | Redis é hint; sucesso exige entrada ativa no shard. Marcador residual produz outcome transitório, nunca idempotente. |
+
+### Rastreabilidade do ciclo 3
+
+| Requirement | Componentes / decisões |
+| --- | --- |
+| `ESTAB-16` | `ownerToken` obrigatório, scripts CAS/delete e teste Redis de release antigo preservando claim novo |
+| `ESTAB-17` | shard-first, score interno com `submissionId`, `ensureRankingEffect`, ETag fresco e resposta somente após confirmação recuperável |
+| `ESTAB-19` | `AbusePreflightStore`, Lua 60/60 s, TTL preciso, fail-closed e store local injetável; fast paths antes do throttle funcional |
+| `ESTAB-20` | SHA-256 top 6 bits, 64 paths, uma leitura de shard, TTL lógico exato, cleanup lazy, CAS e três retries |
+
+### Decisões técnicas do ciclo 3
+
+| Decisão | Escolha | Justificativa |
+| --- | --- | --- |
+| Antiabuso | Script Redis único por IP, janela fixa 60/60 s | Atomicidade e TTL restante preciso sem renovar bloqueios. |
+| Autoridade de dedupe | Shard Blob selecionado pelo ID | Limita contenção e cardinalidade mantendo dedupe cross-instance. |
+| Protocolo de persistência | Intenção shard-first com score recuperável | Fecha a falha parcial sem transação multi-Blob ou API externa nova. |
+| Retenção | Validade lógica `[persistedAt, persistedAt + 24h)` | Implementa a fronteira exata da spec; cleanup físico fica lazy. |
+| Concorrência | ETag fresca e três tentativas por Blob | Reutiliza o adapter vigente, preserva merges e limita trabalho. |
+
+Estas decisões continuam locais ao ranking. Nenhuma AD projeto-level é criada e `STATE.md` permanece inalterado.
