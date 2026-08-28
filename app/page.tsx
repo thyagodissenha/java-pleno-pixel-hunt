@@ -77,6 +77,12 @@ type PendingScoreEntry = {
   lastAttemptAt: string | null;
 };
 
+type ScoreApiResponse = {
+  scores?: HighScore[];
+  storage?: "blob" | "local";
+  idempotent?: boolean;
+};
+
 type PowerUp = {
   x: number;
   y: number;
@@ -278,6 +284,31 @@ function updatePendingScoreAttempt(submissionId: string, attemptedAt: string) {
   savePendingScores(loadPendingScores().map((entry) => entry.submissionId === submissionId
     ? { ...entry, attempts: entry.attempts + 1, lastAttemptAt: attemptedAt }
     : entry));
+}
+
+function isPersistedScoreResponse(payload: ScoreApiResponse) {
+  return payload.storage === "blob" || payload.idempotent === true;
+}
+
+async function waitForNextScorePost(previousPostStartedAt: number | null) {
+  if (previousPostStartedAt === null) return;
+  const remainingDelay = Math.max(0, 10_000 - (Date.now() - previousPostStartedAt));
+  if (remainingDelay > 0) {
+    await new Promise<void>((resolve) => window.setTimeout(resolve, remainingDelay));
+  }
+}
+
+async function postPendingScore(pendingScore: PendingScoreEntry): Promise<ScoreApiResponse> {
+  const response = await fetch("/api/scores", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": pendingScore.submissionId,
+    },
+    body: JSON.stringify(pendingScore.score),
+  });
+  if (!response.ok) throw new Error("Score sync failed");
+  return response.json() as Promise<ScoreApiResponse>;
 }
 
 function scoreIdentity(score: HighScore) {
@@ -520,10 +551,6 @@ export default function Home() {
     }
   }
 
-  function isPersistedScoreResponse(payload: { storage?: "blob" | "local"; idempotent?: boolean }) {
-    return payload.storage === "blob" || payload.idempotent === true;
-  }
-
   function drainPendingScores() {
     if (drainPromiseRef.current) return drainPromiseRef.current;
 
@@ -534,29 +561,11 @@ export default function Home() {
         const pendingScore = loadPendingScores()[0];
         if (!pendingScore) return;
 
-        if (previousPostStartedAt !== null) {
-          const remainingDelay = Math.max(0, 10_000 - (Date.now() - previousPostStartedAt));
-          if (remainingDelay > 0) {
-            await new Promise<void>((resolve) => window.setTimeout(resolve, remainingDelay));
-          }
-        }
+        await waitForNextScorePost(previousPostStartedAt);
 
         previousPostStartedAt = Date.now();
         try {
-          const response = await fetch("/api/scores", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Idempotency-Key": pendingScore.submissionId,
-            },
-            body: JSON.stringify(pendingScore.score),
-          });
-          if (!response.ok) throw new Error("Score sync failed");
-          const payload = (await response.json()) as {
-            scores?: HighScore[];
-            storage?: "blob" | "local";
-            idempotent?: boolean;
-          };
+          const payload = await postPendingScore(pendingScore);
           if (!isPersistedScoreResponse(payload)) {
             throw new Error("Score sync not persisted");
           }

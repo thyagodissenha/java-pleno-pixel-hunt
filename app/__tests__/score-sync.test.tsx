@@ -239,6 +239,7 @@ describe("offline score synchronization", () => {
 
   it("shares one drain when load and online overlap", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    const setTimeoutSpy = vi.spyOn(window, "setTimeout");
     localStorage.setItem(PENDING_SCORE_KEY, JSON.stringify([pendingEntry, secondPendingEntry]));
     let releaseFirst!: () => void;
     let inFlight = 0;
@@ -272,20 +273,26 @@ describe("offline score synchronization", () => {
     await vi.advanceTimersByTimeAsync(10_000);
     await vi.waitFor(() => expect(postAttempts).toBe(2));
     expect(maxInFlight).toBe(1);
+    expect(setTimeoutSpy.mock.calls.filter(([, delay]) => typeof delay === "number" && delay > 1_000)).toHaveLength(1);
   });
 
   it.each([
     ["network", () => HttpResponse.error()],
     ["429", () => HttpResponse.json({ error: "wait" }, { status: 429 })],
     ["503", () => HttpResponse.json({ error: "unavailable" }, { status: 503 })],
-  ])("keeps the current item and stops the drain after a %s failure", async (_kind, response) => {
+    ["local storage", () => HttpResponse.json({ scores: [], storage: "local" }, { status: 200 })],
+  ])("retries the same current item after a %s failure", async (_kind, response) => {
     localStorage.setItem(PENDING_SCORE_KEY, JSON.stringify([pendingEntry, secondPendingEntry]));
     let postAttempts = 0;
+    const submittedIds: Array<string | null> = [];
     server.use(
       http.get("http://localhost/api/scores", () => HttpResponse.json({ scores: [] })),
-      http.post("http://localhost/api/scores", () => {
+      http.post("http://localhost/api/scores", ({ request }) => {
         postAttempts += 1;
-        return response();
+        submittedIds.push(request.headers.get("Idempotency-Key"));
+        return postAttempts === 1
+          ? response()
+          : HttpResponse.json({ scores: [pendingScore], storage: "blob" }, { status: 201 });
       }),
     );
 
@@ -299,6 +306,12 @@ describe("offline score synchronization", () => {
       ]);
     });
     expect(postAttempts).toBe(1);
+
+    act(() => window.dispatchEvent(new Event("online")));
+
+    await waitFor(() => expect(postAttempts).toBe(2));
+    expect(submittedIds).toEqual([pendingEntry.submissionId, pendingEntry.submissionId]);
+    expect(JSON.parse(localStorage.getItem(PENDING_SCORE_KEY) ?? "[]")).toEqual([secondPendingEntry]);
   });
 
   it("does not post or schedule a drain timer for an empty queue", async () => {
