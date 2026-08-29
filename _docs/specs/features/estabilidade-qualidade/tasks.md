@@ -1276,6 +1276,8 @@ Validação independente posterior:  Verifier → sensor discriminante → valid
 **Gate:** quick
 **Commit:** `fix(cycle-3): require idempotency owner token`
 
+**Execução:** Concluída em `ac4e5de`; contrato tornou o owner token obrigatório e a prova Redis de `release` antigo passou na suíte completa.
+
 #### C3-T2: Implementar preflight antiabuso atômico 60/60
 
 **O que:** criar o `AbusePreflightStore` Redis/local com janela fixa atômica de 60 requisições em 60 segundos, TTL restante e falha fechada em produção.
@@ -1294,6 +1296,8 @@ Validação independente posterior:  Verifier → sensor discriminante → valid
 **Testes:** unit dos stores Redis/local, Lua observável, fake clock, TTL e erros de configuração/serviço
 **Gate:** quick
 **Commit:** `fix(cycle-3): add atomic abuse preflight`
+
+**Execução:** Concluída em `f0ac72c`; preflight Redis/local 60/60, TTL restante e fail-closed foram implementados e testados.
 
 ### Fase 2 — Ledger particionado
 
@@ -1317,6 +1321,8 @@ Validação independente posterior:  Verifier → sensor discriminante → valid
 **Gate:** quick
 **Commit:** `fix(cycle-3): partition authoritative score ledger`
 
+**Execução:** Concluída em `50fbccf`; seleção SHA-256, 64 shards e compatibilidade pública/legada foram implementadas e testadas.
+
 #### C3-T4: Implementar CAS, retenção exata e recovery por shard
 
 **O que:** implementar leitura/escrita CAS independente por shard, TTL lógico exato, cleanup lazy e intenção shard-first recuperável antes do ranking.
@@ -1337,6 +1343,8 @@ Validação independente posterior:  Verifier → sensor discriminante → valid
 **Testes:** unit do boundary Blob com fake clock, conflitos CAS, ETag fresca, TTL/cleanup, concorrência e falhas parciais
 **Gate:** quick
 **Commit:** `fix(cycle-3): enforce shard cas retention`
+
+**Execução:** Concluída em `89b0366`; CAS com ETag fresca, retenção exata, cleanup lazy, concorrência e recovery shard-first foram implementados e testados.
 
 ### Fase 3 — Rota e fechamento
 
@@ -1361,6 +1369,8 @@ Validação independente posterior:  Verifier → sensor discriminante → valid
 **Gate:** full
 **Commit:** `fix(cycle-3): order score post preflight`
 
+**Execução:** Concluída em `d3a50b8`; a rota foi reordenada e os cenários 429/503, fast path, falha parcial e token Blob ausente foram cobertos.
+
 #### C3-T6: Fechar gates e Quality Gate do ciclo 3
 
 **O que:** executar o gate completo fresco no HEAD, registrar evidência reproduzível e bloquear o fechamento se houver regressão, cobertura ausente ou Quality Gate não verde.
@@ -1380,6 +1390,8 @@ Validação independente posterior:  Verifier → sensor discriminante → valid
 **Testes:** suíte Vitest completa + coverage + Playwright existente + análise estática; nenhum teste separado ou enfraquecido
 **Gate:** final
 **Commit:** `fix(cycle-3): verify final stability quality`
+
+**Execução:** Concluída em `8c26ca0` (commit vazio de evidência). Vitest 122/122, coverage, build, lint e E2E 2/2 passaram; Sonar CE `SUCCESS`, Quality Gate `OK`, cobertura nova 91,6%, duplicação nova 1,05909%, zero issues e zero hotspots novos; JaCoCo N/A.
 
 ### Dependências e batch único
 
@@ -1452,4 +1464,4 @@ Depois de C3-T6, um Verifier autor diferente SHALL:
 - Extração estrutural de `Home`/sincronização, otimização O(N²) da fila, migração geral de mocks fetch, foco do diálogo e ordenação compartilhada.
 - Limpeza do `Map` local, remoção de estados/tipos legados além do necessário ao contrato obrigatório e qualquer refactor histórico fora do new code.
 
-**Contagem final do ciclo 3:** 6 fix tasks pendentes em 3 fases inteiras (2 + 2 + 2), empacotadas em 1 batch sequencial (6); Verifier separado após o batch.
+**Contagem final do ciclo 3:** 6/6 fix tasks concluídas em 3 fases inteiras (2 + 2 + 2), executadas em 1 batch sequencial (6); Verifier independente pendente.
