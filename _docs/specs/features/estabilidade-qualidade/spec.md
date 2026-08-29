@@ -378,3 +378,15 @@ O teste "returns snapshot ETags from the authoritative blob document" (`lib/__te
 **Correção**: `readRankingSnapshot` já aceita um parâmetro `now` opcional; o teste agora passa `Date.parse("2026-08-28T10:00:00.001Z")` explicitamente, tornando-o determinístico e independente do relógio real.
 
 **Gate**: `npm run build && npm run lint && npm run test` — todos passaram (123/123, 0 falhas).
+
+### QF-4 — `GET /api/scores` colapsava `createdAt` de todos os scores para o instante da requisição (bug de produção)
+
+**Sintoma reportado**: no painel "Menu → High Scores" em produção, a lista aparecia com mais de 10 linhas, com as posições 3–8 (todas do jogador "DISSENHA") repetidas.
+
+**Causa raiz**: a rota `GET` chamava `sanitizeScore(score)` para cada score já lido de `readHighScores()` — mas `sanitizeScore` **sempre** sobrescreve `createdAt` para `new Date().toISOString()` (comportamento correto para uma submissão nova via `POST`, mas incorreto para simplesmente reexibir scores já persistidos). O resultado: toda chamada de `GET` fazia **todos** os scores retornarem com o mesmo `createdAt` (o instante da própria requisição). Como o `key` React em `app/page.tsx` (`${entry.createdAt}-${entry.name}`) usa esse campo, vários registros do mesmo jogador colidiam na mesma key, quebrando a reconciliação de lista do React e produzindo linhas duplicadas na tela — reproduzível em qualquer navegador/dispositivo, já que a causa é 100% no payload do servidor, não em cache local.
+
+**Correção**: nova função `sanitizePublicScore` em `lib/high-scores.ts`, que reaplica os mesmos clamps/saneamento de `sanitizeScore` mas **preserva** um `createdAt` já válido do registro armazenado, caindo para "agora" somente quando ausente/inválido (mesmo padrão já usado internamente por `sanitizeStoredScore` no caminho do ledger). A rota `GET` passou a usar `sanitizePublicScore` no lugar de `sanitizeScore`.
+
+**Sensor**: revertida a troca (`sanitizePublicScore` → `sanitizeScore`) em cópia restaurada de `app/api/scores/route.ts` — o novo teste de regressão falhou como esperado (KILLED); com a correção aplicada, passa.
+
+**Gate**: `npm run build && npm run lint && npm run test` — 126/126, 0 falhas, 0 erros de lint.

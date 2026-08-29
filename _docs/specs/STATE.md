@@ -10,6 +10,7 @@
 | `AD-004` | 2026-08-29 | Janela de dedupe assimétrica (ledger 24h vs ranking top 10) | Resolvido via quick fix: comportamento aceito por design (dedupe escopado a "enquanto o score permanecer no ranking"), fixado por teste de regressão em `high-scores.test.ts`. Ver `spec.md` seção "Quick Fix — 2026-08-29" e `validation.md`. | Confirmado |
 | `AD-005` | 2026-08-29 | Quick fix `ESTAB-19` AC4 | Teste de `score-abuse-preflight.ts` passou a derivar a decisão do texto real do script Lua (em vez de reimplementar a cota em JS); mutante `count <= limit` confirmado morto. | Confirmado |
 | `AD-006` | 2026-08-29 | Quick fix apodrecimento de teste `readRankingSnapshot` | Teste "returns snapshot ETags..." passou a passar `now` explícito em vez de depender do relógio real; corrige falha por passagem de calendário sem relação com código de produção. | Confirmado |
+| `AD-007` | 2026-08-29 | Bug de produção: ranking duplicado visualmente | Causa raiz: `GET /api/scores` reaplicava `sanitizeScore` (que sempre estampa `createdAt: now`) sobre scores já persistidos, colapsando o `createdAt` de todos os registros e quebrando a `key` React no cliente. Corrigido com `sanitizePublicScore` (preserva `createdAt` válido). Reportado pelo usuário em produção, confirmado via JSON cru de `/api/scores`. | Confirmado |
 
 ---
 

@@ -602,4 +602,31 @@ Como o limite de três ciclos de fix→re-verify já foi atingido (ver "Pendênc
 - **Correção**: passado `Date.parse("2026-08-28T10:00:00.001Z")` como `now` explícito (parâmetro já suportado por `readRankingSnapshot`), tornando o teste determinístico.
 - **Gate**: `npm run build && npm run lint && npm run test` — 123/123, 0 falhas, 0 erros de lint.
 
-**Veredito**: QF-1, QF-2 e QF-3 concluídos. Nenhuma pendência residual conhecida nesta feature.
+**Veredito**: QF-1, QF-2 e QF-3 concluídos.
+
+---
+
+## estabilidade-qualidade — 2026-08-29 — Quick Fix (QF-4) — bug de produção reportado pelo usuário
+
+**Resultado**: PASS
+**Modo**: `tlc-spec-driven` quick fix (mesmo parâmetro das rodadas anteriores)
+**Origem**: reportado pelo usuário em produção ("Menu → High Scores" mostrando mais de 10 linhas, posições 3–8 duplicadas). Confirmado via JSON cru de `GET /api/scores` colado pelo usuário: as 10 entradas retornadas tinham `createdAt` **idêntico** entre si.
+
+### QF-4 — `sanitizeScore` sobrescrevendo `createdAt` na rota GET
+
+- **Arquivos**: `lib/high-scores.ts` (nova função `sanitizePublicScore`), `app/api/scores/route.ts` (GET usa `sanitizePublicScore`).
+- **Causa raiz**: `sanitizeScore` sempre estampa `createdAt: new Date().toISOString()`, correto para `POST` (nova submissão, evita forjar data), incorreto para `GET` (só deveria saneadar/clampar, preservando a data real do registro já persistido). A rota `GET` reaplicava `sanitizeScore` sobre a saída já saneada de `readHighScores()`, colapsando o `createdAt` de todos os registros ao instante da requisição.
+- **Efeito em cascata no cliente**: `app/page.tsx` usa `key={\`${entry.createdAt}-${entry.name}\`}` no `.map()` da lista; com `createdAt` idêntico entre vários registros do mesmo jogador, a key React colidia, quebrando a reconciliação da lista entre re-renders e produzindo duplicação visual — reproduzível em qualquer dispositivo, pois a causa está inteiramente no payload do servidor.
+- **Correção**: `sanitizePublicScore` (novo, exportado) preserva um `createdAt` válido já existente, com o mesmo padrão de `sanitizeStoredScore` (interno, caminho do ledger). `sanitizeScore` não foi alterado — continua estampando "agora" para o caminho de `POST`, que é o comportamento correto/intencional ali.
+- **Sensor**: reversão manual da troca em `app/api/scores/route.ts` (cópia restaurada) — o novo teste "preserves each score's own stored createdAt..." falhou (KILLED, `createdAt` colapsado para o instante mockado). Com a correção, passa.
+- **Testes novos**: `lib/__tests__/high-scores.test.ts` (`sanitizePublicScore` — preserva válido, cai para "agora" quando ausente/inválido/payload nulo); `app/api/__tests__/scores.test.ts` (GET preserva `createdAt` distinto de duas entradas, provando que não colapsam para o mesmo valor).
+
+### Gate
+
+| Gate | Resultado |
+| --- | --- |
+| `npm run test` | 126/126, 0 falhas, 0 skips. |
+| `npm run build` | PASS — Next.js 16.3.3, TypeScript e 5 páginas. |
+| `npm run lint` | PASS — 0 erros, 2 warnings históricos inalterados. |
+
+**Veredito**: QF-1 a QF-4 concluídos. Nenhuma pendência residual conhecida nesta feature.
