@@ -136,6 +136,26 @@ Para gerar a versão de produção:
 npm run build
 ```
 
+## Segurança e dependências
+
+Para auditar vulnerabilidades conhecidas nas dependências:
+
+```bash
+npm run audit
+```
+
+O comando roda `npm audit --audit-level=high` e sai com código de saída
+não-zero se houver vulnerabilidade de severidade alta ou crítica.
+
+**Política**: nunca rodar `npm audit fix --force` às cegas. Sempre que o
+`npm run audit` apontar algo, o processo é:
+
+1. Ler o advisory (o próprio `npm audit` mostra o link).
+2. Ler o changelog da dependência entre a versão atual e a versão corrigida,
+   procurando por breaking changes.
+3. Só então decidir entre `npm audit fix` (sem `--force`), um upgrade manual
+   de versão, ou aceitar o risco temporariamente (documentando o motivo).
+
 ## Estrutura principal
 
 ```text

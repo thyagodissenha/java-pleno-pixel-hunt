@@ -1,6 +1,8 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "@/app/page";
 import { DEBUG_ACTION_EVENT } from "@/lib/debug";
 
@@ -13,8 +15,14 @@ const canvasContext = {
   translate: vi.fn(),
 };
 
+const server = setupServer();
+
 let animationFrames: FrameRequestCallback[];
 let frameTime: number;
+let postAttempts: number;
+
+beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+afterAll(() => server.close());
 
 function advanceFrames(amount: number) {
   act(() => {
@@ -27,14 +35,13 @@ function advanceFrames(amount: number) {
 }
 
 function snapshotGameState() {
-  const fetchMock = vi.mocked(globalThis.fetch);
   return {
     heading: screen.getByRole("heading", { level: 1 }).textContent,
     bossProgress: screen.getByText("0/14 mobs").textContent,
     stamina: screen.getByText("100%").textContent,
     bossHealth: screen.queryByRole("status", { name: "Vida do boss debug" })?.textContent ?? null,
     powerUps: screen.queryByRole("status", { name: "Power-ups debug" })?.textContent ?? null,
-    postAttempts: fetchMock.mock.calls.filter(([, init]) => init?.method === "POST").length,
+    postAttempts,
     highScores: localStorage.getItem("java-pleno-pixel-hunt-high-scores"),
     pendingScores: localStorage.getItem("java-pleno-pixel-hunt-pending-scores"),
   };
@@ -44,7 +51,19 @@ describe("game debug tools", () => {
   beforeEach(() => {
     localStorage.clear();
     vi.stubEnv("NODE_ENV", "development");
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ scores: [] })));
+    postAttempts = 0;
+    server.use(
+      http.get("http://localhost/api/scores", () => HttpResponse.json({ scores: [] })),
+      http.post("http://localhost/api/scores", () => {
+        postAttempts += 1;
+        return HttpResponse.json({ scores: [] });
+      }),
+    );
+    const interceptedFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? new URL(input, "http://localhost") : input;
+      return interceptedFetch(url, init);
+    });
     animationFrames = [];
     frameTime = performance.now();
     vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
@@ -59,6 +78,7 @@ describe("game debug tools", () => {
 
   afterEach(() => {
     cleanup();
+    server.resetHandlers();
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();

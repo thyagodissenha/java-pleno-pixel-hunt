@@ -10,6 +10,21 @@ import {
   triggerDebugAction,
 } from "@/lib/debug";
 import { getAdsenseBannerSlotId, getPublicAdsenseClientId } from "@/lib/adsense";
+import { circleIntersectsRect, obstacleCount, pointInRect } from "@/lib/obstacles";
+import {
+  type HighScore,
+  type PendingScoreEntry,
+  enqueuePendingScore,
+  isPersistedScoreResponse,
+  loadHighScores,
+  loadPendingScores,
+  mergeHighScores,
+  postPendingScore,
+  removePendingScore,
+  saveHighScores,
+  updatePendingScoreAttempt,
+  waitForNextScorePost,
+} from "@/lib/score-sync";
 
 const adsenseClientId = getPublicAdsenseClientId();
 const adsenseBannerSlotId = getAdsenseBannerSlotId();
@@ -63,30 +78,6 @@ type PowerUpKind =
   | "call";
 type SoundName = "shoot" | "hit" | "hurt" | "boss" | "over" | "save" | "start" | "won";
 type Tone = [number, number, OscillatorType];
-type HighScore = {
-  name: string;
-  score: number;
-  wave: number;
-  resets?: number;
-  outcome: "over" | "won";
-  createdAt: string;
-};
-
-type PendingScoreEntry = {
-  version: 1;
-  submissionId: string;
-  score: HighScore;
-  enqueuedAt: string;
-  attempts: number;
-  lastAttemptAt: string | null;
-};
-
-type ScoreApiResponse = {
-  scores?: HighScore[];
-  storage?: "blob" | "local";
-  idempotent?: boolean;
-};
-
 type PowerUp = {
   x: number;
   y: number;
@@ -105,8 +96,6 @@ type Obstacle = {
 };
 
 const WORLD = { width: 960, height: 540 };
-const HIGH_SCORE_KEY = "java-pleno-pixel-hunt-high-scores";
-const PENDING_SCORE_KEY = "java-pleno-pixel-hunt-pending-scores";
 const SOUND_KEY = "java-pleno-pixel-hunt-sound";
 const bossNames = [
   "Gerente de Sprint",
@@ -137,7 +126,6 @@ const BURST_STAMINA_MAX = 100;
 const BURST_STAMINA_RECHARGE = 8;
 const BURST_STAMINA_COST = 32;
 const STAMINA_POWER_UP_GAIN = 5;
-const MAX_OBSTACLES = 5;
 const OBSTACLE_MARGIN = 48;
 const FINAL_CHOICE_OFFSET_X = 104;
 const FINAL_CHOICE_OFFSET_Y = 76;
@@ -150,10 +138,6 @@ function bossKillTarget(wave: number, resets = 0) {
 
 function scaledEnemyHp(baseHp: number, resets: number) {
   return Math.ceil(baseHp * (1 + resets * 0.25));
-}
-
-function obstacleCount(resets: number) {
-  return Math.min(MAX_OBSTACLES, 1 + resets);
 }
 
 function shotLanesForWeaponLevel(weaponLevel: number) {
@@ -180,19 +164,6 @@ function isFinalChoicePowerUp(kind: PowerUpKind) {
   return kind === "promotion" || kind === "call";
 }
 
-function circleIntersectsRect(
-  circle: { x: number; y: number; radius: number },
-  rect: { x: number; y: number; width: number; height: number },
-) {
-  const closestX = clamp(circle.x, rect.x, rect.x + rect.width);
-  const closestY = clamp(circle.y, rect.y, rect.y + rect.height);
-  return Math.hypot(circle.x - closestX, circle.y - closestY) < circle.radius;
-}
-
-function pointInRect(point: { x: number; y: number }, rect: { x: number; y: number; width: number; height: number }) {
-  return point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
-}
-
 function normalize(x: number, y: number) {
   const length = Math.hypot(x, y) || 1;
   return { x: x / length, y: y / length };
@@ -208,123 +179,6 @@ function pixelRect(
 ) {
   ctx.fillStyle = color;
   ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
-}
-
-function loadHighScores(): HighScore[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = window.localStorage.getItem(HIGH_SCORE_KEY);
-    if (!stored) return [];
-    const parsed = JSON.parse(stored) as HighScore[];
-    return Array.isArray(parsed) ? parsed.slice(0, 10) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveHighScores(scores: HighScore[]) {
-  window.localStorage.setItem(HIGH_SCORE_KEY, JSON.stringify(scores.slice(0, 10)));
-}
-
-function isHighScore(value: unknown): value is HighScore {
-  if (!value || typeof value !== "object") return false;
-  const score = value as Partial<HighScore>;
-  return typeof score.name === "string"
-    && Number.isFinite(score.score)
-    && Number.isFinite(score.wave)
-    && (score.resets === undefined || Number.isFinite(score.resets))
-    && (score.outcome === "over" || score.outcome === "won")
-    && typeof score.createdAt === "string";
-}
-
-function isPendingScoreEntry(value: unknown): value is PendingScoreEntry {
-  if (!value || typeof value !== "object") return false;
-  const entry = value as Partial<PendingScoreEntry>;
-  return entry.version === 1
-    && typeof entry.submissionId === "string"
-    && entry.submissionId.length > 0
-    && isHighScore(entry.score)
-    && typeof entry.enqueuedAt === "string"
-    && Number.isInteger(entry.attempts)
-    && Number(entry.attempts) >= 0
-    && (entry.lastAttemptAt === null || typeof entry.lastAttemptAt === "string");
-}
-
-function loadPendingScores(): PendingScoreEntry[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = window.localStorage.getItem(PENDING_SCORE_KEY);
-    if (!stored) return [];
-    const parsed = JSON.parse(stored) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    const unique = new Map<string, PendingScoreEntry>();
-    for (const entry of parsed) {
-      if (isPendingScoreEntry(entry) && !unique.has(entry.submissionId)) {
-        unique.set(entry.submissionId, entry);
-      }
-    }
-    return [...unique.values()];
-  } catch {
-    return [];
-  }
-}
-
-function savePendingScores(entries: PendingScoreEntry[]) {
-  window.localStorage.setItem(PENDING_SCORE_KEY, JSON.stringify(entries));
-}
-
-function enqueuePendingScore(entry: PendingScoreEntry) {
-  const pending = loadPendingScores();
-  if (!pending.some((candidate) => candidate.submissionId === entry.submissionId)) {
-    savePendingScores([...pending, entry]);
-  }
-}
-
-function removePendingScore(submissionId: string) {
-  savePendingScores(loadPendingScores().filter((entry) => entry.submissionId !== submissionId));
-}
-
-function updatePendingScoreAttempt(submissionId: string, attemptedAt: string) {
-  savePendingScores(loadPendingScores().map((entry) => entry.submissionId === submissionId
-    ? { ...entry, attempts: entry.attempts + 1, lastAttemptAt: attemptedAt }
-    : entry));
-}
-
-function isPersistedScoreResponse(payload: ScoreApiResponse) {
-  return payload.storage === "blob" || payload.idempotent === true;
-}
-
-async function waitForNextScorePost(previousPostStartedAt: number | null) {
-  if (previousPostStartedAt === null) return;
-  const remainingDelay = Math.max(0, 10_000 - (Date.now() - previousPostStartedAt));
-  if (remainingDelay > 0) {
-    await new Promise<void>((resolve) => window.setTimeout(resolve, remainingDelay));
-  }
-}
-
-async function postPendingScore(pendingScore: PendingScoreEntry): Promise<ScoreApiResponse> {
-  const response = await fetch("/api/scores", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Idempotency-Key": pendingScore.submissionId,
-    },
-    body: JSON.stringify(pendingScore.score),
-  });
-  if (!response.ok) throw new Error("Score sync failed");
-  return response.json() as Promise<ScoreApiResponse>;
-}
-
-function scoreIdentity(score: HighScore) {
-  return `${score.createdAt}:${score.name}`;
-}
-
-function mergeHighScores(...scoreGroups: HighScore[][]) {
-  const uniqueScores = new Map<string, HighScore>();
-  for (const score of scoreGroups.flat()) uniqueScores.set(scoreIdentity(score), score);
-  return [...uniqueScores.values()]
-    .sort((a, b) => b.score - a.score || b.wave - a.wave || (b.resets ?? 0) - (a.resets ?? 0) || a.createdAt.localeCompare(b.createdAt))
-    .slice(0, 10);
 }
 
 function loadSoundSettings() {
