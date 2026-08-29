@@ -28,11 +28,6 @@ function requestIp(request: Request) {
 }
 
 function claimState(claim: IdempotencyClaim): RouteClaim {
-  if (typeof claim === "string") {
-    if (claim === "claimed") throw new Error("Claim owner token missing");
-    return { state: claim };
-  }
-
   return claim;
 }
 

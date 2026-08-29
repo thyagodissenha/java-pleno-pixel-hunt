@@ -231,6 +231,25 @@ describe("score idempotency store", () => {
     expect(storedValue).toBe("in-flight:new-owner-token");
   });
 
+  it("returns ownership-lost when stale Redis release preserves the newer owner", async () => {
+    let storedValue = "in-flight:new-owner-token";
+    const redis = redisClient({
+      get: vi.fn<(key: string) => Promise<unknown>>().mockImplementation(async () => storedValue),
+      eval: vi.fn<(script: string, keys: string[], args: string[]) => Promise<unknown>>().mockImplementation(async (script, _keys, args) => {
+        expect(script).toContain('redis.call("DEL", KEYS[1])');
+        if (storedValue !== args[0]) return 0;
+        storedValue = "";
+        return 1;
+      }),
+    });
+    const store = createIdempotencyStore({ environment: "production", env: credentials, redis });
+
+    await expect(store.release("submission-stale-release", "old-owner-token")).resolves.toBe("ownership-lost");
+    expect(redis.eval).toHaveBeenCalledWith(expect.any(String), [expect.any(String)], ["in-flight:old-owner-token"]);
+    expect(storedValue).toBe("in-flight:new-owner-token");
+    await expect(store.claim("submission-stale-release")).resolves.toEqual({ state: "in-flight" });
+  });
+
   it("releases an in-flight claim without releasing a completed claim", async () => {
     let token = 0;
     const store = createIdempotencyStore({

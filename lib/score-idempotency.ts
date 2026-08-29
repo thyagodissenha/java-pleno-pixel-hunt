@@ -7,18 +7,15 @@ const COMPLETED_TTL_SECONDS = 24 * 60 * 60;
 export type IdempotencyClaim =
   | { state: "claimed"; ownerToken: string }
   | { state: "completed" }
-  | { state: "in-flight" }
-  | "claimed"
-  | "completed"
-  | "in-flight";
+  | { state: "in-flight" };
 
 export type OwnershipResult = "applied" | "ownership-lost";
 
 export interface IdempotencyStore {
   claim(submissionId: string): Promise<IdempotencyClaim>;
   status(submissionId: string): Promise<{ state: "completed" } | { state: "other" }>;
-  complete(submissionId: string, ownerToken?: string): Promise<OwnershipResult>;
-  release(submissionId: string, ownerToken?: string): Promise<OwnershipResult>;
+  complete(submissionId: string, ownerToken: string): Promise<OwnershipResult>;
+  release(submissionId: string, ownerToken: string): Promise<OwnershipResult>;
 }
 
 interface RedisIdempotencyClient {
@@ -96,7 +93,7 @@ function isInFlight(value: unknown) {
   return typeof value === "string" && value.startsWith("in-flight:");
 }
 
-function ownerValue(ownerToken: string | undefined) {
+function ownerValue(ownerToken: string) {
   return `in-flight:${ownerToken}`;
 }
 
