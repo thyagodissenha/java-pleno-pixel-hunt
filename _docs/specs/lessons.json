@@ -1,0 +1,189 @@
+{
+  "schema": 1,
+  "promote_threshold": 2,
+  "window_days": 45,
+  "quarantine_threshold": 2,
+  "next_id": 11,
+  "lessons": [
+    {
+      "id": "L-001",
+      "key": "ac_gap::expose observable boss health state so debug tests can assert a full health spawn",
+      "text": "Expose observable boss health state so debug tests can assert a full-health spawn",
+      "signal": "ac_gap",
+      "scope": "gameplay",
+      "status": "candidate",
+      "features": [
+        "estabilidade-qualidade"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "_docs/specs/features/estabilidade-qualidade/validation.md:36 (gameplay)"
+      ],
+      "created": "2026-08-27T14:13:25Z",
+      "last_seen": "2026-08-27T14:13:25Z"
+    },
+    {
+      "id": "L-002",
+      "key": "surviving_mutant::assert required gameplay side effects directly not only derived hud text",
+      "text": "Assert required gameplay side effects directly, not only derived HUD text",
+      "signal": "surviving_mutant",
+      "scope": "gameplay",
+      "status": "candidate",
+      "features": [
+        "estabilidade-qualidade"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "_docs/specs/features/estabilidade-qualidade/validation.md:78 (gameplay)"
+      ],
+      "created": "2026-08-27T14:13:25Z",
+      "last_seen": "2026-08-27T14:13:25Z"
+    },
+    {
+      "id": "L-003",
+      "key": "ac_gap::capture before and after sonarqube code smell counts when a requirement promises a reduction",
+      "text": "Capture before-and-after SonarQube code-smell counts when a requirement promises a reduction",
+      "signal": "ac_gap",
+      "scope": "quality",
+      "status": "candidate",
+      "features": [
+        "estabilidade-qualidade"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "_docs/specs/features/estabilidade-qualidade/validation.md:41 (quality)"
+      ],
+      "created": "2026-08-27T14:13:25Z",
+      "last_seen": "2026-08-27T14:13:25Z"
+    },
+    {
+      "id": "L-004",
+      "key": "ac_gap::assert required responsive css declarations in an automated test when viewport behavior is an acceptance criterion",
+      "text": "Assert required responsive CSS declarations in an automated test when viewport behavior is an acceptance criterion",
+      "signal": "ac_gap",
+      "scope": "ui",
+      "status": "candidate",
+      "features": [
+        "estabilidade-qualidade"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "_docs/specs/features/estabilidade-qualidade/validation.md:42 (ui)"
+      ],
+      "created": "2026-08-27T14:13:25Z",
+      "last_seen": "2026-08-27T14:13:25Z"
+    },
+    {
+      "id": "L-005",
+      "key": "ac_gap::assert every conjunct of a no side effect security criterion across ui state entities network and storage",
+      "text": "Assert every conjunct of a no-side-effect security criterion across UI state, entities, network, and storage.",
+      "signal": "ac_gap",
+      "scope": "debug-security",
+      "status": "candidate",
+      "features": [
+        "estabilidade-qualidade"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "ESTAB-06 AC3 (debug-security)"
+      ],
+      "created": "2026-08-28T01:26:24Z",
+      "last_seen": "2026-08-28T01:26:24Z"
+    },
+    {
+      "id": "L-006",
+      "key": "ac_gap::exercise each retryable response from a newly created submission not only from a pre populated pending queue",
+      "text": "Exercise each retryable response from a newly created submission, not only from a pre-populated pending queue.",
+      "signal": "ac_gap",
+      "scope": "score-sync",
+      "status": "candidate",
+      "features": [
+        "estabilidade-qualidade"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "ESTAB-09 AC1 (score-sync)"
+      ],
+      "created": "2026-08-28T01:26:24Z",
+      "last_seen": "2026-08-28T01:26:24Z"
+    },
+    {
+      "id": "L-007",
+      "key": "ac_gap::after asserting queue retention on failure trigger the documented recovery event and assert the same item is retried",
+      "text": "After asserting queue retention on failure, trigger the documented recovery event and assert the same item is retried.",
+      "signal": "ac_gap",
+      "scope": "score-sync",
+      "status": "candidate",
+      "features": [
+        "estabilidade-qualidade"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "ESTAB-10 AC4 (score-sync)"
+      ],
+      "created": "2026-08-28T01:26:24Z",
+      "last_seen": "2026-08-28T01:26:24Z"
+    },
+    {
+      "id": "L-008",
+      "key": "ac_gap::concurrency tests must count both in flight requests and scheduled retry timers when the contract limits both",
+      "text": "Concurrency tests must count both in-flight requests and scheduled retry timers when the contract limits both.",
+      "signal": "ac_gap",
+      "scope": "score-sync",
+      "status": "candidate",
+      "features": [
+        "estabilidade-qualidade"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "ESTAB-10 AC5 (score-sync)"
+      ],
+      "created": "2026-08-28T01:26:24Z",
+      "last_seen": "2026-08-28T01:26:24Z"
+    },
+    {
+      "id": "L-009",
+      "key": "ac_gap::test every ownership sensitive operation against a stale token and assert both the outcome and preservation of the current owner",
+      "text": "Test every ownership-sensitive operation against a stale token and assert both the outcome and preservation of the current owner.",
+      "signal": "ac_gap",
+      "scope": "ranking-idempotency",
+      "status": "candidate",
+      "features": [
+        "estabilidade-qualidade"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "ESTAB-16 AC2-AC3 (ranking-idempotency)"
+      ],
+      "created": "2026-08-28T16:44:53Z",
+      "last_seen": "2026-08-28T16:44:53Z"
+    },
+    {
+      "id": "L-010",
+      "key": "ac_gap::preserve a direct test for each dependency absence trigger when replacing the persistence path",
+      "text": "Preserve a direct test for each dependency-absence trigger when replacing the persistence path.",
+      "signal": "ac_gap",
+      "scope": "score-api",
+      "status": "candidate",
+      "features": [
+        "estabilidade-qualidade"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "P2 API AC1 (score-api)"
+      ],
+      "created": "2026-08-28T16:44:59Z",
+      "last_seen": "2026-08-28T16:44:59Z"
+    }
+  ]
+}
