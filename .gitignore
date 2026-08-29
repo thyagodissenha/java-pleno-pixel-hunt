@@ -43,6 +43,9 @@ site-build.tar.gz
 # agent skills (local tooling)
 .agents/skills/
 
+# Claude Code local tooling
+.claude/
+
 # SonarQube scanner/test artifacts
 .scannerwork/
 /test-results/
