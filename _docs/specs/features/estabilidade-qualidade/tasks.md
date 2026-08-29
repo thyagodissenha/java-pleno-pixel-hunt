@@ -864,7 +864,7 @@ C1-T1 → C1-T2 → C1-T3 → C1-T4 → C1-T5 → C1-T6
 
 **Spec emendada:** `_docs/specs/features/estabilidade-qualidade/spec.md` (`ESTAB-16` a `ESTAB-18`)
 **Design emendado:** `_docs/specs/features/estabilidade-qualidade/design.md` — seção “Emenda de Design — Ciclo Interno 2”
-**Status:** pronto para Execute sequencial; nenhuma task C2 implementada
+**Status:** Implementação do ciclo 2 concluída; C2-T1–C2-T11 executadas, Verifier independente pendente
 **Escopo:** fixes categoria (a) + decisões categoria (b) aprovadas; categoria (c) permanece somente em Questões abertas
 
 ### Baseline e política de testes
@@ -931,6 +931,8 @@ Validação independente:             Verifier → Sonar/JaCoCo N/A → code-rev
 **Gate:** quick
 **Commit:** `fix(cycle-2): enforce redis claim ownership`
 
+**Execução:** Concluída em `27d1840`; revalidada pelo gate acumulado 94/94 de C2-T5.
+
 #### C2-T2: Alinhar o store local ao contrato de ownership
 
 **O que:** aplicar token, TTL e perda de posse equivalentes ao fallback exclusivo de development/test.
@@ -948,6 +950,8 @@ Validação independente:             Verifier → Sonar/JaCoCo N/A → code-rev
 **Testes:** unit com fake clock
 **Gate:** full
 **Commit:** `fix(cycle-2): mirror claim ownership locally`
+
+**Execução:** Concluída em `ea698b7`; revalidada pelo gate acumulado 94/94 de C2-T5.
 
 ### Fase 2 — Blob e contrato da API
 
@@ -970,6 +974,8 @@ Validação independente:             Verifier → Sonar/JaCoCo N/A → code-rev
 **Gate:** quick
 **Commit:** `fix(cycle-2): version authoritative ranking data`
 
+**Execução:** Concluída em `3798c48`; revalidada pelo gate acumulado 94/94 de C2-T5.
+
 #### C2-T4: Persistir ranking com ETag e dedupe autoritativa
 
 **O que:** implementar read/merge/conditional-write com no máximo três tentativas e dedupe pelo ledger.
@@ -990,6 +996,8 @@ Validação independente:             Verifier → Sonar/JaCoCo N/A → code-rev
 **Tools/Skills:** APIs já confirmadas por codebase, Context7 e docs oficiais
 **Commit:** `fix(cycle-2): deduplicate scores in blob`
 
+**Execução:** Concluída em `02926d9`; revalidada pelo gate acumulado 94/94 de C2-T5.
+
 #### C2-T5: Reordenar idempotência, throttle e falha parcial na rota
 
 **O que:** integrar status/ledger antes do throttle, propagar owner token e responder sucesso após Blob confirmado mesmo se complete falhar.
@@ -1009,6 +1017,8 @@ Validação independente:             Verifier → Sonar/JaCoCo N/A → code-rev
 **Testes:** integration da Route Handler com adapters mockados
 **Gate:** full
 **Commit:** `fix(cycle-2): make score post authoritatively idempotent`
+
+**Execução:** Concluída em `5264429`; teste focado 13/13, suíte completa 94/94, build e lint passaram com 2 warnings preexistentes.
 
 ### Fase 3 — Cliente e debug
 
@@ -1031,6 +1041,8 @@ Validação independente:             Verifier → Sonar/JaCoCo N/A → code-rev
 **Gate:** quick
 **Commit:** `fix(cycle-2): retain unpersisted score submissions`
 
+**Execução:** Concluída em `2237aa5`; teste focado 15/15 e suíte completa 97/97 passaram.
+
 #### C2-T7: Provar retry posterior e uma única sequência de timers
 
 **O que:** fechar os gaps de recuperação load/online e isolar o fluxo mínimo de espera/envio que reduz S3776.
@@ -1050,6 +1062,8 @@ Validação independente:             Verifier → Sonar/JaCoCo N/A → code-rev
 **Gate:** quick; confirmação Sonar na fase 4
 **Commit:** `fix(cycle-2): prove deterministic score retries`
 
+**Execução:** Concluída em `8387056`; teste focado 16/16 e suíte completa 98/98 passaram.
+
 #### C2-T8: Fechar evidências de isolamento e restart do debug
 
 **O que:** ampliar somente as provas faltantes de side effects e retorno de elegibilidade após nova run normal.
@@ -1067,6 +1081,8 @@ Validação independente:             Verifier → Sonar/JaCoCo N/A → code-rev
 **Testes:** RTL + MSW, queries por role/texto
 **Gate:** full
 **Commit:** `fix(cycle-2): prove debug run isolation`
+
+**Execução:** Concluída em `a7965e0`; testes focados 25/25, suíte completa 98/98, build e lint passaram com 2 warnings preexistentes.
 
 ### Fase 4 — Sonar e mobile
 
@@ -1087,6 +1103,8 @@ Validação independente:             Verifier → Sonar/JaCoCo N/A → code-rev
 **Gate:** quick; confirmação Sonar no fechamento
 **Commit:** `fix(cycle-2): consolidate debug start branches`
 
+**Execução:** Concluída em `a52a00c`; teste focado 10/10 e suíte completa 99/99 passaram.
+
 #### C2-T10: Tornar a allowlist debug um ReadonlySet
 
 **O que:** substituir lookup por array/includes por `ReadonlySet<DebugAction>`/`has` sem alterar valores aceitos.
@@ -1103,6 +1121,8 @@ Validação independente:             Verifier → Sonar/JaCoCo N/A → code-rev
 **Testes:** unit
 **Gate:** quick; confirmação Sonar no fechamento
 **Commit:** `fix(cycle-2): use set for debug actions`
+
+**Execução:** Concluída em `b5db3a7`; teste focado 20/20 e suíte completa 99/99 passaram.
 
 #### C2-T11: Tornar o E2E 100dvh discriminante e fechar Quality Gate
 
@@ -1122,6 +1142,8 @@ Validação independente:             Verifier → Sonar/JaCoCo N/A → code-rev
 **Testes:** Playwright E2E + gates completos + análise estática
 **Gate:** full + coverage + E2E + Sonar
 **Commit:** `fix(cycle-2): verify dynamic viewport quality gate`
+
+**Execução:** Concluída em `7fc3c20`; suíte e coverage 99/99, build, lint e E2E 2/2 passaram. Sonar no HEAD retornou Quality Gate `OK`, cobertura nova 89,3%, total 67,0%, duplicação 0,4% e zero issues novas; `S3776`, `S1871` e `S7776` resolvidas. JaCoCo N/A para TypeScript; 22 vulnerabilidades históricas permanecem fora do diff.
 
 ### Dependências e batching sugerido
 
@@ -1161,3 +1183,273 @@ Após C2-T11, um Verifier autor diferente SHALL rederivar evidência por AC, exe
 - Limpeza do `Map` local, uso/remoção de `HighScoreStorage` e qualquer refactor histórico fora das linhas necessárias ao Quality Gate de new code.
 
 **Contagem final do ciclo 2:** 11 fix tasks pendentes em 4 fases inteiras (2 + 3 + 3 + 3), sugeridas em 2 batches sequenciais (5 + 6).
+
+## Fechamento do ciclo 2 — Verifier e code review
+
+- **HEAD validado:** `7fc3c20cd8511de387c4e7bb4eccf286ada9fa7e`.
+- **Verifier:** FAIL, 57/60 ACs; Vitest 99/99, E2E 2/2, sensor 3/3.
+- **Sonar/LCOV:** Quality Gate `OK`, cobertura nova 89,3%, cobertura total 67,0%, zero issues/hotspots novos, duplicação nova 0%; JaCoCo N/A para TypeScript.
+
+### Achados categoria (a) — fix tasks após decisão dos gaps
+
+1. Tornar `ownerToken` obrigatório no contrato de `complete`/`release` de `score-idempotency` e ajustar consumidores/testes (`ESTAB-16`).
+2. Provar em Redis que `release` do owner antigo retorna `ownership-lost` e preserva integralmente o claim do owner novo (`ESTAB-16` AC2-AC3).
+3. Tornar discriminante o teste de retry CAS, afirmando o ETag renovado em `ifMatch` (`ESTAB-17`).
+4. Restaurar teste real da rota sem `BLOB_READ_WRITE_TOKEN`, com resposta amigável e sem exceção não tratada (P2 API AC1).
+
+### Questões abertas — categoria (b), execução interrompida
+
+1. A spec não define política de preflight antiabuso antes da leitura autoritativa do Blob. IDs rotativos podem causar leituras privadas antes do throttle; é necessário decidir ordem, limite e eventual reutilização do snapshot.
+2. A spec exige ledger autoritativo com TTL de 24 h, mas não define limite de cardinalidade ou particionamento de `processedSubmissions`; é necessário decidir capacidade máxima e estratégia quando o limite for atingido.
+
+### Questões abertas — categoria (c), sem implementação
+
+- Separar leitura pública cacheável da leitura consistente do Blob.
+- Remover estados legados do contrato de idempotência além do estritamente necessário para tornar `ownerToken` obrigatório.
+
+**Decisão de execução:** STOP antes do ciclo 3 por existência de achados categoria (b). Nenhuma correção, teste ou gate do ciclo 3 foi iniciado.
+
+## Ciclo Interno 3 — Remediação Final de Estabilidade
+
+**Spec vigente:** `_docs/specs/features/estabilidade-qualidade/spec.md` (`ESTAB-19` e `ESTAB-20`), Specify `29fa03370e617417b19a00fea006ebcf2948c1c4`
+**Design vigente:** `_docs/specs/features/estabilidade-qualidade/design.md` — “Emenda de Design — Ciclo Interno 3”, Design `19e2291`
+**Baseline de execução:** `7fc3c20cd8511de387c4e7bb4eccf286ada9fa7e`, 99/99 Vitest e 2/2 Playwright
+**Status:** pronto para Execute sequencial; nenhuma task C3 implementada
+**Escopo:** achados categoria (a) do Verifier do ciclo 2 + `ESTAB-19`/`ESTAB-20`; nenhum refactor categoria (c)
+
+### Protocolo e batching
+
+- Executar com a skill `tlc-spec-driven`, uma task por vez, na ordem abaixo; teste e implementação permanecem no mesmo commit.
+- Preservar e fortalecer todos os testes existentes. Antes/depois de cada task, registrar a contagem; a contagem final SHALL ser maior que a anterior e nunca menor que o baseline acumulado.
+- A feature é **PEQUENA**: as três fases inteiras e consecutivas formam **um único batch de 6 tasks**, executado por um único worker. Nunca distribuir um worker por task e não abrir subagentes dentro do batch.
+- Cada task gera exatamente um commit `fix(cycle-3): ...`. O Verifier autor diferente roda somente depois do commit de C3-T6 e não integra o batch de implementação.
+- Qualquer `SPEC_DEVIATION`, contrato externo incompatível ou necessidade de refactor categoria (c) interrompe o batch antes de commit da task afetada.
+
+### Matriz de cobertura do ciclo 3
+
+> Diretrizes: `AGENTS.md`, `.agents/skills/testing-a11y/SKILL.md`, `package.json`, `vitest.config.ts`, `playwright.config.ts`, `sonar-project.properties` e `_docs/sonarqube-local.md`. Testes amostrados em `lib/__tests__`, `app/api/__tests__`, `app/__tests__` e `e2e`.
+
+| Camada | Tipo exigido | Expectativa de cobertura | Localização | Comando |
+| --- | --- | --- | --- | --- |
+| Ownership/preflight Redis e local | unit | Todos os branches e fronteiras; 1:1 com `ESTAB-16`/`ESTAB-19`, incluindo Lua observável, TTL e fail-closed | `lib/__tests__/*.test.ts` | `npm run test` |
+| Codec, seleção e persistência dos shards/ranking | unit do boundary Blob | `ESTAB-17`/`ESTAB-20` completos: compatibilidade, 64 shards, TTL exato, CAS, concorrência, retries e falha parcial | `lib/__tests__/high-scores.test.ts` | `npm run test` |
+| Route Handler `/api/scores` | integration | Ordem completa do POST, happy/edge/error paths, zero side effects em rejeição e ausência real do token Blob | `app/api/__tests__/scores.test.ts` | `npm run test` |
+| Regressão de UI/mobile | unit + E2E existentes | Nenhuma regressão ou redução dos testes dos ciclos anteriores | `app/**/*.test.{ts,tsx}`, `e2e/*.spec.ts` | `npm run test && npm run test:e2e` |
+| Qualidade estática/cobertura | coverage + build + static | LCOV fresco, build/lint verdes, Quality Gate `OK` e zero issue nova | projeto + Sonar | `npm run test:coverage && npm run build && npm run lint` + análise Sonar fresca |
+
+### Gates do ciclo 3
+
+| Gate | Quando | Comando / evidência obrigatória |
+| --- | --- | --- |
+| quick | Após C3-T1 a C3-T4 | teste focado da camada + `npm run test`; contagem registrada e monotônica |
+| full | Após C3-T5 | `npm run test && npm run build && npm run lint`; sem enfraquecer/remover testes |
+| final | C3-T6 | `npm run test`, `npm run test:coverage`, `npm run build`, `npm run lint`, `npm run test:e2e`, LCOV não vazio e análise Sonar fresca no HEAD |
+| verifier | Depois de C3-T6, autor diferente | check spec-anchored dos 75 ACs + sensor em scratch; Quality Gate `OK`; nenhuma mutação persistida |
+
+### Plano de fases
+
+```text
+Fase 1 — Ownership e preflight:    C3-T1 → C3-T2
+Fase 2 — Ledger particionado:      C3-T3 → C3-T4
+Fase 3 — Rota e fechamento:        C3-T5 → C3-T6
+Validação independente posterior:  Verifier → sensor discriminante → validation.md
+```
+
+### Fase 1 — Ownership e preflight
+
+#### C3-T1: Tornar ownerToken obrigatório e fechar release Redis
+
+**O que:** remover os contratos legados/opcionais de ownership e tornar `complete`/`release` obrigatoriamente condicionais ao token, com prova Redis do owner antigo.
+**Onde:** `lib/score-idempotency.ts`, `lib/__tests__/score-idempotency.test.ts`; consumidores somente para corrigir a assinatura obrigatória
+**Depende de:** nenhuma
+**Reutiliza:** `OwnershipResult`, scripts Lua CAS/delete, TTLs `60`/`86400`, Redis fake e relógio local existentes
+**Requisito:** `ESTAB-16` AC1-AC5
+
+**Done when:**
+- [ ] `IdempotencyStore.complete` e `release` exigem `ownerToken: string`; `IdempotencyClaim` não aceita o union legado `"claimed"` sem token.
+- [ ] Todos os consumidores passam o token obtido no claim; nenhum fallback cria token implícito ou libera sem ownership.
+- [ ] O teste Redis executa o caminho de `release` com owner antigo, exige retorno Lua `0` mapeado para `ownership-lost` e prova que o valor integral `in-flight:<new-owner>` permanece intacto.
+- [ ] Complete/release do owner atual continuam `applied`, com TTL 60 s do claim e 24 h de completed preservados.
+- [ ] Teste focado e `npm run test` passam; contagem cresce sobre o baseline anterior sem remoção, skip ou enfraquecimento.
+
+**Testes:** unit do adapter Redis/local, incluindo script/outcome e preservação byte a byte do claim novo
+**Gate:** quick
+**Commit:** `fix(cycle-3): require idempotency owner token`
+
+#### C3-T2: Implementar preflight antiabuso atômico 60/60
+
+**O que:** criar o `AbusePreflightStore` Redis/local com janela fixa atômica de 60 requisições em 60 segundos, TTL restante e falha fechada em produção.
+**Onde:** `lib/score-abuse-preflight.ts`, `lib/__tests__/score-abuse-preflight.test.ts`
+**Depende de:** C3-T1
+**Reutiliza:** factory/env/logger/injeção Redis e `hashRateLimitIdentifier` de `lib/score-rate-limit.ts`; padrão de `eval` de `lib/score-idempotency.ts`
+**Requisito:** `ESTAB-19` AC2-AC5, AC7
+
+**Done when:**
+- [ ] Um único Lua abre a chave `score:abuse:<sha256-ip>` com contador 1 e TTL 60.000 ms, permite/incrementa 1–60 e bloqueia 61+ sem escrever nem renovar a janela.
+- [ ] A decisão bloqueada devolve `retryAfterMs` do `PTTL` lido atomicamente; TTL ausente/inválido ou resultado Lua malformado é erro, nunca permissão silenciosa.
+- [ ] Store local injetável replica 1ª/60ª/61ª, TTL decrescente, fronteira `now >= expiresAt` e backend `local-memory`, com relógio controlável.
+- [ ] Credenciais/factory/Redis indisponíveis em production lançam outcome fail-closed; logs não contêm IP, hash completo, payload, token ou conteúdo de store.
+- [ ] Testes parametrizados discriminam Redis/local e provam janela nova após 60 s; teste focado e `npm run test` passam com contagem monotônica.
+
+**Testes:** unit dos stores Redis/local, Lua observável, fake clock, TTL e erros de configuração/serviço
+**Gate:** quick
+**Commit:** `fix(cycle-3): add atomic abuse preflight`
+
+### Fase 2 — Ledger particionado
+
+#### C3-T3: Introduzir modelo e seleção determinística dos 64 shards
+
+**O que:** separar o ledger do ranking em `LedgerShardV1`, selecionar um único shard pelos seis bits superiores do SHA-256 e preservar os contratos legado e público.
+**Onde:** `lib/high-scores.ts`, `lib/__tests__/high-scores.test.ts`
+**Depende de:** C3-T2
+**Reutiliza:** `StoredHighScore`, codec de array legado/`RankingDocumentV2`, `sanitizeScore`, `cleanScores`, `publicHighScores` e path Blob vigente
+**Requisito:** `ESTAB-17` AC1, AC3; `ESTAB-20` AC1-AC2, AC8
+
+**Done when:**
+- [ ] `ledgerShardIndex` usa SHA-256 dos bytes UTF-8 do `submissionId.trim()`, preserva caixa/caracteres e retorna sempre `0..63`; vetores fixos provam determinismo e limites.
+- [ ] Paths estáveis usam índice decimal `00..63`; lookup de um ID lê exatamente o shard selecionado e nunca varre os demais.
+- [ ] `LedgerEntryV1` guarda `submissionId`, `persistedAt`, `score?` e source; `LedgerShardV1` guarda `version`, `shard`, `legacyImported` e entries.
+- [ ] Array legado e `RankingDocumentV2` continuam decodificáveis; importação lazy filtra somente IDs ativos pertencentes ao shard e não inventa score para entrada legacy sem score.
+- [ ] Ranking interno conserva `submissionId` necessário ao recovery, mas GET/POST público seguem `HighScore[]` saneado/ordenado/limitado sem ID, shard, timestamp, ETag ou ledger.
+- [ ] Teste focado e `npm run test` passam com contagem monotônica e sem remover as provas de compatibilidade existentes.
+
+**Testes:** unit de hashing/path/modelo, codec dual, importação por shard e projeção pública
+**Gate:** quick
+**Commit:** `fix(cycle-3): partition authoritative score ledger`
+
+#### C3-T4: Implementar CAS, retenção exata e recovery por shard
+
+**O que:** implementar leitura/escrita CAS independente por shard, TTL lógico exato, cleanup lazy e intenção shard-first recuperável antes do ranking.
+**Onde:** `lib/high-scores.ts`, `lib/__tests__/high-scores.test.ts`
+**Depende de:** C3-T3
+**Reutiliza:** `get(..., { useCache:false })`, ETag, `put`, `BlobPreconditionFailedError`, merge e limite de três tentativas do ranking
+**Requisito:** `ESTAB-17` AC2-AC4; `ESTAB-20` AC3-AC7
+
+**Done when:**
+- [ ] Entrada é ativa somente em `now < persistedAt + 86_400_000`; na igualdade/depois, lookup a ignora sem renovar `persistedAt`.
+- [ ] Leitura exclui expirados da visão autoritativa e a próxima escrita CAS bem-sucedida do shard tocado os remove fisicamente, sem varredura global nem alteração de scores válidos.
+- [ ] Criação usa `allowOverwrite:false`; update usa `ifMatch` da leitura sem cache. Conflito relê o mesmo shard, reaplica expiração/merge e limita cada operação a três tentativas.
+- [ ] Teste discriminante exige `ifMatch:"etag-2"` após releitura e falha se shard ou ranking reutilizar `etag-1`.
+- [ ] Writers do mesmo ID produzem uma entrada; IDs diferentes no mesmo shard são preservados ou retornam falha retryable após o limite, sem declarar persistência.
+- [ ] Intenção com score confirma no shard antes de qualquer write do ranking; falha do ranking mantém a intenção e retry executa `ensureRankingEffect` sem duplicar, enquanto falha do shard toca zero ranking.
+- [ ] Teste focado e `npm run test` passam com contagem monotônica, cobrindo concorrência, partial failure e recovery.
+
+**Testes:** unit do boundary Blob com fake clock, conflitos CAS, ETag fresca, TTL/cleanup, concorrência e falhas parciais
+**Gate:** quick
+**Commit:** `fix(cycle-3): enforce shard cas retention`
+
+### Fase 3 — Rota e fechamento
+
+#### C3-T5: Integrar preflight e shard-first na rota de scores
+
+**O que:** reordenar `POST /api/scores` para consumir preflight antes de qualquer store/Blob e integrar status-hint, shard, throttle, claim, intenção, ranking e complete conforme o design.
+**Onde:** `app/api/scores/route.ts`, `app/api/__tests__/scores.test.ts`
+**Depende de:** C3-T4
+**Reutiliza:** validações debug/Idempotency-Key, resolução de IP, contratos 429/503, throttle funcional, adapters e sanitização existentes
+**Requisito:** P2 API AC1; `ESTAB-16` AC2-AC4; `ESTAB-17` AC3-AC4, AC7; `ESTAB-19` AC1, AC3-AC7; `ESTAB-20` AC2, AC6-AC8
+
+**Done when:**
+- [ ] Após validações vigentes, preflight é a primeira dependência: bloqueio 61+ retorna 429 com mensagem exata, `retryAfterMs` do TTL e `Retry-After` arredondado para cima; erro production retorna 503 amigável.
+- [ ] Em 429/503 do preflight há zero status/claim Redis, zero throttle funcional e zero leitura/escrita de shard ou ranking; duplicata/ID rotativo consome preflight antes de fast path.
+- [ ] Após aprovação, somente shard ativo autoriza idempotência; Redis completed é hint. Shard ausente/expirado segue throttle 10 s, claim obrigatório, releitura do shard e intenção shard-first.
+- [ ] Fast path de shard executa `ensureRankingEffect` antes de 200 e não consome throttle funcional; ID novo só escreve ranking depois da confirmação do shard.
+- [ ] Falha do ranking mantém intenção e libera apenas com owner atual; ranking confirmado + complete throw/`ownership-lost` responde 201/200 sem release, e retry pelo shard não duplica.
+- [ ] Teste real remove e restaura `BLOB_READ_WRITE_TOKEN`, não mocka outcome Blob e prova resposta amigável sem exceção não tratada, sem sucesso autoritativo falso e com pendência retryable preservável pelo contrato.
+- [ ] Testes de integração cobrem ordem, 1ª/60ª/61ª, TTL/header, duplicate-before-throttle, produção fail-closed, concorrência e partial failure; `npm run test`, build e lint passam com contagem monotônica.
+
+**Testes:** integration da Route Handler; adapters observáveis para ordem/zero side effects e cenário real de env Blob ausente
+**Gate:** full
+**Commit:** `fix(cycle-3): order score post preflight`
+
+#### C3-T6: Fechar gates e Quality Gate do ciclo 3
+
+**O que:** executar o gate completo fresco no HEAD, registrar evidência reproduzível e bloquear o fechamento se houver regressão, cobertura ausente ou Quality Gate não verde.
+**Onde:** `_docs/specs/features/estabilidade-qualidade/tasks.md` somente para registrar execução/evidências; qualquer correção de código/testes exige replanejamento e não integra este commit
+**Depende de:** C3-T5
+**Reutiliza:** scripts de `package.json`, `vitest.config.ts`, `playwright.config.ts`, `sonar-project.properties` e procedimento `_docs/sonarqube-local.md`
+**Requisito:** `ESTAB-17` AC1-AC7; `ESTAB-19` AC1-AC7; `ESTAB-20` AC1-AC8; preservação de `ESTAB-18` AC5-AC6 e P2 API AC1
+
+**Done when:**
+- [ ] `npm run test` e `npm run test:coverage` passam sem skips/deleções; contagem final é maior que 99 e `coverage/lcov.info` é fresco e não vazio.
+- [ ] As regressões de `ESTAB-17` AC5-AC6 continuam provando que `storage:"local"`, rede, 429 e 503 preservam/reenviam a mesma pendência e o mesmo `submissionId`.
+- [ ] `npm run build`, `npm run lint` e `npm run test:e2e` passam; qualquer warning preexistente é identificado sem ser mascarado.
+- [ ] Análise Sonar fresca aponta para o commit C3-T6, importa LCOV, retorna Quality Gate `OK`, cobertura nova `>=80%`, duplicação nova `<=3%` e zero issues/hotspots novos.
+- [ ] Evidência registra comandos, contagens, revisão Sonar, métricas e JaCoCo como N/A para TypeScript; dívida histórica fora do diff não gera refactor categoria (c).
+- [ ] `git diff --check` passa e o commit contém somente a evidência/ajuste estritamente necessário desta task; falha de gate interrompe o fechamento.
+
+**Testes:** suíte Vitest completa + coverage + Playwright existente + análise estática; nenhum teste separado ou enfraquecido
+**Gate:** final
+**Commit:** `fix(cycle-3): verify final stability quality`
+
+### Dependências e batch único
+
+```text
+C3-T1 → C3-T2 → C3-T3 → C3-T4 → C3-T5 → C3-T6
+```
+
+- **Batch único:** fases 1–3 inteiras, C3-T1 a C3-T6 — 6 tasks.
+- Execução estritamente sequencial pelo mesmo worker, com um commit por task e sem workers/subagentes por task.
+- O batch termina no commit C3-T6; só então o coordenador aciona um Verifier independente.
+
+### Rastreabilidade requirement → tasks
+
+| Requirement | Tasks |
+| --- | --- |
+| P2 API AC1 | C3-T5, C3-T6 |
+| `ESTAB-16` | C3-T1, C3-T5 |
+| `ESTAB-17` | C3-T3, C3-T4, C3-T5, C3-T6 |
+| `ESTAB-19` | C3-T2, C3-T5, C3-T6 |
+| `ESTAB-20` | C3-T3, C3-T4, C3-T5, C3-T6 |
+
+**Coverage:** `ESTAB-16`, `ESTAB-17`, `ESTAB-19`, `ESTAB-20` e P2 API AC1 estão mapeados; 0 requisitos do ciclo sem task.
+
+### Validação de granularidade
+
+| Task | Entrega atômica | Status |
+| --- | --- | --- |
+| C3-T1 | contrato de ownership + prova do mesmo adapter | OK |
+| C3-T2 | um novo store preflight + testes co-localizados | OK |
+| C3-T3 | modelo/seleção/compatibilidade do ledger | OK |
+| C3-T4 | boundary de persistência CAS/recovery do ledger | OK |
+| C3-T5 | uma Route Handler integrada + testes da rota | OK |
+| C3-T6 | evidência única de fechamento dos gates | OK |
+
+### Cruzamento diagrama-definição
+
+| Task | Depende de no corpo | Diagrama mostra | Status |
+| --- | --- | --- | --- |
+| C3-T1 | nenhuma | raiz | Match |
+| C3-T2 | C3-T1 | C3-T1 → C3-T2 | Match |
+| C3-T3 | C3-T2 | C3-T2 → C3-T3 | Match |
+| C3-T4 | C3-T3 | C3-T3 → C3-T4 | Match |
+| C3-T5 | C3-T4 | C3-T4 → C3-T5 | Match |
+| C3-T6 | C3-T5 | C3-T5 → C3-T6 | Match |
+
+### Validação de co-localização de testes
+
+| Task | Camada | Matriz exige | Task define | Status |
+| --- | --- | --- | --- | --- |
+| C3-T1 | ownership Redis/local | unit | unit no mesmo commit | OK |
+| C3-T2 | preflight Redis/local | unit | unit no mesmo commit | OK |
+| C3-T3 | codec/modelo/sharding | unit | unit no mesmo commit | OK |
+| C3-T4 | boundary Blob | unit boundary | unit no mesmo commit | OK |
+| C3-T5 | Route Handler | integration | integration no mesmo commit | OK |
+| C3-T6 | gates transversais | full/static/E2E | suíte completa e análise fresca | OK |
+
+### Verifier independente pós-batch
+
+Depois de C3-T6, um Verifier autor diferente SHALL:
+
+1. Rederivar evidence-or-zero para os 75 ACs vigentes, com foco explícito em `ESTAB-16`, `ESTAB-17`, `ESTAB-19`, `ESTAB-20` e P2 API AC1.
+2. Reexecutar Vitest, coverage, build, lint, E2E e Sonar no range do ciclo 3; Quality Gate diferente de `OK` é FAIL.
+3. Executar sensor discriminante em scratch, no mínimo para: aceitar release Redis do owner antigo; permitir Blob antes do preflight; reutilizar `etag-1` após releitura; alterar seleção SHA-256/64 shards ou aceitar entrada exatamente em `+24 h`. Cada mutação SHALL ser morta pelos testes correspondentes.
+4. Descartar integralmente as mutações, preservar o histórico append-only e registrar PASS/FAIL, evidências, contagens, revisão Sonar e gaps em `_docs/specs/features/estabilidade-qualidade/validation.md`.
+5. Classificar qualquer gap como (a), (b) ou (c). `SPEC_DEVIATION` ou gap (b) interrompe sem commit de correção; o loop fix→reverify permanece limitado pela skill.
+
+### Categoria (c) preservada, sem tasks
+
+- Parse/limite de body antes de `request.json()`, separação de leitura pública cacheável e redução adicional de round trips Redis.
+- Extração estrutural de `Home`/sincronização, otimização O(N²) da fila, migração geral de mocks fetch, foco do diálogo e ordenação compartilhada.
+- Limpeza do `Map` local, remoção de estados/tipos legados além do necessário ao contrato obrigatório e qualquer refactor histórico fora do new code.
+
+**Contagem final do ciclo 3:** 6 fix tasks pendentes em 3 fases inteiras (2 + 2 + 2), empacotadas em 1 batch sequencial (6); Verifier separado após o batch.
