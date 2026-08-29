@@ -1266,8 +1266,8 @@ canvas {
 }
 
 .legal-shell {
-  height: 100vh;
-  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
   overflow-y: auto;
   padding: clamp(18px, 4vw, 48px);
   background:

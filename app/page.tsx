@@ -2,6 +2,13 @@
 
 import Link from "next/link";
 import { type CSSProperties, type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  createDebugKeyHandler,
+  DEBUG_ACTION_EVENT,
+  isDebugAction,
+  isDebugAllowed,
+  triggerDebugAction,
+} from "@/lib/debug";
 
 type Actor = {
   x: number;
@@ -37,6 +44,7 @@ type Particle = {
 };
 
 type GameState = "menu" | "playing" | "paused" | "over" | "won" | "promotion" | "choice";
+type RunOrigin = "normal" | "debug";
 type MenuPanel = "home" | "scores" | "help";
 type EnemyKind = "user" | "boss" | "data" | "qa" | "vip" | "incident" | "legacy";
 type ObstacleKind = "desk" | "server" | "firewall" | "board";
@@ -60,6 +68,21 @@ type HighScore = {
   createdAt: string;
 };
 
+type PendingScoreEntry = {
+  version: 1;
+  submissionId: string;
+  score: HighScore;
+  enqueuedAt: string;
+  attempts: number;
+  lastAttemptAt: string | null;
+};
+
+type ScoreApiResponse = {
+  scores?: HighScore[];
+  storage?: "blob" | "local";
+  idempotent?: boolean;
+};
+
 type PowerUp = {
   x: number;
   y: number;
@@ -79,6 +102,7 @@ type Obstacle = {
 
 const WORLD = { width: 960, height: 540 };
 const HIGH_SCORE_KEY = "java-pleno-pixel-hunt-high-scores";
+const PENDING_SCORE_KEY = "java-pleno-pixel-hunt-pending-scores";
 const SOUND_KEY = "java-pleno-pixel-hunt-sound";
 const bossNames = [
   "Gerente de Sprint",
@@ -126,6 +150,18 @@ function scaledEnemyHp(baseHp: number, resets: number) {
 
 function obstacleCount(resets: number) {
   return Math.min(MAX_OBSTACLES, 1 + resets);
+}
+
+function shotLanesForWeaponLevel(weaponLevel: number) {
+  if (weaponLevel >= 3) return [-0.16, 0, 0.16];
+  if (weaponLevel === 2) return [-0.1, 0.1];
+  return [0];
+}
+
+function weaponLevelForWave(wave: number) {
+  if (wave >= 4) return 3;
+  if (wave >= 2) return 2;
+  return 1;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -186,6 +222,107 @@ function saveHighScores(scores: HighScore[]) {
   window.localStorage.setItem(HIGH_SCORE_KEY, JSON.stringify(scores.slice(0, 10)));
 }
 
+function isHighScore(value: unknown): value is HighScore {
+  if (!value || typeof value !== "object") return false;
+  const score = value as Partial<HighScore>;
+  return typeof score.name === "string"
+    && Number.isFinite(score.score)
+    && Number.isFinite(score.wave)
+    && (score.resets === undefined || Number.isFinite(score.resets))
+    && (score.outcome === "over" || score.outcome === "won")
+    && typeof score.createdAt === "string";
+}
+
+function isPendingScoreEntry(value: unknown): value is PendingScoreEntry {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Partial<PendingScoreEntry>;
+  return entry.version === 1
+    && typeof entry.submissionId === "string"
+    && entry.submissionId.length > 0
+    && isHighScore(entry.score)
+    && typeof entry.enqueuedAt === "string"
+    && Number.isInteger(entry.attempts)
+    && Number(entry.attempts) >= 0
+    && (entry.lastAttemptAt === null || typeof entry.lastAttemptAt === "string");
+}
+
+function loadPendingScores(): PendingScoreEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const stored = window.localStorage.getItem(PENDING_SCORE_KEY);
+    if (!stored) return [];
+    const parsed = JSON.parse(stored) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const unique = new Map<string, PendingScoreEntry>();
+    for (const entry of parsed) {
+      if (isPendingScoreEntry(entry) && !unique.has(entry.submissionId)) {
+        unique.set(entry.submissionId, entry);
+      }
+    }
+    return [...unique.values()];
+  } catch {
+    return [];
+  }
+}
+
+function savePendingScores(entries: PendingScoreEntry[]) {
+  window.localStorage.setItem(PENDING_SCORE_KEY, JSON.stringify(entries));
+}
+
+function enqueuePendingScore(entry: PendingScoreEntry) {
+  const pending = loadPendingScores();
+  if (!pending.some((candidate) => candidate.submissionId === entry.submissionId)) {
+    savePendingScores([...pending, entry]);
+  }
+}
+
+function removePendingScore(submissionId: string) {
+  savePendingScores(loadPendingScores().filter((entry) => entry.submissionId !== submissionId));
+}
+
+function updatePendingScoreAttempt(submissionId: string, attemptedAt: string) {
+  savePendingScores(loadPendingScores().map((entry) => entry.submissionId === submissionId
+    ? { ...entry, attempts: entry.attempts + 1, lastAttemptAt: attemptedAt }
+    : entry));
+}
+
+function isPersistedScoreResponse(payload: ScoreApiResponse) {
+  return payload.storage === "blob" || payload.idempotent === true;
+}
+
+async function waitForNextScorePost(previousPostStartedAt: number | null) {
+  if (previousPostStartedAt === null) return;
+  const remainingDelay = Math.max(0, 10_000 - (Date.now() - previousPostStartedAt));
+  if (remainingDelay > 0) {
+    await new Promise<void>((resolve) => window.setTimeout(resolve, remainingDelay));
+  }
+}
+
+async function postPendingScore(pendingScore: PendingScoreEntry): Promise<ScoreApiResponse> {
+  const response = await fetch("/api/scores", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": pendingScore.submissionId,
+    },
+    body: JSON.stringify(pendingScore.score),
+  });
+  if (!response.ok) throw new Error("Score sync failed");
+  return response.json() as Promise<ScoreApiResponse>;
+}
+
+function scoreIdentity(score: HighScore) {
+  return `${score.createdAt}:${score.name}`;
+}
+
+function mergeHighScores(...scoreGroups: HighScore[][]) {
+  const uniqueScores = new Map<string, HighScore>();
+  for (const score of scoreGroups.flat()) uniqueScores.set(scoreIdentity(score), score);
+  return [...uniqueScores.values()]
+    .sort((a, b) => b.score - a.score || b.wave - a.wave || (b.resets ?? 0) - (a.resets ?? 0) || a.createdAt.localeCompare(b.createdAt))
+    .slice(0, 10);
+}
+
 function loadSoundSettings() {
   if (typeof window === "undefined") return { muted: false, volume: 0.35 };
   try {
@@ -206,11 +343,14 @@ export default function Home() {
   const keys = useRef(new Set<string>());
   const pointer = useRef({ active: false, x: WORLD.width / 2, y: WORLD.height / 2 });
   const stateRef = useRef<GameState>("menu");
+  const runOriginRef = useRef<RunOrigin>("normal");
   const menuPanelRef = useRef<MenuPanel>("home");
   const menuIndexRef = useRef(0);
   const startGameRef = useRef<() => void>(() => undefined);
   const audioRef = useRef<AudioContext | null>(null);
   const musicTimerRef = useRef<number | null>(null);
+  const debugFirstActionRef = useRef<HTMLButtonElement | null>(null);
+  const drainPromiseRef = useRef<Promise<void> | null>(null);
   const musicStepRef = useRef(0);
   const soundHydratedRef = useRef(false);
   const mutedRef = useRef(false);
@@ -244,8 +384,11 @@ export default function Home() {
   const [biome, setBiome] = useState(biomeNames[0]);
   const [upgrade, setUpgrade] = useState("JDK 8");
   const [bossProgress, setBossProgress] = useState("0/14 mobs");
+  const [debugBossHealth, setDebugBossHealth] = useState<{ hp: number; maxHp: number } | null>(null);
+  const [debugPowerUpCount, setDebugPowerUpCount] = useState(0);
   const [burstStaminaPct, setBurstStaminaPct] = useState(BURST_STAMINA_MAX);
   const [promotionCountdown, setPromotionCountdown] = useState(3);
+  const [debugOpen, setDebugOpen] = useState(false);
 
   useEffect(() => {
     stateRef.current = gameState;
@@ -340,7 +483,14 @@ export default function Home() {
   }, [playTone, stopMusic]);
 
   useEffect(() => {
-    refreshHighScores();
+    void refreshHighScores();
+    void drainPendingScores();
+    const retryPendingScores = () => {
+      void refreshHighScores();
+      void drainPendingScores();
+    };
+    window.addEventListener("online", retryPendingScores);
+    return () => window.removeEventListener("online", retryPendingScores);
   }, []);
 
   useEffect(() => {
@@ -370,21 +520,75 @@ export default function Home() {
     else stopMusic();
   }, [gameState, startMusic, stopMusic]);
 
-  function refreshHighScores() {
+  useEffect(() => {
+    const handler = createDebugKeyHandler();
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  useEffect(() => {
+    if (debugOpen) debugFirstActionRef.current?.focus();
+  }, [debugOpen]);
+
+  async function refreshHighScores() {
     setScoreMessage("Ranking global carregando...");
-    return fetch("/api/scores", { cache: "no-store" })
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((payload: unknown) => {
-        const data = payload as { scores?: HighScore[] };
-        const scores = data.scores ?? [];
-        setHighScores(scores);
-        saveHighScores(scores);
-        setScoreMessage("Ranking global");
-      })
-      .catch(() => {
-        setHighScores(loadHighScores());
-        setScoreMessage("Ranking local offline");
-      });
+
+    try {
+      const response = await fetch("/api/scores", { cache: "no-store" });
+      if (!response.ok) throw new Error("Score API failed");
+      const payload = (await response.json()) as { scores?: HighScore[] };
+      const globalScores = payload.scores ?? [];
+      const scores = loadPendingScores().length > 0
+        ? mergeHighScores(globalScores, loadHighScores())
+        : globalScores;
+      setHighScores(scores);
+      saveHighScores(scores);
+      setScoreMessage("Ranking global");
+    } catch {
+      const localScores = loadHighScores();
+      setHighScores(localScores);
+      setScoreMessage("Ranking local offline");
+    }
+  }
+
+  function drainPendingScores() {
+    if (drainPromiseRef.current) return drainPromiseRef.current;
+
+    const drain = async () => {
+      let previousPostStartedAt: number | null = null;
+
+      while (true) {
+        const pendingScore = loadPendingScores()[0];
+        if (!pendingScore) return;
+
+        await waitForNextScorePost(previousPostStartedAt);
+
+        previousPostStartedAt = Date.now();
+        try {
+          const payload = await postPendingScore(pendingScore);
+          if (!isPersistedScoreResponse(payload)) {
+            throw new Error("Score sync not persisted");
+          }
+          removePendingScore(pendingScore.submissionId);
+          if (payload.scores) {
+            setHighScores(payload.scores);
+            saveHighScores(payload.scores);
+          }
+          setScoreMessage(payload.storage === "local"
+            ? "Ranking local aguardando sincronização"
+            : "Ranking global atualizado");
+        } catch {
+          updatePendingScoreAttempt(pendingScore.submissionId, new Date().toISOString());
+          setScoreMessage("Ranking local aguardando sincronização");
+          return;
+        }
+      }
+    };
+
+    drainPromiseRef.current = drain().finally(() => {
+      drainPromiseRef.current = null;
+    });
+    return drainPromiseRef.current;
   }
 
   function startNewGame() {
@@ -461,6 +665,12 @@ export default function Home() {
 
   async function submitScore(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (runOriginRef.current === "debug") {
+      setScoreMessage("Score de debug não enviado.");
+      setScoreSaved(true);
+      return;
+    }
+
     const cleanName = playerName.trim().replace(/\s+/g, " ").slice(0, 14) || "DEV ANON";
     const entry = {
       name: cleanName.toUpperCase(),
@@ -470,25 +680,44 @@ export default function Home() {
       outcome: lastOutcome,
       createdAt: new Date().toISOString(),
     };
+    const pendingEntry: PendingScoreEntry = {
+      version: 1,
+      submissionId: crypto.randomUUID(),
+      score: entry,
+      enqueuedAt: new Date().toISOString(),
+      attempts: 0,
+      lastAttemptAt: null,
+    };
 
     setScoreMessage("Salvando score...");
     try {
       const response = await fetch("/api/scores", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": pendingEntry.submissionId,
+        },
         body: JSON.stringify(entry),
       });
       if (!response.ok) throw new Error("Score API failed");
-      const payload = (await response.json()) as { scores: HighScore[] };
+      const payload = (await response.json()) as {
+        scores: HighScore[];
+        storage?: "blob" | "local";
+        idempotent?: boolean;
+      };
+      if (!isPersistedScoreResponse(payload)) {
+        throw new Error("Score not persisted");
+      }
       setHighScores(payload.scores);
       saveHighScores(payload.scores);
-      setScoreMessage("Ranking global atualizado");
+      setScoreMessage(payload.storage === "local" ? "Ranking local aguardando sincronização" : "Ranking global atualizado");
       playSound("save");
       setScoreSaved(true);
     } catch {
       const nextScores = [entry, ...highScores]
         .sort((a, b) => b.score - a.score || b.wave - a.wave || (b.resets ?? 0) - (a.resets ?? 0))
         .slice(0, 10);
+      enqueuePendingScore(pendingEntry);
       saveHighScores(nextScores);
       setHighScores(nextScores);
       setScoreMessage("Ranking local salvo. Global indisponível.");
@@ -868,11 +1097,59 @@ export default function Home() {
 
     function start() {
       resetGame();
+      setDebugBossHealth(null);
+      setDebugPowerUpCount(0);
+      runOriginRef.current = "normal";
       stateRef.current = "playing";
       setGameState("playing");
       startMusic();
     }
     startGameRef.current = start;
+
+    const onDebugAction = (event: Event) => {
+      const action = (event as CustomEvent<unknown>).detail;
+      if (!isDebugAllowed() || !isDebugAction(action)) return;
+
+      if (action === "toggle_menu") {
+        setDebugOpen((current) => !current);
+        return;
+      }
+
+      setDebugOpen(false);
+      const startsRun = action === "reset"
+        || ((action === "spawn_boss" || action === "add_powerup") && stateRef.current !== "playing");
+      if (startsRun) {
+        start();
+      }
+      runOriginRef.current = "debug";
+
+      if (action === "spawn_boss") {
+        if (!bossSpawned) {
+          bossKills = bossKillTarget(localWave, callLoops);
+          bossSpawned = true;
+          spawnEnemy("boss");
+          const bossEntity = enemies.find((enemy) => enemy.kind === "boss");
+          setDebugBossHealth(bossEntity ? { hp: bossEntity.hp, maxHp: bossEntity.maxHp } : null);
+          syncHud();
+        }
+      } else if (action === "add_powerup") {
+        spawnPowerUp();
+        setDebugPowerUpCount(powerUps.length);
+        announceEffect("DEBUG: power-up liberado");
+      } else if (action === "max_stamina") {
+        burstStamina = BURST_STAMINA_MAX;
+        syncHud();
+      } else if (action === "win_game") {
+        setScore(localScore);
+        setWave(localWave);
+        setLastOutcome("won");
+        setScoreSaved(false);
+        playSound("won");
+        stopMusic();
+        stateRef.current = "won";
+        setGameState("won");
+      }
+    };
 
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -951,6 +1228,7 @@ export default function Home() {
 
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener(DEBUG_ACTION_EVENT, onDebugAction);
     canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("pointerup", onPointerUp);
@@ -964,7 +1242,7 @@ export default function Home() {
       const aim = target
         ? normalize(target.x - player.x, target.y - player.y)
         : normalize(pointer.current.x - player.x, pointer.current.y - player.y);
-      const lanes = weaponLevel >= 3 ? [-0.16, 0, 0.16] : weaponLevel === 2 ? [-0.1, 0.1] : [0];
+      const lanes = shotLanesForWeaponLevel(weaponLevel);
       const shotSpeed = player.focus > 0 ? 500 : 430;
       for (const spread of lanes) {
         const angle = Math.atan2(aim.y, aim.x) + spread;
@@ -994,7 +1272,7 @@ export default function Home() {
       shake = Math.max(0, shake - delta * 60);
       bossBanner = Math.max(0, bossBanner - delta * 60);
       effectBanner = Math.max(0, effectBanner - delta * 60);
-      weaponLevel = localWave >= 4 ? 3 : localWave >= 2 ? 2 : 1;
+      weaponLevel = weaponLevelForWave(localWave);
       const wantsBurst = keys.current.has(" ");
       const burstActive = !choosingFinalReward && wantsBurst && burstStamina > 0;
       if (burstActive) {
@@ -1694,6 +1972,7 @@ export default function Home() {
       cancelAnimationFrame(raf);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener(DEBUG_ACTION_EVENT, onDebugAction);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("pointerup", onPointerUp);
@@ -1719,6 +1998,16 @@ export default function Home() {
           <p>Java Pleno Pixel Hunt</p>
           <h1>{status}</h1>
         </div>
+        {debugBossHealth && (
+          <output aria-label="Vida do boss debug">
+            {debugBossHealth.hp}/{debugBossHealth.maxHp} HP
+          </output>
+        )}
+        {debugPowerUpCount > 0 && (
+          <output aria-label="Power-ups debug">
+            {debugPowerUpCount} power-up disponível
+          </output>
+        )}
         <div className="hud-card jdk-card">
           <strong>{upgrade}</strong>
           <span className="mini-bars" aria-hidden="true">
@@ -1976,6 +2265,33 @@ export default function Home() {
               </div>
             </div>
           </div>
+        )}
+        {debugOpen && (
+          <dialog
+            open
+            className="pause-menu-overlay"
+            aria-label="Ferramentas de debug"
+            onClose={() => setDebugOpen(false)}
+          >
+            <div className="pause-panel">
+              <p className="menu-kicker">Developer tools</p>
+              <h2>DEBUG</h2>
+              <div className="menu-actions">
+                <button ref={debugFirstActionRef} type="button" onClick={() => triggerDebugAction("spawn_boss")}>
+                  Invocar Boss
+                </button>
+                <button type="button" onClick={() => triggerDebugAction("max_stamina")}>
+                  Max Estamina
+                </button>
+                <button type="button" onClick={() => triggerDebugAction("win_game")}>
+                  Testar Tela de Vitória
+                </button>
+                <button type="button" onClick={() => triggerDebugAction("toggle_menu")}>
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </dialog>
         )}
         {promotionScreen && (
           <div className="frame-screen" role="dialog" aria-modal="true" aria-label="Promoção para sênior">

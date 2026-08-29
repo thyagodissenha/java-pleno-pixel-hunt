@@ -1,95 +1,89 @@
 # Roadmap do Java Pleno Pixel Hunt
 
-Este roadmap organiza as próximas melhorias do jogo, saindo de um protótipo jogável para uma versão mais completa, competitiva e apresentável.
+Este roadmap organiza as próximas melhorias do jogo a partir do estado atual: o core arcade já está jogável, o ranking global tem proteção distribuída contra abuso, a monetização via AdSense está preparada (mas pausada até aprovação) e o site tem páginas básicas de confiança para revisão.
 
-## Fase 1: Polimento essencial
+## Estado atual
 
-- [x] Criar uma tela inicial mais bonita, com botões para jogar, ver high scores e abrir instruções.
-- [x] Ajustar a curva de dificuldade das ondas.
-- [x] Melhorar colisão e feedback visual de dano.
-- [x] Adicionar botão de mute/volume.
-- [x] Melhorar a experiência em dispositivos móveis.
-- [x] Revisar textos e acentos em português.
+- [x] Jogo principal em arena top-down com teclado, mouse/toque e tiro automático.
+- [x] Ondas, chefes, boss final, escolha final e ciclo de novo chamado.
+- [x] Reset exibido no score e aumento de dificuldade por rodada.
+- [x] Obstáculos temáticos por fase, afetando jogador e tiros.
+- [x] Power-ups coletáveis por contato, incluindo escolhas finais.
+- [x] Ranking global com fallback local, idempotência e ledger particionado contra duplicação.
+- [x] Proteção distribuída contra spam no ranking: throttle por IP (10s) e preflight antiabuso (60 req/min) via Redis.
+- [x] Modo debug interno (`F1`/`F2`/`F3`, restrito a `development`) para spawn de boss, concessão de power-up e teste de telas de vitória/derrota sem jogar uma run inteira.
+- [x] Suíte de testes automatizados (Vitest + Testing Library + Playwright) cobrindo ranking, sanitização, modo debug (boss, power-up, reset) e páginas legais em mobile.
+- [x] Build usa `next build --webpack` para evitar o panic do Turbopack visto localmente.
+- [x] Menu inicial, high scores, instruções, pausa e saída do jogo.
+- [x] UI em frame arcade com topo, arena e rodapé.
+- [x] Som, música chiptune, mute e volume.
+- [x] Espaço "Apoie o jogo" estruturado (Pix e links ainda como placeholder "em breve").
+- [x] Google AdSense preparado (meta tag `google-adsense-account` e `/ads.txt` autorizado); script de anúncio no `head` pausado até a aprovação da conta.
+- [x] Páginas `/privacidade` e `/sobre` publicadas, com `min-height: 100dvh` validado em mobile.
 
-## Fase 2: Ranking global
+## Prioridade 1: Aprovação e confiança
 
-- [x] Salvar scores em um servico persistente.
-- [x] Criar tela de ranking global.
-- [x] Validar nomes dos jogadores.
-- [x] Mostrar onda alcançada e resultado da partida na estrutura do score.
-- Adicionar proteção simples contra spam.
-- Separar rankings por modo de jogo, se houver novos modos no futuro.
+- [ ] Aguardar aprovação do AdSense.
+- [ ] Acompanhar mensagens do painel do AdSense e ajustar política/conteúdo se houver reprovação.
+- [ ] Criar uma página ou seção de contato mais clara, com GitHub, e-mail público ou formulário simples.
+- [ ] Revisar a Política de Privacidade após anúncios reais começarem a aparecer.
+- [ ] Decidir se o site continuará em `vercel.app` ou se terá domínio próprio.
 
-## Fase 3: Gameplay
+## Prioridade 2: Estabilidade e qualidade
 
-- [x] Adicionar power-ups, como café, refactor, rollback, hotfix e code review.
-- [x] Criar novos inimigos, como QA nervoso, usuário VIP, incidente P1 e legado sem teste.
-- [x] Dar padrões de ataque diferentes para cada chefe.
-- [x] Criar fases ou biomas, como Escritório, Produção, Cloud e War Room.
-- [x] Adicionar progressão de armas ou upgrades durante a partida.
-- [x] Balancear vida, dano, velocidade e pontuação.
+- [ ] Alinhar a versão de Node entre README (`22.13 ou superior`) e `package.json` (`engines.node: "24.x"`) — hoje estão divergentes.
+- [ ] Adicionar teste leve para obstáculos temáticos (boss, power-up, reset e ranking já têm cobertura; obstáculos ainda não têm nenhum teste).
+- [ ] Monitorar vulnerabilidades sem usar `npm audit fix --force` às cegas.
+- [ ] Migrar o mock direto de `fetch` em `game-debug.test.tsx` para MSW, seguindo o padrão já usado no restante da suíte.
+- [ ] Extrair a sincronização offline do componente monolítico `Home` (`app/page.tsx`) em módulos menores.
 
-## Fase 4: Arte e som
+## Prioridade 3: Monetização sem atrapalhar o jogo
 
-- [x] Melhorar os sprites pixel art do jogador, inimigos e chefes.
-- [x] Adicionar animações de caminhada, tiro, explosão e dano.
-- [x] Criar música chiptune.
-- [x] Adicionar efeitos sonoros para tiro, hit, boss, game over e vitória.
-- [x] Criar tela de vitória mais marcante.
-- [x] Criar arte base de capa/tela inicial do jogo.
-- [x] Transformar a tela inicial em um menu pixel art funcional.
-- Criar thumbnail em formatos específicos para Itch.io e redes sociais.
+- [ ] Após aprovação, criar bloco manual de anúncio no AdSense.
+- [ ] Colocar anúncio apenas em pontos seguros: topo, tela inicial, pausa ou pós-jogo.
+- [ ] Evitar anúncios dentro da arena e evitar qualquer formato que possa gerar clique acidental.
+- [ ] Transformar o painel "Apoie o jogo" em uma área real com Pix, link de apoio ou patrocínio.
+- [ ] Medir se anúncios prejudicam tempo de jogo, carregamento ou experiência mobile.
 
-## Fase 5: Identidade e publicação
+## Prioridade 4: Conteúdo e apresentação
 
-- Definir nome final e logo.
-- Criar screenshots para README, Vercel, Itch.io e redes sociais.
-- Publicar uma página no Itch.io.
-- Criar um trailer curto ou GIF de gameplay.
-- Melhorar o README com imagens e instruções mais completas.
-- Adicionar licença.
-- Marcar uma versão `v1.0.0`.
+- [ ] Criar screenshots oficiais para README, Vercel, Itch.io e redes sociais.
+- [ ] Criar thumbnail/capa em formatos específicos para Itch.io, LinkedIn e X.
+- [ ] Melhorar o README com imagens, GIF curto e links para jogar.
+- [ ] Criar um trailer curto ou GIF de gameplay.
+- [ ] Adicionar licença.
+- [ ] Marcar uma versão `v1.0.0` quando gameplay, ranking e monetização estiverem estáveis.
 
-## Fase 6: Monetização e crescimento
+## Prioridade 5: Retenção e compartilhamento
 
-- Manter uma versão web gratuita como porta de entrada.
-- Testar anúncios leves apenas entre partidas ou no pós-jogo, nunca durante o gameplay.
-- Criar cosméticos pagos sem vantagem competitiva, como skins de estagiário, pleno, sênior, tech lead e arquiteto.
-- Criar temas visuais alternativos, como startup, banco legado, hackathon e escritório remoto.
-- Avaliar um pacote premium com jogo sem anúncios, skins exclusivas, modos extras e ranking customizado.
-- Criar ranking semanal ou temporadas com recompensas cosméticas.
-- Adicionar tela final compartilhável com meme, tempo sobrevivido, onda e pontuação.
-- Adicionar botões de compartilhamento para LinkedIn, X e WhatsApp.
-- Avaliar patrocínio ou product placement com marcas dev, bootcamps, plataformas de vagas e ferramentas de desenvolvimento.
-- Explorar uma versão corporativa/branded para eventos, recrutamento, onboarding e hackathons.
-- Oferecer ranking privado, assets customizados e desafios personalizados na versão corporativa.
+- [ ] Criar tela final compartilhável com score, onda, resets e meme da run.
+- [ ] Adicionar botões de compartilhamento para LinkedIn, WhatsApp e X.
+- [ ] Criar ranking semanal ou temporadas.
+- [ ] Adicionar conquistas simples.
+- [ ] Criar daily challenge com seed fixa por dia.
+- [ ] Separar rankings por modo de jogo quando existirem novos modos.
 
-## Fase 7: Modos avançados
+## Prioridade 6: Expansão de gameplay
 
-- Criar modo infinito.
-- Adicionar conquistas.
-- Criar daily challenge.
-- Adicionar ranking por temporada.
-- Permitir compartilhar score.
-- Avaliar multiplayer local ou co-op no futuro.
+- [ ] Criar modo infinito.
+- [ ] Adicionar novos power-ups com sinergias.
+- [ ] Adicionar novos tipos de obstáculos e hazards por bioma.
+- [ ] Criar temas visuais alternativos, como startup, banco legado, hackathon e escritório remoto.
+- [ ] Adicionar cosméticos sem vantagem competitiva, como skins de estagiário, pleno, sênior, tech lead e arquiteto.
+- [ ] Avaliar multiplayer local ou co-op no futuro.
 
-## Prioridade recomendada
+## Prioridade 7: Crescimento e produto
 
-1. Tela inicial e menus.
-2. Melhorias mobile.
-3. Proteção anti-spam para o ranking.
-4. Thumbnail do jogo.
-5. Publicação no Itch.io.
-6. Compartilhamento de score.
-7. Cosméticos e patrocínio dev.
-8. Ranking por temporada.
-9. Tela final compartilhável.
-10. Conquistas.
+- [ ] Publicar uma página no Itch.io.
+- [ ] Avaliar patrocínio ou product placement com marcas dev, bootcamps, plataformas de vagas e ferramentas de desenvolvimento.
+- [ ] Explorar uma versão corporativa/branded para eventos, recrutamento, onboarding e hackathons.
+- [ ] Oferecer ranking privado, assets customizados e desafios personalizados na versão corporativa.
+- [ ] Avaliar pacote premium sem anúncios, com skins exclusivas, modos extras e ranking customizado.
 
-## Próxima entrega sugerida
+## Próxima entrega recomendada
 
-Criar thumbnails e screenshots em formatos específicos para preparar a publicação do jogo no Itch.io e redes sociais.
+Alinhar a versão de Node entre README e `package.json` (item rápido e concreto, hoje divergente) e preparar screenshots/thumbnail para deixar o projeto mais apresentável enquanto o AdSense termina a revisão.
 
 ## Aposta de monetização recomendada
 
-Começar com web grátis, ranking semanal, compartilhamento de score e cosméticos. Depois testar patrocínio dev e uma versão branded para empresas. Essa rota preserva a vibe do jogo e evita depender apenas de anúncios, que tendem a pagar pouco no início.
+Manter a versão web gratuita como porta de entrada. Usar AdSense de forma leve e controlada, sem anúncios durante o gameplay. Em paralelo, testar apoio direto, patrocínio dev e uma futura versão branded para empresas. Essa rota preserva a experiência do jogo e não depende só de anúncios, que tendem a pagar pouco no início.

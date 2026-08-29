@@ -28,6 +28,7 @@ yarn-error.log*
 
 # local environment
 .env*
+.sonar.env
 
 # deployment and generated files
 .vercel
@@ -41,3 +42,10 @@ site-build.tar.gz
 
 # agent skills (local tooling)
 .agents/skills/
+
+# Claude Code local tooling
+.claude/
+
+# SonarQube scanner/test artifacts
+.scannerwork/
+/test-results/

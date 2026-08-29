@@ -1,0 +1,4 @@
+{
+  "sonarQubeUri": "http://localhost:9000",
+  "projectKey": "java-pleno-pixel-hunt"
+}
