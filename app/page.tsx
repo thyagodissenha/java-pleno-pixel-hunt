@@ -25,6 +25,7 @@ import {
   updatePendingScoreAttempt,
   waitForNextScorePost,
 } from "@/lib/score-sync";
+import { appendCheatBuffer, matchCheatCode } from "@/lib/cheat-codes";
 
 const adsenseClientId = getPublicAdsenseClientId();
 const adsenseBannerSlotId = getAdsenseBannerSlotId();
@@ -64,7 +65,7 @@ type Particle = {
 
 type GameState = "menu" | "playing" | "paused" | "over" | "won" | "promotion" | "choice";
 type RunOrigin = "normal" | "debug";
-type MenuPanel = "home" | "scores" | "help";
+type MenuPanel = "home" | "scores" | "help" | "skins";
 type EnemyKind = "user" | "boss" | "data" | "qa" | "vip" | "incident" | "legacy";
 type ObstacleKind = "desk" | "server" | "firewall" | "board";
 type PowerUpKind =
@@ -210,6 +211,7 @@ export default function Home() {
   const audioRef = useRef<AudioContext | null>(null);
   const musicTimerRef = useRef<number | null>(null);
   const debugFirstActionRef = useRef<HTMLButtonElement | null>(null);
+  const cheatBufferRef = useRef("");
   const drainPromiseRef = useRef<Promise<void> | null>(null);
   const musicStepRef = useRef(0);
   const soundHydratedRef = useRef(false);
@@ -382,6 +384,19 @@ export default function Home() {
 
   useEffect(() => {
     const handler = createDebugKeyHandler();
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (stateRef.current !== "menu") return;
+      cheatBufferRef.current = appendCheatBuffer(cheatBufferRef.current, event.key);
+      if (matchCheatCode(cheatBufferRef.current)) {
+        cheatBufferRef.current = "";
+        setMenuPanel("skins");
+      }
+    };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
@@ -2052,7 +2067,13 @@ export default function Home() {
           </div>
         )}
         {menuScreen && menuPanel !== "home" && (
-          <div className="frame-screen" role="dialog" aria-label={menuPanel === "scores" ? "High Scores" : "Como jogar"}>
+          <div
+            className="frame-screen"
+            role="dialog"
+            aria-label={
+              menuPanel === "scores" ? "High Scores" : menuPanel === "skins" ? "Personagens e Skins" : "Como jogar"
+            }
+          >
             <div className="menu-panel frame-panel">
               <p className="menu-kicker">Java Pleno Pixel Hunt</p>
 
@@ -2076,6 +2097,17 @@ export default function Home() {
                       </li>
                     )}
                   </ol>
+                  <div className="menu-actions two">
+                    <button type="button" onClick={startNewGame}>Jogar</button>
+                    <button type="button" onClick={() => setMenuPanel("home")}>Voltar ao início</button>
+                  </div>
+                </>
+              )}
+
+              {menuPanel === "skins" && (
+                <>
+                  <h2>Personagens & Skins</h2>
+                  <p>Sistema em construção. Em breve você poderá escolher personagens e skins alternativos.</p>
                   <div className="menu-actions two">
                     <button type="button" onClick={startNewGame}>Jogar</button>
                     <button type="button" onClick={() => setMenuPanel("home")}>Voltar ao início</button>
