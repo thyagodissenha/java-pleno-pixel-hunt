@@ -87,6 +87,33 @@ canvas {
     minmax(170px, 0.9fr);
 }
 
+.ad-banner-slot {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  width: 100%;
+  margin: 0;
+  border: 3px solid #334155;
+  background:
+    linear-gradient(180deg, rgba(30, 41, 59, 0.98), rgba(15, 23, 42, 0.98));
+  box-shadow:
+    0 6px 0 #020617,
+    inset 0 0 0 2px rgba(125, 211, 252, 0.08);
+  padding: 6px 8px;
+  min-height: 60px;
+}
+
+.ad-banner-label {
+  color: #64748b;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.ad-banner-slot .adsbygoogle {
+  width: 100%;
+}
+
 .topbar p,
 .topbar h1,
 .bottombar strong,

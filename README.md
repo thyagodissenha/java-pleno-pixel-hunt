@@ -79,9 +79,18 @@ GOOGLE_ADSENSE_PUBLISHER_ID=pub-0000000000000000
 
 Também funciona se o valor vier no formato `ca-pub-0000000000000000`; o projeto normaliza automaticamente.
 
-Com a variável configurada, o layout adiciona a meta tag `google-adsense-account` e expõe o arquivo `/ads.txt` com o publisher ID correto.
+Com a variável configurada, o layout adiciona a meta tag `google-adsense-account`, carrega o script do AdSense e expõe o arquivo `/ads.txt` com o publisher ID correto.
 
-Durante a revisão do AdSense, o site mantém apenas os sinais de propriedade. Blocos de anúncio devem ser adicionados manualmente somente após aprovação, evitando a arena do jogo e qualquer tela sem conteúdo editorial suficiente.
+O banner de anúncio manual (abaixo da arena) só aparece durante o gameplay ativo (`gameState === "playing"`) — nunca em telas de menu, pausa, apoio ou fim de jogo, para não violar a política de "anúncios em telas sem conteúdo do editor". Ele exige duas variáveis adicionais (públicas, pois o client ID de AdSense já é exposto no HTML de qualquer forma):
+
+```text
+NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT_ID=ca-pub-0000000000000000
+NEXT_PUBLIC_GOOGLE_ADSENSE_BANNER_SLOT=0000000000
+```
+
+O slot é o ID do bloco de anúncio manual criado no painel do AdSense. Sem as duas variáveis configuradas, o banner simplesmente não renderiza.
+
+**Importante:** com blocos manuais em uso, desative "Anúncios automáticos" (Auto ads) nas configurações do site no painel do AdSense — caso contrário o Google pode continuar posicionando anúncios automaticamente em telas sem conteúdo (menu, pausa, apoio), reproduzindo a violação original.
 
 ## Stack
 

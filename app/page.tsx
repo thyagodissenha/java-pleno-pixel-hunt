@@ -9,6 +9,10 @@ import {
   isDebugAllowed,
   triggerDebugAction,
 } from "@/lib/debug";
+import { getAdsenseBannerSlotId, getPublicAdsenseClientId } from "@/lib/adsense";
+
+const adsenseClientId = getPublicAdsenseClientId();
+const adsenseBannerSlotId = getAdsenseBannerSlotId();
 
 type Actor = {
   x: number;
@@ -340,6 +344,8 @@ function loadSoundSettings() {
 
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const adBannerRef = useRef<HTMLModElement | null>(null);
+  const adBannerPushedRef = useRef(false);
   const keys = useRef(new Set<string>());
   const pointer = useRef({ active: false, x: WORLD.width / 2, y: WORLD.height / 2 });
   const stateRef = useRef<GameState>("menu");
@@ -1988,6 +1994,24 @@ export default function Home() {
   const supportScreen = supportOpen;
   const pauseScreen = gameState === "paused" && !supportScreen;
   const frameScreen = supportScreen || finalScreen || promotionScreen || (menuScreen && menuPanel !== "home");
+  const showAdBanner = gameState === "playing" && Boolean(adsenseClientId && adsenseBannerSlotId);
+
+  useEffect(() => {
+    if (!showAdBanner) {
+      adBannerPushedRef.current = false;
+      return;
+    }
+    if (adBannerPushedRef.current || !adBannerRef.current) return;
+    try {
+      const adsbygoogle = (window as Window & { adsbygoogle?: unknown[] }).adsbygoogle ?? [];
+      adsbygoogle.push({});
+      (window as Window & { adsbygoogle?: unknown[] }).adsbygoogle = adsbygoogle;
+      adBannerPushedRef.current = true;
+    } catch {
+      // Script do AdSense ainda não carregou ou foi bloqueado; sem problema, tentamos de novo no próximo mount.
+    }
+  }, [showAdBanner]);
+
   const jdkPower = upgrade === "JDK 21" ? 9 : upgrade === "JDK 17" ? 6 : 3;
 
   return (
@@ -2066,7 +2090,7 @@ export default function Home() {
           <button type="button" onClick={openSupportPanel}>
             Apoie o jogo
           </button>
-          <small>Pix e links em breve</small>
+          <small>Contato via GitHub</small>
           <nav className="sponsor-links" aria-label="Links institucionais">
             <Link href="/privacidade">Privacidade</Link>
             <Link href="/sobre">Sobre</Link>
@@ -2231,20 +2255,20 @@ export default function Home() {
               <p className="menu-kicker">Apoie o jogo</p>
               <h2>PIXEL FUND</h2>
               <p className="support-copy">
-                O espaço de apoio já está preparado para receber Pix, links de contribuição e patrocínios sem atrapalhar a arena.
+                Quer apoiar o projeto ou virar patrocinador? Fale com o dev pelo repositório no GitHub.
               </p>
               <div className="support-options" aria-label="Opções de apoio">
                 <div>
-                  <strong>Pix</strong>
-                  <span>Chave em breve</span>
+                  <strong>GitHub</strong>
+                  <span>Abra uma issue ou PR</span>
                 </div>
                 <div>
-                  <strong>Link de apoio</strong>
-                  <span>Ko-fi, Catarse ou similar</span>
+                  <strong>Feedback</strong>
+                  <span>Sugestões e bugs são bem-vindos</span>
                 </div>
                 <div>
                   <strong>Patrocínio</strong>
-                  <span>Banner ou contato comercial</span>
+                  <span>Contato direto via GitHub</span>
                 </div>
               </div>
               <div className="menu-actions two">
@@ -2362,6 +2386,21 @@ export default function Home() {
         )}
         </div>
       </section>
+
+      {showAdBanner && (
+        <section className="ad-banner-slot" aria-label="Publicidade">
+          <span className="ad-banner-label">Publicidade</span>
+          <ins
+            ref={adBannerRef}
+            className="adsbygoogle"
+            style={{ display: "block" }}
+            data-ad-client={adsenseClientId}
+            data-ad-slot={adsenseBannerSlotId}
+            data-ad-format="horizontal"
+            data-full-width-responsive="true"
+          />
+        </section>
+      )}
 
       <section className="bottombar" aria-label="Controles e alvo">
         <div className="footer-card controls-card">

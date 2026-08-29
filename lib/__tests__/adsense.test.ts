@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getAdsenseClientId, getAdsensePublisherId } from "@/lib/adsense";
+import {
+  getAdsenseBannerSlotId,
+  getAdsenseClientId,
+  getAdsensePublisherId,
+  getPublicAdsenseClientId,
+} from "@/lib/adsense";
 
 describe("AdSense identifiers", () => {
   afterEach(() => {
@@ -25,5 +30,43 @@ describe("AdSense identifiers", () => {
 
     expect(() => getAdsensePublisherId()).not.toThrow();
     expect(() => getAdsenseClientId()).not.toThrow();
+  });
+});
+
+describe("AdSense banner (public, client-safe)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("returns the public client ID when configured", () => {
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT_ID", "ca-pub-1234567890");
+
+    expect(getPublicAdsenseClientId()).toBe("ca-pub-1234567890");
+  });
+
+  it("returns undefined when the public client ID is absent", () => {
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT_ID", undefined);
+
+    expect(getPublicAdsenseClientId()).toBeUndefined();
+  });
+
+  it("returns the banner slot ID when configured", () => {
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_ADSENSE_BANNER_SLOT", "1122334455");
+
+    expect(getAdsenseBannerSlotId()).toBe("1122334455");
+  });
+
+  it("returns undefined when the banner slot ID is absent", () => {
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_ADSENSE_BANNER_SLOT", undefined);
+
+    expect(getAdsenseBannerSlotId()).toBeUndefined();
+  });
+
+  it("returns undefined for blank/whitespace-only values", () => {
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT_ID", "   ");
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_ADSENSE_BANNER_SLOT", "   ");
+
+    expect(getPublicAdsenseClientId()).toBeUndefined();
+    expect(getAdsenseBannerSlotId()).toBeUndefined();
   });
 });

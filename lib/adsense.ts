@@ -10,3 +10,13 @@ export function getAdsenseClientId() {
   const publisherId = getAdsensePublisherId();
   return publisherId ? `ca-${publisherId}` : undefined;
 }
+
+export function getPublicAdsenseClientId() {
+  const raw = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT_ID?.trim();
+  return raw || undefined;
+}
+
+export function getAdsenseBannerSlotId() {
+  const raw = process.env.NEXT_PUBLIC_GOOGLE_ADSENSE_BANNER_SLOT?.trim();
+  return raw || undefined;
+}
