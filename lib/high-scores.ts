@@ -262,22 +262,6 @@ export async function readLedgerEntry(submissionId: string, now = Date.now()) {
   return snapshot.document.entries.find((entry) => entry.submissionId === normalizedId);
 }
 
-function nextDocument(
-  document: RankingDocumentV2,
-  score: HighScore,
-  submissionId: string,
-  persistedAt: string,
-): RankingDocumentV2 {
-  return {
-    version: 2,
-    scores: cleanStoredScores([{ ...score, submissionId }, ...document.scores]),
-    processedSubmissions: [
-      ...document.processedSubmissions,
-      { submissionId, persistedAt },
-    ],
-  };
-}
-
 function writeOptions(etag: string | null) {
   return {
     access: "private" as const,
@@ -288,12 +272,58 @@ function writeOptions(etag: string | null) {
   };
 }
 
-export async function persistHighScore(score: HighScore, submissionId: string, now = Date.now()) {
+export async function persistLedgerIntent(score: HighScore, submissionId: string, now = Date.now()) {
+  const normalizedId = submissionId.trim();
+  const shard = ledgerShardIndex(normalizedId);
+  const persistedAt = new Date(now).toISOString();
+  let lastConflict: unknown;
+
+  for (let attempt = 0; attempt < MAX_BLOB_WRITE_ATTEMPTS; attempt += 1) {
+    const snapshot = await readLedgerShard(shard, now);
+    const existing = snapshot.document.entries.find((entry) => entry.submissionId === normalizedId);
+    if (existing) {
+      return { entry: existing, idempotent: true };
+    }
+
+    const entry: LedgerEntryV1 = {
+      submissionId: normalizedId,
+      persistedAt,
+      score: { ...score, submissionId: normalizedId },
+      source: "cycle-3",
+    };
+    const document: LedgerShardV1 = {
+      ...snapshot.document,
+      entries: [...snapshot.document.entries, entry],
+    };
+    const payload = JSON.stringify(document, null, 2);
+
+    try {
+      await put(ledgerShardPath(shard), payload, writeOptions(snapshot.etag));
+      return { entry, idempotent: false };
+    } catch (error) {
+      if (!(error instanceof BlobPreconditionFailedError)) throw error;
+      lastConflict = error;
+    }
+  }
+
+  throw lastConflict;
+}
+
+function rankingWithEffect(document: RankingDocumentV2, entry: LedgerEntryV1): RankingDocumentV2 {
+  if (!entry.score) return document;
+  return {
+    version: 2,
+    scores: cleanStoredScores([entry.score, ...document.scores]),
+    processedSubmissions: document.processedSubmissions,
+  };
+}
+
+export async function ensureRankingEffect(entry: LedgerEntryV1) {
   let lastConflict: unknown;
 
   for (let attempt = 0; attempt < MAX_BLOB_WRITE_ATTEMPTS; attempt += 1) {
     const snapshot = await readRankingSnapshot();
-    if (hasProcessedSubmission(snapshot.document, submissionId)) {
+    if (!entry.score || snapshot.document.scores.some((score) => score.submissionId === entry.submissionId)) {
       return {
         scores: publicHighScores(snapshot.document),
         storage: "blob" as const,
@@ -301,11 +331,17 @@ export async function persistHighScore(score: HighScore, submissionId: string, n
       };
     }
 
-    const document = nextDocument(snapshot.document, score, submissionId, new Date(now).toISOString());
-    const payload = JSON.stringify(document, null, 2);
+    const document = rankingWithEffect(snapshot.document, entry);
+    if (!document.scores.some((score) => score.submissionId === entry.submissionId)) {
+      return {
+        scores: publicHighScores(document),
+        storage: "blob" as const,
+        idempotent: false,
+      };
+    }
 
     try {
-      await put(SCORE_PATH, payload, writeOptions(snapshot.etag));
+      await put(SCORE_PATH, JSON.stringify(document, null, 2), writeOptions(snapshot.etag));
       return {
         scores: publicHighScores(document),
         storage: "blob" as const,
@@ -318,6 +354,12 @@ export async function persistHighScore(score: HighScore, submissionId: string, n
   }
 
   throw lastConflict;
+}
+
+export async function persistHighScore(score: HighScore, submissionId: string, now = Date.now()) {
+  const intent = await persistLedgerIntent(score, submissionId, now);
+  const result = await ensureRankingEffect(intent.entry);
+  return { ...result, idempotent: intent.idempotent || result.idempotent };
 }
 
 export async function readHighScores() {

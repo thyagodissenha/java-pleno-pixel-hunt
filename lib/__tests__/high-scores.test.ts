@@ -3,9 +3,11 @@ import {
   cleanScores,
   decodeLedgerShard,
   decodeRankingDocument,
+  ensureRankingEffect,
   ledgerShardIndex,
   ledgerShardPath,
   persistHighScore,
+  persistLedgerIntent,
   publicHighScores,
   readHighScores,
   readLedgerEntry,
@@ -360,8 +362,7 @@ describe("authoritative blob persistence", () => {
     blobPut.mockReset();
   });
 
-  it("reads existing blob snapshots without cache and writes with the same ETag", async () => {
-    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "blob-token");
+  it("reads ranking snapshots without cache and writes with the same ETag", async () => {
     blobGet.mockResolvedValue(blobSnapshot({
       version: 2,
       scores: [score({ name: "OLD", score: 100 })],
@@ -369,7 +370,12 @@ describe("authoritative blob persistence", () => {
     }, "etag-1"));
     blobPut.mockResolvedValue({ etag: "etag-2" });
 
-    const result = await persistHighScore(score({ name: "NEW", score: 200 }), "submission-new", Date.parse("2026-08-28T12:00:00.000Z"));
+    const result = await ensureRankingEffect({
+      submissionId: "submission-new",
+      persistedAt: "2026-08-28T12:00:00.000Z",
+      score: { ...score({ name: "NEW", score: 200 }), submissionId: "submission-new" },
+      source: "cycle-3",
+    });
 
     expect(blobGet).toHaveBeenCalledWith("java-pleno-pixel-hunt/high-scores.json", {
       access: "private",
@@ -393,73 +399,160 @@ describe("authoritative blob persistence", () => {
     });
   });
 
-  it("creates an absent blob without overwrite", async () => {
-    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "blob-token");
+  it("creates an absent shard without overwrite", async () => {
     blobGet.mockResolvedValue(null);
     blobPut.mockResolvedValue({ etag: "created" });
 
-    await expect(persistHighScore(score({ name: "FIRST" }), "first-id", Date.parse("2026-08-28T12:00:00.000Z"))).resolves.toMatchObject({
-      storage: "blob",
+    await expect(persistLedgerIntent(score({ name: "FIRST" }), "first-id", Date.parse("2026-08-28T12:00:00.000Z"))).resolves.toMatchObject({
       idempotent: false,
     });
     expect(blobPut).toHaveBeenCalledWith(
-      "java-pleno-pixel-hunt/high-scores.json",
+      ledgerShardPath(ledgerShardIndex("first-id")),
       expect.stringContaining('"submissionId": "first-id"'),
       expect.objectContaining({ allowOverwrite: false }),
     );
   });
 
   it("returns idempotent success without writing when the same submission id is already in the ledger", async () => {
-    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "blob-token");
     blobGet.mockResolvedValue(blobSnapshot({
-      version: 2,
-      scores: [{ ...score({ name: "DONE", score: 500 }), submissionId: "same-id" }],
-      processedSubmissions: [{ submissionId: "same-id", persistedAt: "2026-08-28T10:00:00.000Z" }],
+      version: 1,
+      shard: ledgerShardIndex("same-id"),
+      legacyImported: true,
+      entries: [{
+        submissionId: "same-id",
+        persistedAt: "2026-08-28T10:00:00.000Z",
+        score: { ...score({ name: "DONE", score: 500 }), submissionId: "same-id" },
+        source: "cycle-3",
+      }],
     }, "etag-done"));
 
-    const result = await persistHighScore(score({ name: "DUP", score: 999 }), "same-id", Date.parse("2026-08-28T12:00:00.000Z"));
+    const result = await persistLedgerIntent(score({ name: "DUP", score: 999 }), "same-id", Date.parse("2026-08-28T12:00:00.000Z"));
 
-    expect(result).toEqual({
-      scores: [score({ name: "DONE", score: 500 })],
-      storage: "blob",
-      idempotent: true,
-    });
+    expect(result.idempotent).toBe(true);
+    expect(result.entry).toMatchObject({ submissionId: "same-id", persistedAt: "2026-08-28T10:00:00.000Z" });
     expect(blobPut).not.toHaveBeenCalled();
   });
 
-  it("retries ETag conflicts and preserves distinct submission ids in the merged document", async () => {
-    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "blob-token");
+  it("retries shard conflicts with a fresh ETag and preserves distinct ids while cleaning expired entries", async () => {
     blobGet
-      .mockResolvedValueOnce(blobSnapshot({ version: 2, scores: [], processedSubmissions: [] }, "etag-empty"))
+      .mockResolvedValueOnce(blobSnapshot({ version: 1, shard: 39, legacyImported: true, entries: [] }, "etag-1"))
       .mockResolvedValueOnce(blobSnapshot({
-        version: 2,
-        scores: [{ ...score({ name: "OTHER", score: 300 }), submissionId: "other-id" }],
-        processedSubmissions: [{ submissionId: "other-id", persistedAt: "2026-08-28T11:59:00.000Z" }],
-      }, "etag-other"));
+        version: 1,
+        shard: 39,
+        legacyImported: true,
+        entries: [
+          { submissionId: "shard39-6", persistedAt: "2026-08-28T11:59:00.000Z", source: "cycle-3" },
+          { submissionId: "shard39-36", persistedAt: "2026-08-27T11:59:59.000Z", source: "cycle-3" },
+        ],
+      }, "etag-2"));
     blobPut
       .mockRejectedValueOnce(new BlobPreconditionFailedError())
       .mockResolvedValueOnce({ etag: "etag-merged" });
 
-    await expect(persistHighScore(score({ name: "MINE", score: 400 }), "mine-id", Date.parse("2026-08-28T12:00:00.000Z"))).resolves.toMatchObject({
-      scores: [score({ name: "MINE", score: 400 }), score({ name: "OTHER", score: 300 })],
-      storage: "blob",
+    await expect(persistLedgerIntent(score({ name: "MINE", score: 400 }), "shard39-16", Date.parse("2026-08-28T12:00:00.000Z"))).resolves.toMatchObject({
       idempotent: false,
     });
 
     const merged = JSON.parse(blobPut.mock.calls[1][1]);
-    expect(merged.scores.map((entry: { submissionId?: string }) => entry.submissionId)).toEqual(["mine-id", "other-id"]);
-    expect(merged.processedSubmissions.map((entry: { submissionId: string }) => entry.submissionId)).toEqual(["other-id", "mine-id"]);
+    expect(merged.entries.map((entry: { submissionId: string }) => entry.submissionId)).toEqual(["shard39-6", "shard39-16"]);
+    expect(blobPut.mock.calls[0][2]).toMatchObject({ ifMatch: "etag-1" });
+    expect(blobPut.mock.calls[1][2]).toMatchObject({ ifMatch: "etag-2" });
     expect(blobPut).toHaveBeenCalledTimes(2);
   });
 
-  it("fails after three ETag conflicts without declaring persistence", async () => {
-    vi.stubEnv("BLOB_READ_WRITE_TOKEN", "blob-token");
-    blobGet.mockImplementation(async () => blobSnapshot({ version: 2, scores: [], processedSubmissions: [] }, "etag-conflict"));
+  it("fails after three shard conflicts without touching the ranking or declaring persistence", async () => {
+    const shard = ledgerShardIndex("limited-id");
+    blobGet.mockImplementation(async () => blobSnapshot({ version: 1, shard, legacyImported: true, entries: [] }, "etag-conflict"));
     blobPut.mockRejectedValue(new BlobPreconditionFailedError());
 
     await expect(persistHighScore(score({ name: "LIMIT" }), "limited-id", Date.parse("2026-08-28T12:00:00.000Z"))).rejects.toBeInstanceOf(BlobPreconditionFailedError);
     expect(blobGet).toHaveBeenCalledTimes(3);
     expect(blobPut).toHaveBeenCalledTimes(3);
+    expect(blobGet.mock.calls.every(([pathname]) => pathname === ledgerShardPath(shard))).toBe(true);
+    expect(blobPut.mock.calls.every(([pathname]) => pathname === ledgerShardPath(shard))).toBe(true);
+  });
+
+  it("treats an entry as active only before the exact 24-hour boundary", () => {
+    const input = {
+      version: 1,
+      shard: 39,
+      legacyImported: true,
+      entries: [{ submissionId: "submission-1", persistedAt: "2026-08-27T12:00:00.000Z", source: "cycle-3" }],
+    };
+
+    expect(decodeLedgerShard(input, 39, Date.parse("2026-08-28T11:59:59.999Z")).entries).toHaveLength(1);
+    expect(decodeLedgerShard(input, 39, Date.parse("2026-08-28T12:00:00.000Z")).entries).toHaveLength(0);
+  });
+
+  it("resolves a same-id shard race without a second occurrence", async () => {
+    const persistedAt = "2026-08-28T12:00:00.000Z";
+    blobGet
+      .mockResolvedValueOnce(blobSnapshot({ version: 1, shard: 39, legacyImported: true, entries: [] }, "etag-1"))
+      .mockResolvedValueOnce(blobSnapshot({
+        version: 1,
+        shard: 39,
+        legacyImported: true,
+        entries: [{ submissionId: "submission-1", persistedAt, source: "cycle-3" }],
+      }, "etag-2"));
+    blobPut.mockRejectedValueOnce(new BlobPreconditionFailedError());
+
+    const result = await persistLedgerIntent(score({ name: "RACE" }), "submission-1", Date.parse(persistedAt));
+
+    expect(result).toMatchObject({ idempotent: true, entry: { submissionId: "submission-1", persistedAt } });
+    expect(blobPut).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries ranking conflicts with the ETag from the fresh ranking read", async () => {
+    const entry = {
+      submissionId: "ranking-id",
+      persistedAt: "2026-08-28T12:00:00.000Z",
+      score: { ...score({ name: "RANKING" }), submissionId: "ranking-id" },
+      source: "cycle-3" as const,
+    };
+    blobGet
+      .mockResolvedValueOnce(blobSnapshot({ version: 2, scores: [], processedSubmissions: [] }, "etag-1"))
+      .mockResolvedValueOnce(blobSnapshot({ version: 2, scores: [], processedSubmissions: [] }, "etag-2"));
+    blobPut.mockRejectedValueOnce(new BlobPreconditionFailedError()).mockResolvedValueOnce({ etag: "etag-3" });
+
+    await expect(ensureRankingEffect(entry)).resolves.toMatchObject({ storage: "blob", idempotent: false });
+    expect(blobPut.mock.calls[0][2]).toMatchObject({ ifMatch: "etag-1" });
+    expect(blobPut.mock.calls[1][2]).toMatchObject({ ifMatch: "etag-2" });
+  });
+
+  it("keeps a confirmed shard intention when ranking fails and repairs it on retry", async () => {
+    const submissionId = "partial-id";
+    const shard = ledgerShardIndex(submissionId);
+    let shardPayload: unknown = { version: 1, shard, legacyImported: true, entries: [] };
+    let rankingPayload: unknown = { version: 2, scores: [], processedSubmissions: [] };
+    let rankingWrites = 0;
+    blobGet.mockImplementation(async (pathname: string) => {
+      if (pathname === ledgerShardPath(shard)) return blobSnapshot(shardPayload, "etag-shard");
+      if (pathname === "java-pleno-pixel-hunt/high-scores.json") return blobSnapshot(rankingPayload, "etag-ranking");
+      throw new Error(`Unexpected Blob path: ${pathname}`);
+    });
+    blobPut.mockImplementation(async (pathname: string, payload: string) => {
+      if (pathname === ledgerShardPath(shard)) {
+        shardPayload = JSON.parse(payload);
+        return { etag: "etag-shard-next" };
+      }
+      rankingWrites += 1;
+      if (rankingWrites === 1) throw new TypeError("ranking unavailable");
+      rankingPayload = JSON.parse(payload);
+      return { etag: "etag-ranking-next" };
+    });
+
+    await expect(persistHighScore(score({ name: "RECOVER" }), submissionId, Date.parse("2026-08-28T12:00:00.000Z"))).rejects.toThrow("ranking unavailable");
+    expect(JSON.stringify(shardPayload)).toContain(submissionId);
+    await expect(persistHighScore(score({ name: "RECOVER" }), submissionId, Date.parse("2026-08-28T12:00:00.000Z"))).resolves.toMatchObject({
+      storage: "blob",
+      idempotent: true,
+    });
+    expect((rankingPayload as { scores: unknown[] }).scores).toHaveLength(1);
+    expect(blobPut.mock.calls.map(([pathname]) => pathname)).toEqual([
+      ledgerShardPath(shard),
+      "java-pleno-pixel-hunt/high-scores.json",
+      "java-pleno-pixel-hunt/high-scores.json",
+    ]);
   });
 
   it("returns snapshot ETags from the authoritative blob document", async () => {
