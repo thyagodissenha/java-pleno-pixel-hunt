@@ -601,7 +601,7 @@ describe("authoritative blob persistence", () => {
       processedSubmissions: [{ submissionId: "snapshot-id", persistedAt: "2026-08-28T10:00:00.000Z" }],
     }, "etag-snapshot"));
 
-    await expect(readRankingSnapshot()).resolves.toMatchObject({
+    await expect(readRankingSnapshot(Date.parse("2026-08-28T10:00:00.001Z"))).resolves.toMatchObject({
       etag: "etag-snapshot",
       document: {
         processedSubmissions: [{ submissionId: "snapshot-id", persistedAt: "2026-08-28T10:00:00.000Z" }],
