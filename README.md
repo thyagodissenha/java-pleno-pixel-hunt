@@ -98,7 +98,7 @@ Durante a revisão do AdSense, o site mantém apenas os sinais de propriedade. B
 
 Requisitos:
 
-- Node.js 22.13 ou superior
+- Node.js 24.x
 - npm
 
 Instale as dependências:
