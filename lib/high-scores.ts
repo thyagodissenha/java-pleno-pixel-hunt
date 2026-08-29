@@ -85,6 +85,12 @@ export function sanitizeScore(input: unknown): HighScore {
   };
 }
 
+export function sanitizePublicScore(input: unknown): HighScore {
+  const sanitized = sanitizeScore(input);
+  if (!isRecord(input) || !validDateString(input.createdAt)) return sanitized;
+  return { ...sanitized, createdAt: String(input.createdAt) };
+}
+
 function isRecord(input: unknown): input is Record<string, unknown> {
   return Boolean(input) && typeof input === "object";
 }

@@ -4,6 +4,7 @@ import {
   persistLedgerIntent,
   readHighScores,
   readLedgerEntry,
+  sanitizePublicScore,
   sanitizeScore,
 } from "@/lib/high-scores";
 import { createAbusePreflightStore } from "@/lib/score-abuse-preflight";
@@ -29,7 +30,7 @@ function isDebugPayload(payload: unknown) {
 }
 
 export async function GET() {
-  const scores = cleanScores((await readHighScores()).map((score) => sanitizeScore(score)));
+  const scores = cleanScores((await readHighScores()).map((score) => sanitizePublicScore(score)));
 
   return Response.json({ scores });
 }
