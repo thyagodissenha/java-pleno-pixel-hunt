@@ -1,6 +1,6 @@
 # Roadmap do Java Pleno Pixel Hunt
 
-Este roadmap organiza as próximas melhorias do jogo a partir do estado atual: o core arcade já está jogável, o ranking global existe, a monetização via AdSense está preparada e o site tem páginas básicas de confiança para revisão.
+Este roadmap organiza as próximas melhorias do jogo a partir do estado atual: o core arcade já está jogável, o ranking global tem proteção distribuída contra abuso, a monetização via AdSense está preparada (mas pausada até aprovação) e o site tem páginas básicas de confiança para revisão.
 
 ## Estado atual
 
@@ -9,13 +9,17 @@ Este roadmap organiza as próximas melhorias do jogo a partir do estado atual: o
 - [x] Reset exibido no score e aumento de dificuldade por rodada.
 - [x] Obstáculos temáticos por fase, afetando jogador e tiros.
 - [x] Power-ups coletáveis por contato, incluindo escolhas finais.
-- [x] Ranking global com fallback local.
+- [x] Ranking global com fallback local, idempotência e ledger particionado contra duplicação.
+- [x] Proteção distribuída contra spam no ranking: throttle por IP (10s) e preflight antiabuso (60 req/min) via Redis.
+- [x] Modo debug interno (`F1`/`F2`/`F3`, restrito a `development`) para spawn de boss, concessão de power-up e teste de telas de vitória/derrota sem jogar uma run inteira.
+- [x] Suíte de testes automatizados (Vitest + Testing Library + Playwright) cobrindo ranking, sanitização, modo debug (boss, power-up, reset) e páginas legais em mobile.
+- [x] Build usa `next build --webpack` para evitar o panic do Turbopack visto localmente.
 - [x] Menu inicial, high scores, instruções, pausa e saída do jogo.
 - [x] UI em frame arcade com topo, arena e rodapé.
 - [x] Som, música chiptune, mute e volume.
-- [x] Espaço "Apoie o jogo" estruturado.
-- [x] Google AdSense integrado no `head` e `/ads.txt` autorizado.
-- [x] Páginas `/privacidade` e `/sobre` publicadas.
+- [x] Espaço "Apoie o jogo" estruturado (Pix e links ainda como placeholder "em breve").
+- [x] Google AdSense preparado (meta tag `google-adsense-account` e `/ads.txt` autorizado); script de anúncio no `head` pausado até a aprovação da conta.
+- [x] Páginas `/privacidade` e `/sobre` publicadas, com `min-height: 100dvh` validado em mobile.
 
 ## Prioridade 1: Aprovação e confiança
 
@@ -27,12 +31,11 @@ Este roadmap organiza as próximas melhorias do jogo a partir do estado atual: o
 
 ## Prioridade 2: Estabilidade e qualidade
 
-- [ ] Investigar o panic local do Turbopack no `npm run build`.
-- [ ] Definir versão final de Node para produção e alinhar README, `package.json` e Vercel.
-- [ ] Adicionar testes leves para regras críticas do jogo: spawn de boss, coleta de power-up, reset, ranking e obstáculos.
-- [ ] Criar um modo debug/teste para validar power-ups e finais sem precisar jogar uma run inteira.
-- [ ] Adicionar proteção simples contra spam no ranking.
+- [ ] Alinhar a versão de Node entre README (`22.13 ou superior`) e `package.json` (`engines.node: "24.x"`) — hoje estão divergentes.
+- [ ] Adicionar teste leve para obstáculos temáticos (boss, power-up, reset e ranking já têm cobertura; obstáculos ainda não têm nenhum teste).
 - [ ] Monitorar vulnerabilidades sem usar `npm audit fix --force` às cegas.
+- [ ] Migrar o mock direto de `fetch` em `game-debug.test.tsx` para MSW, seguindo o padrão já usado no restante da suíte.
+- [ ] Extrair a sincronização offline do componente monolítico `Home` (`app/page.tsx`) em módulos menores.
 
 ## Prioridade 3: Monetização sem atrapalhar o jogo
 
@@ -79,9 +82,7 @@ Este roadmap organiza as próximas melhorias do jogo a partir do estado atual: o
 
 ## Próxima entrega recomendada
 
-Criar um modo interno de debug/teste para power-ups, boss, reset e final da partida. Isso reduz o tempo de validação de cada mudança e evita regressões em mecânicas centrais.
-
-Depois disso, preparar screenshots e thumbnail para deixar o projeto mais apresentável enquanto o AdSense termina a revisão.
+Alinhar a versão de Node entre README e `package.json` (item rápido e concreto, hoje divergente) e preparar screenshots/thumbnail para deixar o projeto mais apresentável enquanto o AdSense termina a revisão.
 
 ## Aposta de monetização recomendada
 
