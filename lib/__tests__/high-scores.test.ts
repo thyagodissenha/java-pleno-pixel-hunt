@@ -502,6 +502,44 @@ describe("authoritative blob persistence", () => {
     expect(blobPut).toHaveBeenCalledTimes(1);
   });
 
+  it("treats a replay as a new submission once its ledger entry expires and the score has left the ranking (AD-004)", async () => {
+    const submissionId = "evicted-id";
+    const shard = ledgerShardIndex(submissionId);
+    const originalPersistedAt = "2026-08-27T12:00:00.000Z";
+    const now = Date.parse("2026-08-28T12:00:00.001Z");
+    const rankingScores = Array.from({ length: 10 }, (_, index) => score({ name: `TOP${index}`, score: 10_000 - index }));
+
+    blobGet.mockImplementation(async (pathname: string) => {
+      if (pathname === ledgerShardPath(shard)) {
+        return blobSnapshot({
+          version: 1,
+          shard,
+          legacyImported: true,
+          entries: [{ submissionId, persistedAt: originalPersistedAt, source: "cycle-3" }],
+        }, "etag-shard");
+      }
+      if (pathname === "java-pleno-pixel-hunt/high-scores.json") {
+        return blobSnapshot({ version: 2, scores: rankingScores, processedSubmissions: [] }, "etag-ranking");
+      }
+      throw new Error(`Unexpected Blob path: ${pathname}`);
+    });
+    blobPut.mockResolvedValue({ etag: "etag-next" });
+
+    const result = await persistHighScore(score({ name: "REPLAY", score: 20_000 }), submissionId, now);
+
+    expect(result.idempotent).toBe(false);
+    expect(blobPut).toHaveBeenCalledWith(
+      ledgerShardPath(shard),
+      expect.stringContaining(`"submissionId": "${submissionId}"`),
+      expect.objectContaining({ ifMatch: "etag-shard" }),
+    );
+    expect(blobPut).toHaveBeenCalledWith(
+      "java-pleno-pixel-hunt/high-scores.json",
+      expect.stringContaining(`"submissionId": "${submissionId}"`),
+      expect.objectContaining({ ifMatch: "etag-ranking" }),
+    );
+  });
+
   it("retries ranking conflicts with the ETag from the fresh ranking read", async () => {
     const entry = {
       submissionId: "ranking-id",
