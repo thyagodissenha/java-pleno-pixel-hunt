@@ -50,10 +50,12 @@
   },
   "type": "module",
   "allowScripts": {
+    "fsevents@2.3.2": true,
     "fsevents@2.3.3": true,
     "sharp@0.34.5": true,
     "unrs-resolver@1.12.2": true,
     "workerd@1.20260825.1": true,
-    "esbuild@0.28.1": true
+    "esbuild@0.28.1": true,
+    "msw@2.15.0": true
   }
 }
