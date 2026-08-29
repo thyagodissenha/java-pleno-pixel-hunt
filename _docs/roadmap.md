@@ -33,10 +33,10 @@ Este roadmap organiza as próximas melhorias do jogo a partir do estado atual: o
 ## Prioridade 2: Estabilidade e qualidade
 
 - [x] Alinhar a versão de Node entre README (`22.13 ou superior`) e `package.json` (`engines.node: "24.x"`) — hoje estão divergentes.
-- [ ] Adicionar teste leve para obstáculos temáticos (boss, power-up, reset e ranking já têm cobertura; obstáculos ainda não têm nenhum teste).
-- [ ] Monitorar vulnerabilidades sem usar `npm audit fix --force` às cegas.
-- [ ] Migrar o mock direto de `fetch` em `game-debug.test.tsx` para MSW, seguindo o padrão já usado no restante da suíte.
-- [ ] Extrair a sincronização offline do componente monolítico `Home` (`app/page.tsx`) em módulos menores.
+- [x] Adicionar teste leve para obstáculos temáticos (boss, power-up, reset e ranking já têm cobertura; obstáculos ainda não têm nenhum teste).
+- [x] Monitorar vulnerabilidades sem usar `npm audit fix --force` às cegas.
+- [x] Migrar o mock direto de `fetch` em `game-debug.test.tsx` para MSW, seguindo o padrão já usado no restante da suíte.
+- [x] Extrair a sincronização offline do componente monolítico `Home` (`app/page.tsx`) em módulos menores.
 
 ## Prioridade 3: Monetização sem atrapalhar o jogo
 

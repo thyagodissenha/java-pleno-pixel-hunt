@@ -153,6 +153,12 @@ function weaponLevelForWave(wave: number) {
   return 1;
 }
 
+function frameScreenLabel(panel: MenuPanel) {
+  if (panel === "scores") return "High Scores";
+  if (panel === "skins") return "Personagens e Skins";
+  return "Como jogar";
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
@@ -2071,13 +2077,7 @@ export default function Home() {
           </div>
         )}
         {menuScreen && menuPanel !== "home" && (
-          <div
-            className="frame-screen"
-            role="dialog"
-            aria-label={
-              menuPanel === "scores" ? "High Scores" : menuPanel === "skins" ? "Personagens e Skins" : "Como jogar"
-            }
-          >
+          <dialog open className="frame-screen" aria-label={frameScreenLabel(menuPanel)}>
             <div className="menu-panel frame-panel">
               <p className="menu-kicker">Java Pleno Pixel Hunt</p>
 
@@ -2137,7 +2137,7 @@ export default function Home() {
                 </>
               )}
             </div>
-          </div>
+          </dialog>
         )}
         {supportScreen && (
           <div className="frame-screen support-screen" role="dialog" aria-modal="true" aria-label="Apoie o jogo">

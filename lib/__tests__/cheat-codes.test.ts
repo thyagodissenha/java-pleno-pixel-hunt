@@ -33,7 +33,7 @@ describe("appendCheatBuffer", () => {
     for (const key of ["x", "x", "x", "i", "d", "d", "q", "d"]) buffer = appendCheatBuffer(buffer, key);
 
     expect(buffer).toBe("iddqd");
-    expect(buffer.length).toBe(5);
+    expect(buffer).toHaveLength(5);
   });
 });
 
