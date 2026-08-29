@@ -389,8 +389,12 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (gameState !== "menu" || menuPanel !== "home") cheatBufferRef.current = "";
+  }, [gameState, menuPanel]);
+
+  useEffect(() => {
     const handler = (event: KeyboardEvent) => {
-      if (stateRef.current !== "menu") return;
+      if (stateRef.current !== "menu" || menuPanelRef.current !== "home") return;
       cheatBufferRef.current = appendCheatBuffer(cheatBufferRef.current, event.key);
       if (matchCheatCode(cheatBufferRef.current)) {
         cheatBufferRef.current = "";

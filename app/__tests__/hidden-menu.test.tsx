@@ -94,4 +94,25 @@ describe("hidden skins menu", () => {
 
     expect(screen.queryByRole("dialog", { name: "Personagens e Skins" })).not.toBeInTheDocument();
   });
+
+  it("ignores the cheat code while viewing the High Scores submenu", () => {
+    render(<Home />);
+    fireEvent.click(screen.getByRole("menuitem", { name: "High Scores" }));
+
+    typeKeys("iddqd");
+
+    expect(screen.queryByRole("dialog", { name: "Personagens e Skins" })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "High Scores" })).toBeVisible();
+  });
+
+  it("discards a partial buffer accumulated before leaving the home panel", () => {
+    render(<Home />);
+    typeKeys("id");
+    fireEvent.click(screen.getByRole("menuitem", { name: "High Scores" }));
+    fireEvent.click(screen.getByRole("button", { name: "Voltar ao início" }));
+
+    typeKeys("dqd");
+
+    expect(screen.queryByRole("dialog", { name: "Personagens e Skins" })).not.toBeInTheDocument();
+  });
 });
