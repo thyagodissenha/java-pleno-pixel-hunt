@@ -586,4 +586,20 @@ Como o limite de três ciclos de fix→re-verify já foi atingido (ver "Pendênc
 | `npm run build` | PASS — Next.js 16.3.3, TypeScript e 5 páginas. |
 | `npm run lint` | PASS — 0 erros, 2 warnings históricos inalterados. |
 
-**Veredito**: QF-1 e QF-2 concluídos. Pendência residual fora de escopo: teste de `readRankingSnapshot` datado (não solicitado nesta rodada).
+**Veredito**: QF-1 e QF-2 concluídos.
+
+---
+
+## estabilidade-qualidade — 2026-08-29 — Quick Fix (QF-3) sobre `8c26ca0`
+
+**Resultado**: PASS
+**Modo**: `tlc-spec-driven` quick fix (mesmo parâmetro da rodada anterior)
+
+### QF-3 — Apodrecimento de teste em `readRankingSnapshot`
+
+- **Arquivo**: `lib/__tests__/high-scores.test.ts`
+- **Causa raiz**: o teste "returns snapshot ETags from the authoritative blob document" chamava `readRankingSnapshot()` sem `now` explícito; a normalização de `processedSubmissions` (TTL 24h) usava o relógio real contra uma fixture de `persistedAt` fixa (`2026-08-28T10:00:00.000Z`), quebrando assim que o relógio real passou de 24h da fixture (confirmado antes da correção via `git stash` — já falhava independentemente das mudanças de QF-1/QF-2).
+- **Correção**: passado `Date.parse("2026-08-28T10:00:00.001Z")` como `now` explícito (parâmetro já suportado por `readRankingSnapshot`), tornando o teste determinístico.
+- **Gate**: `npm run build && npm run lint && npm run test` — 123/123, 0 falhas, 0 erros de lint.
+
+**Veredito**: QF-1, QF-2 e QF-3 concluídos. Nenhuma pendência residual conhecida nesta feature.

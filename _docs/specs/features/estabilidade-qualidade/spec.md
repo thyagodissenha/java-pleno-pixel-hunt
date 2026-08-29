@@ -371,4 +371,10 @@ Achado da revisão adicional pós-ciclo-3 (ver `validation.md`): quando a entrad
 
 **Gate**: `npm run build && npm run lint && npm run test` — todos passaram (123 testes, 1 falha pré-existente e não relacionada — ver nota abaixo).
 
-**Nota fora de escopo**: durante o gate foi observado que `lib/__tests__/high-scores.test.ts` — "returns snapshot ETags from the authoritative blob document" — está com apodrecimento de teste: usa `Date.now()` real contra um `persistedAt` fixo (`2026-08-28T10:00:00.000Z`), e passou a falhar por conta da passagem do calendário (>24h reais desde a fixture), não por nenhuma mudança de código. Não corrigido aqui por estar fora do escopo pedido (QF-1/QF-2); registrado para tratamento futuro.
+### QF-3 — Apodrecimento de teste em `readRankingSnapshot`
+
+O teste "returns snapshot ETags from the authoritative blob document" (`lib/__tests__/high-scores.test.ts`) chamava `readRankingSnapshot()` sem `now` explícito, deixando a normalização de `processedSubmissions` (TTL de 24h) sujeita ao relógio real. Como o `persistedAt` da fixture era fixo (`2026-08-28T10:00:00.000Z`), o teste passou a falhar assim que o relógio real avançou mais de 24h além dessa data.
+
+**Correção**: `readRankingSnapshot` já aceita um parâmetro `now` opcional; o teste agora passa `Date.parse("2026-08-28T10:00:00.001Z")` explicitamente, tornando-o determinístico e independente do relógio real.
+
+**Gate**: `npm run build && npm run lint && npm run test` — todos passaram (123/123, 0 falhas).
