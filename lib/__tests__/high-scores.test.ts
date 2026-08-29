@@ -13,6 +13,7 @@ import {
   readLedgerEntry,
   readLedgerShard,
   readRankingSnapshot,
+  sanitizePublicScore,
   sanitizeScore,
   type HighScore,
 } from "@/lib/high-scores";
@@ -91,6 +92,41 @@ describe("sanitizeScore", () => {
     expect(result.score).toBe(0);
     expect(result.wave).toBe(1);
     expect(result.resets).toBe(0);
+  });
+});
+
+describe("sanitizePublicScore", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("preserves a valid stored createdAt instead of stamping the current time", () => {
+    const result = sanitizePublicScore({
+      name: "dissenha",
+      score: 152_790,
+      wave: 2,
+      resets: 4,
+      outcome: "over",
+      createdAt: "2026-08-20T09:15:00.000Z",
+    });
+
+    expect(result).toEqual({
+      name: "DISSENHA",
+      score: 152_790,
+      wave: 2,
+      resets: 4,
+      outcome: "over",
+      createdAt: "2026-08-20T09:15:00.000Z",
+    });
+  });
+
+  it("falls back to the current time when the stored createdAt is missing or invalid", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-27T12:00:00.000Z"));
+
+    expect(sanitizePublicScore({ name: "A", score: 1, wave: 1, createdAt: null }).createdAt).toBe("2026-08-27T12:00:00.000Z");
+    expect(sanitizePublicScore({ name: "B", score: 1, wave: 1, createdAt: "not-a-date" }).createdAt).toBe("2026-08-27T12:00:00.000Z");
+    expect(sanitizePublicScore(null).createdAt).toBe("2026-08-27T12:00:00.000Z");
   });
 });
 

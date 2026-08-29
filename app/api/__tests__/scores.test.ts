@@ -117,6 +117,22 @@ describe("/api/scores", () => {
     });
   });
 
+  it("preserves each score's own stored createdAt instead of collapsing them to the current request time", async () => {
+    scores.read.mockResolvedValue([
+      { name: "FIRST", score: 300, wave: 3, resets: 0, outcome: "over", createdAt: "2026-08-20T09:15:00.000Z" },
+      { name: "SECOND", score: 200, wave: 2, resets: 0, outcome: "over", createdAt: "2026-08-21T10:30:00.000Z" },
+    ]);
+    const { GET } = await loadRoute();
+
+    const response = await GET();
+    const payload = (await response.json()) as { scores: { createdAt: string }[] };
+
+    expect(payload.scores.map((entry) => entry.createdAt)).toEqual([
+      "2026-08-20T09:15:00.000Z",
+      "2026-08-21T10:30:00.000Z",
+    ]);
+  });
+
   it("orders a new score through preflight, shard intention, ranking, and owner completion", async () => {
     const { POST } = await loadRoute();
 
