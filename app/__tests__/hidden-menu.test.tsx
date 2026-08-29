@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -54,8 +54,13 @@ describe("hidden skins menu", () => {
 
     typeKeys("iddqd");
 
-    expect(screen.getByRole("dialog", { name: "Personagens e Skins" })).toBeVisible();
-    expect(screen.getByText("Sistema em construção. Em breve você poderá escolher personagens e skins alternativos.")).toBeVisible();
+    const dialog = screen.getByRole("dialog", { name: "Personagens e Skins" });
+    expect(dialog).toBeVisible();
+    expect(within(dialog).getByRole("heading", { name: "Dev Pleno" })).toBeVisible();
+    expect(within(dialog).getByText("100")).toBeVisible();
+    expect(within(dialog).getByText("210")).toBeVisible();
+    expect(within(dialog).getByText("24")).toBeVisible();
+    expect(within(dialog).getByText("Refactor Dash", { exact: false })).toBeVisible();
   });
 
   it("opens the placeholder skins panel when idkfa is typed at the menu", () => {

@@ -26,9 +26,11 @@ import {
   waitForNextScorePost,
 } from "@/lib/score-sync";
 import { appendCheatBuffer, matchCheatCode } from "@/lib/cheat-codes";
+import { DEFAULT_CHARACTER_ID, resolveCharacter, resolveDashDirection } from "@/lib/characters";
 
 const adsenseClientId = getPublicAdsenseClientId();
 const adsenseBannerSlotId = getAdsenseBannerSlotId();
+const activeCharacter = resolveCharacter(DEFAULT_CHARACTER_ID);
 
 type Actor = {
   x: number;
@@ -254,6 +256,8 @@ export default function Home() {
   const [bossProgress, setBossProgress] = useState("0/14 mobs");
   const [debugBossHealth, setDebugBossHealth] = useState<{ hp: number; maxHp: number } | null>(null);
   const [debugPowerUpCount, setDebugPowerUpCount] = useState(0);
+  const [debugAbilityCooldown, setDebugAbilityCooldown] = useState(0);
+  const [debugPlayerPosition, setDebugPlayerPosition] = useState({ x: 0, y: 0 });
   const [burstStaminaPct, setBurstStaminaPct] = useState(BURST_STAMINA_MAX);
   const [promotionCountdown, setPromotionCountdown] = useState(3);
   const [debugOpen, setDebugOpen] = useState(false);
@@ -640,14 +644,17 @@ export default function Home() {
     let bossBanner = 0;
     let effectMessage = "";
     let effectBanner = 0;
+    let abilityCooldownRemaining = 0;
+    let lastMoveX = 0;
+    let lastMoveY = 0;
 
     const player = {
       x: WORLD.width / 2,
       y: WORLD.height / 2,
-      hp: 100,
-      maxHp: 100,
-      size: 24,
-      speed: 210,
+      hp: activeCharacter.maxHp,
+      maxHp: activeCharacter.maxHp,
+      size: activeCharacter.size,
+      speed: activeCharacter.speed,
       invincible: 0,
       fury: 0,
       focus: 0,
@@ -676,6 +683,10 @@ export default function Home() {
           ? "Chefe em combate"
           : `${Math.min(bossKills, bossKillTarget(localWave, callLoops))}/${bossKillTarget(localWave, callLoops)} mobs`,
       );
+      if (isDebugAllowed()) {
+        setDebugAbilityCooldown(Math.max(0, abilityCooldownRemaining));
+        setDebugPlayerPosition({ x: Math.round(player.x), y: Math.round(player.y) });
+      }
     }
 
     function countBossProgress() {
@@ -779,6 +790,9 @@ export default function Home() {
       bossBanner = 0;
       effectMessage = "";
       effectBanner = 0;
+      abilityCooldownRemaining = 0;
+      lastMoveX = 0;
+      lastMoveY = 0;
       player.x = WORLD.width / 2;
       player.y = WORLD.height / 2;
       player.hp = player.maxHp;
@@ -1036,6 +1050,19 @@ export default function Home() {
       }
     };
 
+    function triggerActivePower() {
+      if (stateRef.current !== "playing") return;
+      const power = activeCharacter.specialPower;
+      if (!power) return;
+      if (abilityCooldownRemaining > 0) return;
+
+      const direction = resolveDashDirection({ x: lastMoveX, y: lastMoveY }, player, enemies);
+      player.x = clamp(player.x + direction.x * power.dashDistance, 28, WORLD.width - 28);
+      player.y = clamp(player.y + direction.y * power.dashDistance, 36, WORLD.height - 28);
+      abilityCooldownRemaining = power.cooldownSeconds;
+      syncHud();
+    }
+
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isTyping =
@@ -1044,6 +1071,10 @@ export default function Home() {
         target?.isContentEditable;
 
       if (isTyping) return;
+
+      if (event.key.toLowerCase() === "q" && !event.repeat) {
+        triggerActivePower();
+      }
 
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "w", "a", "s", "d", "W", "A", "S", "D", "Enter", "Escape"].includes(event.key)) {
         event.preventDefault();
@@ -1153,6 +1184,7 @@ export default function Home() {
       player.fury = Math.max(0, player.fury - delta);
       player.focus = Math.max(0, player.focus - delta);
       player.haste = Math.max(0, player.haste - delta);
+      abilityCooldownRemaining = Math.max(0, abilityCooldownRemaining - delta);
       damageFlash = Math.max(0, damageFlash - delta * 60);
       shake = Math.max(0, shake - delta * 60);
       bossBanner = Math.max(0, bossBanner - delta * 60);
@@ -1180,6 +1212,8 @@ export default function Home() {
         }
       }
       const move = normalize(moveX, moveY);
+      lastMoveX = move.x;
+      lastMoveY = move.y;
       if (moveX || moveY) {
         const currentSpeed = player.speed * (player.haste > 0 ? 1.34 : 1);
         const nextX = clamp(player.x + move.x * currentSpeed * delta, 28, WORLD.width - 28);
@@ -1911,6 +1945,16 @@ export default function Home() {
             {debugPowerUpCount} power-up disponível
           </output>
         )}
+        {isDebugAllowed() && (
+          <output aria-label="Cooldown do poder especial debug">
+            {debugAbilityCooldown.toFixed(1)}s
+          </output>
+        )}
+        {isDebugAllowed() && (
+          <output aria-label="Posição do jogador debug">
+            {debugPlayerPosition.x}, {debugPlayerPosition.y}
+          </output>
+        )}
         <div className="hud-card jdk-card">
           <strong>{upgrade}</strong>
           <span className="mini-bars" aria-hidden="true">
@@ -2111,7 +2155,23 @@ export default function Home() {
               {menuPanel === "skins" && (
                 <>
                   <h2>Personagens & Skins</h2>
-                  <p>Sistema em construção. Em breve você poderá escolher personagens e skins alternativos.</p>
+                  <h3>{activeCharacter.name}</h3>
+                  <ul className="help-list">
+                    <li><strong>Vida</strong><span>{activeCharacter.maxHp}</span></li>
+                    <li><strong>Velocidade</strong><span>{activeCharacter.speed}</span></li>
+                    <li><strong>Tamanho</strong><span>{activeCharacter.size}</span></li>
+                  </ul>
+                  {activeCharacter.specialPower ? (
+                    <p>
+                      <strong>{activeCharacter.specialPower.name}</strong>
+                      {": "}
+                      {activeCharacter.specialPower.description}
+                      {" "}
+                      (cooldown: {activeCharacter.specialPower.cooldownSeconds}s)
+                    </p>
+                  ) : (
+                    <p>Sem poder especial.</p>
+                  )}
                   <div className="menu-actions two">
                     <button type="button" onClick={startNewGame}>Jogar</button>
                     <button type="button" onClick={() => setMenuPanel("home")}>Voltar ao início</button>
