@@ -346,3 +346,29 @@ Esta emenda preserva integralmente os requisitos, ACs e evidências dos ciclos a
 **Open questions:** none — limite, ordem, tratamento de duplicatas, política Redis, número/seleção de shards, retenção e CAS foram aprovados pelo usuário em 2026-08-28.
 
 **Cobertura após a emenda do ciclo 3:** 20 requisitos totais e 75 ACs totais; `ESTAB-19` possui 7 ACs e `ESTAB-20` possui 8 ACs. `ESTAB-01` a `ESTAB-18` preservam integralmente requisitos, ACs e evidências históricas.
+
+---
+
+## Quick Fix — 2026-08-29 — Fechamento de gaps de validação pós-ciclo-3
+
+Duas correções pontuais sobre código já commitado no ciclo 3, sem alterar comportamento de produção nem abrir novo ciclo formal.
+
+### QF-1 — `ESTAB-19` AC4: sensor discriminante do preflight
+
+O teste de `lib/score-abuse-preflight.ts` reimplementava a regra de cota (`count < 60`) em JavaScript dentro do próprio mock do `eval`, em vez de derivar a decisão do texto real do script Lua. Isso permitia que uma mutação `count < tonumber(ARGV[2])` → `count <= tonumber(ARGV[2])` sobrevivesse (a 61ª requisição seria indevidamente aceita em produção sem que nenhum teste percebesse).
+
+**Correção**: `lib/__tests__/score-abuse-preflight.test.ts` agora extrai o operador de comparação do texto do script recebido pelo `eval` e o utiliza para decidir o resultado, junto com um fake in-memory de GET/SET/PTTL/INCR fiel à semântica Redis. Reconfirmado localmente: mutar o operador para `<=` faz o teste falhar (mata o mutante); o script original passa.
+
+**AC afetado**: `ESTAB-19` AC4 — passa de gap discriminante para coberto.
+
+### QF-2 — `AD-004`: janela de dedupe assimétrica (ledger 24h vs ranking top 10)
+
+Achado da revisão adicional pós-ciclo-3 (ver `validation.md`): quando a entrada do ledger expira (24h) e o score correspondente já saiu do top 10 do ranking, um replay do mesmo `submissionId` é tratado como submissão nova — não há duplicata visível enquanto o score permanecer no ranking (o próprio `ensureRankingEffect` dedupra contra `document.scores`), mas não existe proteção indefinida para scores já evictados.
+
+**Decisão**: comportamento aceito por design, não é bug. A garantia de dedupe de `ESTAB-17`/`ESTAB-20` é escopada explicitamente a "enquanto o score permanecer no ranking autoritativo" (ver decisão de `ESTAB-17` na tabela de premissas); passada essa janela e as 24h do ledger, uma nova submissão do mesmo `submissionId` compete normalmente por uma vaga, como qualquer envio novo.
+
+**Correção**: adicionado teste de regressão (`lib/__tests__/high-scores.test.ts`, "treats a replay as a new submission once its ledger entry expires and the score has left the ranking (AD-004)") que fixa esse comportamento deliberadamente, fechando a lacuna de cobertura identificada no sweep de regressão.
+
+**Gate**: `npm run build && npm run lint && npm run test` — todos passaram (123 testes, 1 falha pré-existente e não relacionada — ver nota abaixo).
+
+**Nota fora de escopo**: durante o gate foi observado que `lib/__tests__/high-scores.test.ts` — "returns snapshot ETags from the authoritative blob document" — está com apodrecimento de teste: usa `Date.now()` real contra um `persistedAt` fixo (`2026-08-28T10:00:00.000Z`), e passou a falhar por conta da passagem do calendário (>24h reais desde a fixture), não por nenhuma mudança de código. Não corrigido aqui por estar fora do escopo pedido (QF-1/QF-2); registrado para tratamento futuro.
