@@ -9,6 +9,86 @@ const credentials = {
   UPSTASH_REDIS_REST_URL: "https://example.upstash.io",
 };
 
+/**
+ * Real Redis is not available in unit tests, so the Lua script's own text is
+ * interpreted (not re-implemented) to decide pass/fail. Extracting the actual
+ * comparison operator from the script string means a mutation to that
+ * operator (e.g. `count < limit` -> `count <= limit`) changes this
+ * evaluator's decision too, so the test that asserts a fixed 60-request
+ * boundary can fail against it — closing the gap where a hand-rolled JS
+ * re-implementation of the quota rule could never disagree with the script.
+ */
+class FakeRedisKeyStore {
+  private readonly data = new Map<string, { value: string; expiresAt: number }>();
+
+  constructor(private readonly now: () => number) {}
+
+  get(key: string): string | null {
+    const entry = this.data.get(key);
+    if (!entry || this.now() >= entry.expiresAt) return null;
+    return entry.value;
+  }
+
+  set(key: string, value: string, pxMs: number) {
+    this.data.set(key, { value, expiresAt: this.now() + pxMs });
+  }
+
+  pttl(key: string): number {
+    const entry = this.data.get(key);
+    if (!entry) return -2;
+    const remaining = entry.expiresAt - this.now();
+    return remaining > 0 ? remaining : -2;
+  }
+
+  incr(key: string) {
+    const entry = this.data.get(key);
+    if (!entry) throw new Error("INCR on missing key");
+    entry.value = String(Number(entry.value) + 1);
+  }
+
+  expiresAt(key: string): number | undefined {
+    return this.data.get(key)?.expiresAt;
+  }
+}
+
+function compareForOperator(operator: string) {
+  const comparators: Record<string, (count: number, limit: number) => boolean> = {
+    "<": (count, limit) => count < limit,
+    "<=": (count, limit) => count <= limit,
+    ">": (count, limit) => count > limit,
+    ">=": (count, limit) => count >= limit,
+    "==": (count, limit) => count === limit,
+  };
+  const comparator = comparators[operator];
+  if (!comparator) throw new Error(`Unsupported score abuse preflight operator: ${operator}`);
+  return comparator;
+}
+
+function runConsumeScript(script: string, store: FakeRedisKeyStore, keys: string[], args: string[]) {
+  const operatorMatch = script.match(/if\s+count\s*(<=|>=|==|<|>)\s*tonumber\(ARGV\[2\]\)\s*then/);
+  if (!operatorMatch) throw new Error("Unrecognized score abuse preflight script");
+  const compare = compareForOperator(operatorMatch[1]);
+
+  const key = keys[0];
+  const ttlMs = Number(args[0]);
+  const limit = Number(args[1]);
+  const current = store.get(key);
+  if (current === null) {
+    store.set(key, "1", ttlMs);
+    return [1, ttlMs];
+  }
+
+  const ttl = store.pttl(key);
+  const count = Number(current);
+  if (!Number.isFinite(count) || ttl <= 0) throw new Error("invalid score abuse preflight state");
+
+  if (compare(count, limit)) {
+    store.incr(key);
+    return [1, ttl];
+  }
+  return [0, ttl];
+}
+
 describe("score abuse preflight store", () => {
   it("enforces the local 60 request fixed window and opens a new one at expiration", async () => {
     let now = 1_000;
@@ -49,26 +129,17 @@ describe("score abuse preflight store", () => {
 
   it("uses one Redis Lua operation per request without renewing the blocked window", async () => {
     let now = 5_000;
-    let count = 0;
-    let expiresAt = 0;
+    const keyStore = new FakeRedisKeyStore(() => now);
+    let lastKey = "";
     const evalMock = vi.fn(async (script: string, keys: string[], args: string[]) => {
       expect(script).toContain('redis.call("PTTL", KEYS[1])');
       expect(script).toContain('redis.call("INCR", KEYS[1])');
       expect(keys[0]).toMatch(/^score:abuse:[a-f0-9]{64}$/);
       expect(keys[0]).not.toContain("203.0.113.20");
       expect(args).toEqual(["60000", "60"]);
+      lastKey = keys[0];
 
-      if (now >= expiresAt) {
-        count = 1;
-        expiresAt = now + 60_000;
-        return [1, 60_000];
-      }
-      const ttl = expiresAt - now;
-      if (count < 60) {
-        count += 1;
-        return [1, ttl];
-      }
-      return [0, ttl];
+      return runConsumeScript(script, keyStore, keys, args);
     });
     const store = createAbusePreflightStore({
       environment: "production",
@@ -91,7 +162,7 @@ describe("score abuse preflight store", () => {
       retryAfterMs: 47_655,
       backend: "redis",
     });
-    expect(expiresAt).toBe(65_000);
+    expect(keyStore.expiresAt(lastKey)).toBe(65_000);
     expect(evalMock).toHaveBeenCalledTimes(62);
   });
 
