@@ -1,4 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { BlobPreconditionFailedError, get, put } from "@vercel/blob";
 
@@ -33,7 +34,27 @@ export interface RankingSnapshot {
   etag: string | null;
 }
 
+export interface LedgerEntryV1 {
+  submissionId: string;
+  persistedAt: string;
+  score?: StoredHighScore;
+  source: "cycle-3" | "legacy-v2";
+}
+
+export interface LedgerShardV1 {
+  version: 1;
+  shard: number;
+  legacyImported: boolean;
+  entries: LedgerEntryV1[];
+}
+
+export interface LedgerShardSnapshot {
+  document: LedgerShardV1;
+  etag: string | null;
+}
+
 const SCORE_PATH = "java-pleno-pixel-hunt/high-scores.json";
+const LEDGER_PATH_PREFIX = "java-pleno-pixel-hunt/score-ledger";
 const LOCAL_SCORE_FILE = path.join(process.cwd(), "data", "high-scores.json");
 const PROCESSED_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1_000;
 const MAX_BLOB_WRITE_ATTEMPTS = 3;
@@ -76,6 +97,16 @@ function validSubmissionId(value: unknown) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+export function ledgerShardIndex(submissionId: string) {
+  const digest = createHash("sha256").update(submissionId.trim(), "utf8").digest();
+  return digest[0] >>> 2;
+}
+
+export function ledgerShardPath(shard: number) {
+  if (!Number.isInteger(shard) || shard < 0 || shard > 63) throw new RangeError("Invalid ledger shard");
+  return `${LEDGER_PATH_PREFIX}/${String(shard).padStart(2, "0")}.json`;
+}
+
 function sanitizeStoredScore(input: unknown): StoredHighScore {
   const sanitized = sanitizeScore(input);
 
@@ -114,6 +145,37 @@ function normalizeProcessedSubmissions(input: unknown, now: number): ProcessedSu
   });
 }
 
+function activeLedgerEntry(persistedAt: string, now: number) {
+  return now < Date.parse(persistedAt) + PROCESSED_SUBMISSION_TTL_MS;
+}
+
+export function decodeLedgerShard(input: unknown, shard: number, now = Date.now()): LedgerShardV1 {
+  const empty: LedgerShardV1 = { version: 1, shard, legacyImported: false, entries: [] };
+  if (!isRecord(input) || input.version !== 1 || input.shard !== shard) return empty;
+
+  const entries = Array.isArray(input.entries) ? input.entries.flatMap((entry): LedgerEntryV1[] => {
+    if (!isRecord(entry) || !validSubmissionId(entry.submissionId) || !validDateString(entry.persistedAt)) return [];
+    if (entry.source !== "cycle-3" && entry.source !== "legacy-v2") return [];
+
+    const submissionId = String(entry.submissionId).trim();
+    const persistedAt = String(entry.persistedAt);
+    if (ledgerShardIndex(submissionId) !== shard || !activeLedgerEntry(persistedAt, now)) return [];
+
+    const decoded: LedgerEntryV1 = { submissionId, persistedAt, source: entry.source };
+    if (isRecord(entry.score)) {
+      decoded.score = { ...sanitizeStoredScore(entry.score), submissionId };
+    }
+    return [decoded];
+  }) : [];
+
+  return {
+    version: 1,
+    shard,
+    legacyImported: input.legacyImported === true,
+    entries,
+  };
+}
+
 export function decodeRankingDocument(input: unknown, now = Date.now()): RankingDocumentV2 {
   if (Array.isArray(input)) {
     return {
@@ -149,15 +211,55 @@ export function hasProcessedSubmission(document: RankingDocumentV2, submissionId
   return document.processedSubmissions.some((entry) => entry.submissionId === submissionId);
 }
 
-export async function readRankingSnapshot(): Promise<RankingSnapshot> {
+export async function readRankingSnapshot(now = Date.now()): Promise<RankingSnapshot> {
   const blob = await get(SCORE_PATH, { access: "private", useCache: false });
-  if (!blob) return { document: decodeRankingDocument(null), etag: null };
+  if (!blob) return { document: decodeRankingDocument(null, now), etag: null };
 
   const content = blob.stream ? await new Response(blob.stream).text() : "null";
   return {
-    document: decodeRankingDocument(JSON.parse(content)),
+    document: decodeRankingDocument(JSON.parse(content), now),
     etag: blob.blob.etag || null,
   };
+}
+
+function importLegacyEntries(document: LedgerShardV1, ranking: RankingDocumentV2): LedgerShardV1 {
+  const existingIds = new Set(document.entries.map((entry) => entry.submissionId));
+  const scoresById = new Map(
+    ranking.scores
+      .filter((entry) => validSubmissionId(entry.submissionId))
+      .map((entry) => [String(entry.submissionId).trim(), entry]),
+  );
+  const imported = ranking.processedSubmissions.flatMap((entry): LedgerEntryV1[] => {
+    const submissionId = entry.submissionId.trim();
+    if (existingIds.has(submissionId) || ledgerShardIndex(submissionId) !== document.shard) return [];
+    const score = scoresById.get(submissionId);
+    return [{
+      submissionId,
+      persistedAt: entry.persistedAt,
+      ...(score ? { score: { ...score, submissionId } } : {}),
+      source: "legacy-v2",
+    }];
+  });
+
+  return { ...document, legacyImported: true, entries: [...document.entries, ...imported] };
+}
+
+export async function readLedgerShard(shard: number, now = Date.now()): Promise<LedgerShardSnapshot> {
+  const blob = await get(ledgerShardPath(shard), { access: "private", useCache: false });
+  const content = blob?.stream ? await new Response(blob.stream).text() : "null";
+  let document = decodeLedgerShard(JSON.parse(content), shard, now);
+
+  if (!document.legacyImported) {
+    document = importLegacyEntries(document, (await readRankingSnapshot(now)).document);
+  }
+
+  return { document, etag: blob?.blob.etag || null };
+}
+
+export async function readLedgerEntry(submissionId: string, now = Date.now()) {
+  const normalizedId = submissionId.trim();
+  const snapshot = await readLedgerShard(ledgerShardIndex(normalizedId), now);
+  return snapshot.document.entries.find((entry) => entry.submissionId === normalizedId);
 }
 
 function nextDocument(

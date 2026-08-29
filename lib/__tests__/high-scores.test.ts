@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cleanScores,
+  decodeLedgerShard,
   decodeRankingDocument,
+  ledgerShardIndex,
+  ledgerShardPath,
   persistHighScore,
   publicHighScores,
   readHighScores,
+  readLedgerEntry,
+  readLedgerShard,
   readRankingSnapshot,
   sanitizeScore,
   type HighScore,
@@ -223,6 +228,128 @@ describe("ranking document codec", () => {
     expect(scores).toEqual([score({ name: "BLOB", score: 300 })]);
     expect(scores[0]).not.toHaveProperty("submissionId");
     expect(JSON.stringify(scores)).not.toContain("blob-submission");
+  });
+});
+
+describe("partitioned authoritative ledger", () => {
+  afterEach(() => {
+    blobGet.mockReset();
+    blobPut.mockReset();
+  });
+
+  it("selects all 64 shards from fixed SHA-256 UTF-8 vectors after trimming only", () => {
+    expect(ledgerShardIndex("submission-1")).toBe(39);
+    expect(ledgerShardIndex("  submission-1  ")).toBe(39);
+    expect(ledgerShardIndex("áé漢字")).toBe(8);
+    expect(ledgerShardIndex("CASE")).toBe(52);
+    expect(ledgerShardIndex("case")).toBe(46);
+    expect(ledgerShardIndex("vector-49")).toBe(0);
+    expect(ledgerShardIndex("vector-68")).toBe(63);
+  });
+
+  it("uses stable two-digit decimal paths for the shard bounds", () => {
+    expect(ledgerShardPath(0)).toBe("java-pleno-pixel-hunt/score-ledger/00.json");
+    expect(ledgerShardPath(63)).toBe("java-pleno-pixel-hunt/score-ledger/63.json");
+  });
+
+  it("decodes the shard model without inventing a legacy score", () => {
+    const document = decodeLedgerShard({
+      version: 1,
+      shard: 39,
+      legacyImported: true,
+      entries: [
+        {
+          submissionId: "submission-1",
+          persistedAt: "2026-08-28T10:00:00.000Z",
+          source: "legacy-v2",
+        },
+      ],
+    }, 39, Date.parse("2026-08-28T12:00:00.000Z"));
+
+    expect(document).toEqual({
+      version: 1,
+      shard: 39,
+      legacyImported: true,
+      entries: [
+        {
+          submissionId: "submission-1",
+          persistedAt: "2026-08-28T10:00:00.000Z",
+          source: "legacy-v2",
+        },
+      ],
+    });
+    expect(document.entries[0]).not.toHaveProperty("score");
+  });
+
+  it("looks up an id in exactly its selected shard without scanning others", async () => {
+    blobGet.mockResolvedValue(blobSnapshot({
+      version: 1,
+      shard: 39,
+      legacyImported: true,
+      entries: [{
+        submissionId: "submission-1",
+        persistedAt: "2026-08-28T10:00:00.000Z",
+        score: { ...score({ name: "SHARDED" }), submissionId: "submission-1" },
+        source: "cycle-3",
+      }],
+    }, "etag-shard"));
+
+    await expect(readLedgerEntry("submission-1", Date.parse("2026-08-28T12:00:00.000Z"))).resolves.toMatchObject({
+      submissionId: "submission-1",
+      source: "cycle-3",
+      score: { name: "SHARDED", submissionId: "submission-1" },
+    });
+    expect(blobGet).toHaveBeenCalledTimes(1);
+    expect(blobGet).toHaveBeenCalledWith("java-pleno-pixel-hunt/score-ledger/39.json", {
+      access: "private",
+      useCache: false,
+    });
+  });
+
+  it("imports only active legacy v2 ids that belong to the opened shard", async () => {
+    blobGet.mockImplementation(async (pathname: string) => {
+      if (pathname.endsWith("score-ledger/39.json")) return null;
+      if (pathname.endsWith("high-scores.json")) {
+        return blobSnapshot({
+          version: 2,
+          scores: [
+            { ...score({ name: "IMPORTED" }), submissionId: "submission-1" },
+            { ...score({ name: "OTHER" }), submissionId: "case" },
+          ],
+          processedSubmissions: [
+            { submissionId: "submission-1", persistedAt: "2026-08-28T10:00:00.000Z" },
+            { submissionId: "case", persistedAt: "2026-08-28T10:00:00.000Z" },
+            { submissionId: "shard39-6", persistedAt: "2026-08-28T11:00:00.000Z" },
+            { submissionId: "shard39-16", persistedAt: "2026-08-27T11:59:59.000Z" },
+          ],
+        }, "etag-ranking");
+      }
+      throw new Error(`Unexpected Blob path: ${pathname}`);
+    });
+
+    const snapshot = await readLedgerShard(39, Date.parse("2026-08-28T12:00:00.000Z"));
+
+    expect(snapshot.etag).toBeNull();
+    expect(snapshot.document.legacyImported).toBe(true);
+    expect(snapshot.document.entries).toEqual([
+      {
+        submissionId: "submission-1",
+        persistedAt: "2026-08-28T10:00:00.000Z",
+        score: { ...score({ name: "IMPORTED" }), submissionId: "submission-1" },
+        source: "legacy-v2",
+      },
+      {
+        submissionId: "shard39-6",
+        persistedAt: "2026-08-28T11:00:00.000Z",
+        source: "legacy-v2",
+      },
+    ]);
+    expect(snapshot.document.entries[1]).not.toHaveProperty("score");
+    expect(blobGet.mock.calls.map(([pathname]) => pathname)).toEqual([
+      "java-pleno-pixel-hunt/score-ledger/39.json",
+      "java-pleno-pixel-hunt/high-scores.json",
+    ]);
+    expect(JSON.stringify(publicHighScores((await readRankingSnapshot()).document))).not.toContain("submission-1");
   });
 });
 
