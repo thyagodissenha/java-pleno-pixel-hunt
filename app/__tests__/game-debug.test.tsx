@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -34,11 +34,23 @@ function advanceFrames(amount: number) {
   });
 }
 
+// The HUD now shows two "stamina-meter"-style gauges side by side (Rajada + the special
+// power's cooldown, added by the "reorganizacao-hud-e-poder" feature) — both can render the
+// same percentage text, so burst stamina must be looked up within the Rajada meter specifically
+// rather than by its percentage text alone.
+function burstStaminaText() {
+  const utilityCard = document.querySelector(".utility-card");
+  if (!utilityCard) throw new Error("Expected the utility-card HUD slot to exist");
+  const meter = within(utilityCard as HTMLElement).getByText("Rajada").closest(".stamina-meter");
+  if (!meter) throw new Error("Expected the Rajada label to live inside a stamina-meter");
+  return meter.querySelector("small");
+}
+
 function snapshotGameState() {
   return {
     heading: screen.getByRole("heading", { level: 1 }).textContent,
     bossProgress: screen.getByText("0/14 mobs").textContent,
-    stamina: screen.getByText("100%").textContent,
+    stamina: burstStaminaText()?.textContent ?? null,
     bossHealth: screen.queryByRole("status", { name: "Vida do boss debug" })?.textContent ?? null,
     powerUps: screen.queryByRole("status", { name: "Power-ups debug" })?.textContent ?? null,
     postAttempts,
@@ -158,12 +170,12 @@ describe("game debug tools", () => {
     fireEvent.keyDown(window, { key: " " });
     advanceFrames(18);
     fireEvent.keyUp(window, { key: " " });
-    expect(screen.getByText(/^\d+%$/)).not.toHaveTextContent("100%");
+    expect(burstStaminaText()).not.toHaveTextContent("100%");
 
     fireEvent.keyDown(window, { key: "F1" });
     fireEvent.click(screen.getByRole("button", { name: "Max Estamina" }));
 
-    expect(screen.getByText("100%")).toBeVisible();
+    expect(burstStaminaText()).toHaveTextContent("100%");
   });
 
   it("opens the high-score entry screen after a debug victory", () => {

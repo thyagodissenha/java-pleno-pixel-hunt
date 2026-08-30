@@ -204,61 +204,6 @@ canvas {
     #1f2937;
 }
 
-.sponsor-card {
-  border-color: #facc15;
-}
-
-.sponsor-card button {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  color: #facc15;
-  cursor: pointer;
-  font: inherit;
-  font-size: clamp(14px, 1.3vw, 20px);
-  font-weight: 900;
-  line-height: 1.05;
-  padding: 0;
-  text-align: left;
-  text-transform: uppercase;
-}
-
-.sponsor-card button:hover,
-.sponsor-card button:focus-visible {
-  color: #7dd3fc;
-  outline: none;
-  text-shadow: 2px 2px 0 #7f1d1d;
-}
-
-.sponsor-card small {
-  color: #94a3b8;
-  font-size: 10px;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
-.sponsor-links {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 7px;
-}
-
-.sponsor-links a {
-  color: #7dd3fc;
-  font-size: 10px;
-  line-height: 1;
-  text-decoration: none;
-  text-transform: uppercase;
-}
-
-.sponsor-links a:hover,
-.sponsor-links a:focus-visible {
-  color: #fef3c7;
-  outline: none;
-  text-decoration: underline;
-}
-
 .mini-bars {
   display: grid;
   grid-template-columns: repeat(10, minmax(0, 1fr));
@@ -308,6 +253,11 @@ canvas {
     linear-gradient(90deg, #22c55e var(--stamina), #1f2937 var(--stamina)),
     #1f2937;
   box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.34);
+}
+
+.hud-card.sound-card {
+  align-content: center;
+  padding: 8px;
 }
 
 .sound-controls {
@@ -502,6 +452,28 @@ canvas {
   color: #f8fafc;
   font-size: 12px;
   line-height: 1.35;
+}
+
+.sponsor-links {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.sponsor-links a {
+  color: #7dd3fc;
+  font-size: 10px;
+  line-height: 1;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.sponsor-links a:hover,
+.sponsor-links a:focus-visible {
+  color: #fef3c7;
+  outline: none;
+  text-decoration: underline;
 }
 
 .score-overlay {
@@ -1476,10 +1448,6 @@ canvas {
     grid-column: 1 / -1;
   }
 
-  .sponsor-card {
-    display: none;
-  }
-
   .topbar h1 {
     font-size: clamp(20px, 8vw, 28px);
   }
@@ -1647,10 +1615,6 @@ canvas {
 
   .topbar {
     grid-template-columns: minmax(170px, 1.2fr) repeat(4, minmax(92px, 0.7fr)) minmax(190px, 1.1fr);
-  }
-
-  .sponsor-card {
-    display: none;
   }
 
   .brand-panel,

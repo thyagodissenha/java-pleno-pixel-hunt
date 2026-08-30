@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { type CSSProperties, type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import {
   createDebugKeyHandler,
   DEBUG_ACTION_EVENT,
@@ -287,6 +287,7 @@ export default function Home() {
   const [debugPlayerPosition, setDebugPlayerPosition] = useState({ x: 0, y: 0 });
   const [debugPlayerEffects, setDebugPlayerEffects] = useState({ haste: 0, invincible: 0 });
   const [burstStaminaPct, setBurstStaminaPct] = useState(BURST_STAMINA_MAX);
+  const [abilityCooldownPct, setAbilityCooldownPct] = useState(100);
   const [promotionCountdown, setPromotionCountdown] = useState(3);
   const [debugOpen, setDebugOpen] = useState(false);
 
@@ -588,9 +589,8 @@ export default function Home() {
     else if (index === 1) {
       setMenuPanel("scores");
       refreshHighScores();
-    } else {
-      setMenuPanel("help");
-    }
+    } else if (index === 2) setMenuPanel("help");
+    else if (index === 3) openSupportPanel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -719,6 +719,16 @@ export default function Home() {
       setBiome(biomeNames[Math.min(bossIndex, biomeNames.length - 1)] ?? "War Room");
       setUpgrade(weaponLevel >= 3 ? "JDK 21" : weaponLevel === 2 ? "JDK 17" : "JDK 8");
       setBurstStaminaPct(Math.round(burstStamina));
+      const power = activeCharacter.specialPower;
+      setAbilityCooldownPct(
+        power
+          ? Math.round(
+              ((power.cooldownSeconds - Math.min(abilityCooldownRemaining, power.cooldownSeconds)) /
+                power.cooldownSeconds) *
+                100,
+            )
+          : 100,
+      );
       setBossProgress(
         finalChoicePending
           ? "Escolha final"
@@ -1122,6 +1132,7 @@ export default function Home() {
         player.invincible = Math.max(player.invincible, power.durationSeconds);
       }
       abilityCooldownRemaining = power.cooldownSeconds;
+      announceEffect(`${power.name.toUpperCase()}: ativado`);
       syncHud();
     }
 
@@ -1143,11 +1154,11 @@ export default function Home() {
       }
       if (stateRef.current === "menu" && menuPanelRef.current === "home") {
         if (event.key === "ArrowUp" || event.key === "w" || event.key === "W") {
-          menuIndexRef.current = (menuIndexRef.current + 2) % 3;
+          menuIndexRef.current = (menuIndexRef.current + 3) % 4;
           setMenuIndex(menuIndexRef.current);
           playSound("hit");
         } else if (event.key === "ArrowDown" || event.key === "s" || event.key === "S") {
-          menuIndexRef.current = (menuIndexRef.current + 1) % 3;
+          menuIndexRef.current = (menuIndexRef.current + 1) % 4;
           setMenuIndex(menuIndexRef.current);
           playSound("hit");
         } else if (event.key === "Enter" || event.key === " ") {
@@ -2044,6 +2055,15 @@ export default function Home() {
             <i style={{ "--stamina": `${burstStaminaPct}%` } as CSSProperties} />
             <small>{burstStaminaPct}%</small>
           </span>
+          {resolveCharacter(selectedCharacterId).specialPower && (
+            <span className="stamina-meter">
+              <strong>Poder</strong>
+              <i style={{ "--stamina": `${abilityCooldownPct}%` } as CSSProperties} />
+              <small>{abilityCooldownPct}%</small>
+            </span>
+          )}
+        </div>
+        <div className="hud-card sound-card" aria-label="Controles de som">
           <div className="sound-controls" aria-label="Controles de som">
             <button
               type="button"
@@ -2070,17 +2090,6 @@ export default function Home() {
             </label>
           </div>
         </div>
-        <aside className="hud-card sponsor-card" aria-label="Espaço de apoio">
-          <span>Patrocínio</span>
-          <button type="button" onClick={openSupportPanel}>
-            Apoie o jogo
-          </button>
-          <small>Contato via GitHub</small>
-          <nav className="sponsor-links" aria-label="Links institucionais">
-            <Link href="/privacidade">Privacidade</Link>
-            <Link href="/sobre">Sobre</Link>
-          </nav>
-        </aside>
       </section>
 
       <section className="game-stage" aria-label="Arena do jogo">
@@ -2173,6 +2182,16 @@ export default function Home() {
                     onClick={() => activateMenuOption(2)}
                   >
                     {menuIndex === 2 ? "▶ " : ""}Como Jogar
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-current={menuIndex === 3}
+                    className={menuIndex === 3 ? "active" : undefined}
+                    onMouseEnter={() => setMenuIndex(3)}
+                    onClick={() => activateMenuOption(3)}
+                  >
+                    {menuIndex === 3 ? "▶ " : ""}Apoie o jogo
                   </button>
                 </div>
               </div>
@@ -2309,6 +2328,10 @@ export default function Home() {
                   <span>Contato direto via GitHub</span>
                 </div>
               </div>
+              <nav className="sponsor-links" aria-label="Links institucionais">
+                <Link href="/privacidade">Privacidade</Link>
+                <Link href="/sobre">Sobre</Link>
+              </nav>
               <div className="menu-actions two">
                 <button type="button" onClick={() => setSupportOpen(false)}>Fechar</button>
                 <button type="button" onClick={returnToTitle}>Menu inicial</button>

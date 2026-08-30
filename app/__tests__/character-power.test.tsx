@@ -197,6 +197,91 @@ describe("character active power (Refactor Dash)", () => {
   });
 });
 
+describe("power activation banner (announceEffect reuse, HUD-07/HUD-08)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.stubEnv("NODE_ENV", "development");
+    server.use(
+      http.get("http://localhost/api/scores", () => HttpResponse.json({ scores: [] })),
+      http.post("http://localhost/api/scores", () => HttpResponse.json({ scores: [] })),
+    );
+    const interceptedFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? new URL(input, "http://localhost") : input;
+      return interceptedFetch(url, init);
+    });
+    animationFrames = [];
+    frameTime = performance.now();
+    vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
+      animationFrames.push(callback);
+      return animationFrames.length;
+    }));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+      canvasContext as unknown as CanvasRenderingContext2D,
+    );
+  });
+
+  afterEach(() => {
+    cleanup();
+    server.resetHandlers();
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("draws the 'REFACTOR DASH: ativado' banner via announceEffect when Q activates the power while playing (HUD-07)", () => {
+    render(<Home />);
+    startMatch();
+    canvasContext.fillText.mockClear();
+
+    fireEvent.keyDown(window, { key: "q" });
+    advanceFrames(1);
+
+    expect(canvasContext.fillText).toHaveBeenCalledWith(
+      `${power.name.toUpperCase()}: ativado`,
+      expect.any(Number),
+      expect.any(Number),
+    );
+  });
+
+  it("does not draw a new banner when Q is pressed again while the power is on cooldown (HUD-08)", () => {
+    render(<Home />);
+    startMatch();
+
+    fireEvent.keyDown(window, { key: "q" });
+    // Let the first banner fully decay (effectBanner counts down from 100 by delta*60 per
+    // frame, ~2/frame at the capped 33ms delta) so the still-visible-banner redraw from the
+    // first activation can't be mistaken for a second announceEffect call below. 60 frames is
+    // ~2s, well under the Dev Pleno's 15s cooldown, so the power stays on cooldown throughout.
+    advanceFrames(60);
+    expect(cooldownStatus()).not.toBe("0.0s");
+    canvasContext.fillText.mockClear();
+
+    fireEvent.keyDown(window, { key: "q" });
+    advanceFrames(1);
+
+    expect(canvasContext.fillText).not.toHaveBeenCalledWith(
+      `${power.name.toUpperCase()}: ativado`,
+      expect.any(Number),
+      expect.any(Number),
+    );
+  });
+
+  it("does not draw the banner when Q is pressed outside gameState 'playing' (still at the menu) (HUD-08)", () => {
+    render(<Home />);
+    canvasContext.fillText.mockClear();
+
+    fireEvent.keyDown(window, { key: "q" });
+
+    expect(canvasContext.fillText).not.toHaveBeenCalledWith(
+      `${power.name.toUpperCase()}: ativado`,
+      expect.any(Number),
+      expect.any(Number),
+    );
+  });
+});
+
 describe("character active power generic dispatch by kind (haste, shield)", () => {
   beforeEach(() => {
     localStorage.clear();
