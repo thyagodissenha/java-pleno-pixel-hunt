@@ -20,6 +20,7 @@ Este roadmap organiza as próximas melhorias do jogo a partir do estado atual: o
 - [x] Espaço "Apoie o jogo" estruturado, sem placeholders "em breve" — contato real via GitHub até existir Pix/patrocínio de fato.
 - [x] Google AdSense corrigido após reprovação por "anúncios em telas sem conteúdo do editor": script reativado, banner manual só aparece durante gameplay ativo (`gameState === "playing"`), nunca em menu/pausa/apoio/fim de jogo. `NEXT_PUBLIC_GOOGLE_ADSENSE_CLIENT_ID` já configurado na Vercel; falta `NEXT_PUBLIC_GOOGLE_ADSENSE_BANNER_SLOT` (só existe após aprovação, quando o bloco manual for criado no painel).
 - [x] Páginas `/privacidade` e `/sobre` publicadas, com `min-height: 100dvh` validado em mobile.
+- [x] Sistema de personagens (`lib/characters.ts`): 3 personagens jogáveis (Dev Pleno, Estagiário, SRE), cada um com atributos, cor de corpo e poder especial de mecânica diferente (dash/haste/shield) ativado com `Q`. Seletor real com retrato pixel art no menu escondido "Personagens & Skins" (`iddqd`/`idkfa`) — ainda atrás do cheat code, não promovido a entrada oficial do menu principal. Sem persistência entre sessões.
 
 ## Prioridade 1: Aprovação e confiança
 
@@ -71,7 +72,7 @@ Este roadmap organiza as próximas melhorias do jogo a partir do estado atual: o
 - [ ] Adicionar novos power-ups com sinergias.
 - [ ] Adicionar novos tipos de obstáculos e hazards por bioma.
 - [ ] Criar temas visuais alternativos, como startup, banco legado, hackathon e escritório remoto.
-- [ ] Adicionar cosméticos sem vantagem competitiva, como skins de estagiário, pleno, sênior, tech lead e arquiteto.
+- [x] Personagens jogáveis com atributos/poder próprios (Dev Pleno, Estagiário, SRE) — ver "Estado atual". Ainda falta: promover pra menu oficial (não mais cheat code), persistência de escolha, e avaliar se cosméticos *sem* efeito de jogo (puramente visuais) fazem sentido como camada separada.
 - [ ] Avaliar multiplayer local ou co-op no futuro.
 
 ## Prioridade 7: Crescimento e produto

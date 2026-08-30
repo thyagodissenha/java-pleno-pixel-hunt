@@ -21,6 +21,7 @@ O jogo mistura humor de desenvolvimento, correria de go-live e aquele leve deses
 - Inimigos especiais: QA nervoso, usuário VIP, incidente P1 e legado sem teste
 - Projéteis/obstáculos inspirados em Azure, SQL, CI/CD, Kafka, BI e deploys
 - Power-ups: café, refactor, rollback, hotfix, code review e sprint
+- Poder especial do personagem, ativado com cooldown próprio
 - Escolha final entre a cilada da promoção e atender um novo chamado
 - Progressão de arma por onda, indo de JDK 8 para JDK 17 e JDK 21
 - Biomas por fase: Escritório, Produção, Cloud e War Room
@@ -43,6 +44,7 @@ O jogo mistura humor de desenvolvimento, correria de go-live e aquele leve deses
 | --- | --- |
 | Mover | `WASD` ou setas |
 | Rajada | `Espaço`, consumindo estamina |
+| Poder especial | `Q`, com cooldown próprio |
 | Pausar | `Esc` |
 | Iniciar/reiniciar | `Enter` ou toque na arena |
 
@@ -165,6 +167,7 @@ app/
   globals.css    # Visual arcade/pixel art da página
   layout.tsx     # Metadados e layout base
 lib/
+  characters.ts  # Registry de personagens e poderes especiais
   high-scores.ts # Persistência e validação do ranking
 public/
   favicon.svg
