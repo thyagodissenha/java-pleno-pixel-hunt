@@ -163,6 +163,20 @@ Ambos reaproveitam campos que **já existem** em `player` e já são usados por 
 
 ---
 
+## Emenda 4 — 2026-08-30: Ajuste de balanceamento do "Refactor Dash" (Dev Pleno)
+
+**Pedido do usuário**: aumentar o cooldown do poder do Dev Pleno de 6s para 15s, e adicionar ao poder o mesmo efeito do power-up "Rollback" (remove inimigos não-chefe num raio de 190px ao redor do jogador, com pontuação e progresso de chefe idênticos ao power-up). O usuário inicialmente se referiu a esse efeito como "refactor", mas o power-up "Refactor" na verdade só acelera os tiros (`player.fury`) — o efeito de limpar inimigos é do power-up "Rollback"; corrigido antes de implementar. Confirmado que o teleporte e a limpeza de inimigos acontecem **juntos** na mesma ativação (não substitui o dash).
+
+**Acceptance Criteria**:
+
+26. WHEN o poder `kind: "dash"` do "Dev Pleno" é ativado THEN o sistema SHALL, além de teleportar o jogador (comportamento já existente de CHAR-03), remover todo inimigo não-chefe cuja distância até a nova posição do jogador seja estritamente menor que `clearRadius` (190), concedendo a mesma pontuação (+45 para inimigos `data`, +25 para os demais), o mesmo incremento de progresso de chefe e o mesmo efeito de partícula que o power-up "Rollback" já concede ao coletar. O cooldown do poder passa de 6s para 15s.
+
+**Edge case**: WHEN um inimigo do tipo `boss` está dentro do `clearRadius` THEN ele SHALL nunca ser removido pelo Refactor Dash — mesma regra do power-up "Rollback".
+
+**Independent Test**: Numa partida, aproximar o jogador de inimigos comuns e pressionar `Q`: os inimigos próximos (não-chefe) somem, o score sobe e o cooldown geral passa a 15s.
+
+---
+
 ## Requirement Traceability
 
 | Requirement ID | Story | Phase | Status |
@@ -190,14 +204,15 @@ Ambos reaproveitam campos que **já existem** em `player` e já são usados por 
 | CHAR-21 | Emenda 2: Seletor real com retrato no menu escondido | Verified | Verified |
 | CHAR-22 | Emenda 2: Seleção só vale na próxima partida | Verified | Verified |
 | CHAR-23 | Emenda 2: Sem persistência entre sessões | Verified | Verified |
-| CHAR-24 | Emenda 3: Haste usa `Math.max` (não sobrescreve buff maior) | Design | Pending |
-| CHAR-25 | Emenda 3: Destaque visual do card selecionado no seletor | Design | Pending |
+| CHAR-24 | Emenda 3: Haste usa `Math.max` (não sobrescreve buff maior) | Verified | Verified (fix cycle 2 — `2e2c54f`) |
+| CHAR-25 | Emenda 3: Destaque visual do card selecionado no seletor | Verified | Verified (fix cycle 2 — `2e2c54f`) |
+| CHAR-26 | Emenda 4: Refactor Dash também limpa mobs próximos; cooldown 6s→15s | Verified | Verified — `selectEnemiesToClear` unit-testado (5 casos + sensor de mutação inline), efeito de remoção/pontuação/progresso reaproveitado do power-up "Rollback" por leitura de código |
 
 **ID format:** `CHAR-NN`
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 25 total, 23 Verified (Emenda 1 + Emenda 2), 2 novos da Emenda 3 (fix cycle a caminho)
+**Coverage:** 26 total, 26 Verified (Emenda 1 + 2 + 3 + 4)
 
 ---
 

@@ -5,6 +5,7 @@ import {
   type CharacterDefinition,
   resolveCharacter,
   resolveDashDirection,
+  selectEnemiesToClear,
 } from "@/lib/characters";
 
 describe("CHARACTERS registry", () => {
@@ -20,9 +21,10 @@ describe("CHARACTERS registry", () => {
       specialPower: {
         id: "refactor-dash",
         name: "Refactor Dash",
-        cooldownSeconds: 6,
+        cooldownSeconds: 15,
         kind: "dash",
         dashDistance: 140,
+        clearRadius: 190,
       },
     });
     expect(CHARACTERS[1]).toMatchObject({
@@ -84,6 +86,9 @@ describe("CHARACTERS registry", () => {
         expect(character.specialPower.cooldownSeconds).toBeGreaterThanOrEqual(0);
         if (character.specialPower.kind === "dash") {
           expect(character.specialPower.dashDistance).toBeGreaterThan(0);
+          if (character.specialPower.clearRadius !== undefined) {
+            expect(character.specialPower.clearRadius).toBeGreaterThan(0);
+          }
         } else {
           expect(character.specialPower.durationSeconds).toBeGreaterThan(0);
         }
@@ -159,5 +164,38 @@ describe("resolveDashDirection", () => {
     expect(result).toEqual({ x: 0, y: -1 });
     expect(Number.isNaN(result.x)).toBe(false);
     expect(Number.isNaN(result.y)).toBe(false);
+  });
+});
+
+describe("selectEnemiesToClear (CHAR-26 — Refactor Dash clears nearby non-boss enemies)", () => {
+  const player = { x: 0, y: 0 };
+
+  it("selects a non-boss enemy strictly inside the clear radius", () => {
+    const enemy = { x: 50, y: 0, kind: "user" };
+    expect(selectEnemiesToClear(player, [enemy], 190)).toEqual([enemy]);
+  });
+
+  it("excludes an enemy exactly at the clear radius boundary (strict less-than)", () => {
+    const enemy = { x: 190, y: 0, kind: "user" };
+    expect(selectEnemiesToClear(player, [enemy], 190)).toEqual([]);
+  });
+
+  it("excludes an enemy outside the clear radius", () => {
+    const enemy = { x: 500, y: 0, kind: "user" };
+    expect(selectEnemiesToClear(player, [enemy], 190)).toEqual([]);
+  });
+
+  it("never selects a boss enemy, even when it is inside the clear radius", () => {
+    const boss = { x: 10, y: 0, kind: "boss" };
+    expect(selectEnemiesToClear(player, [boss], 190)).toEqual([]);
+  });
+
+  it("selects only the qualifying enemies out of a mixed group, preserving object identity for splice-by-reference removal", () => {
+    const near = { x: 20, y: 0, kind: "user" };
+    const far = { x: 500, y: 0, kind: "user" };
+    const nearBoss = { x: 5, y: 0, kind: "boss" };
+    const result = selectEnemiesToClear(player, [near, far, nearBoss], 190);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe(near);
   });
 });

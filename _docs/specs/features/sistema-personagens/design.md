@@ -292,3 +292,13 @@ Novo catálogo completo (valores de balanceamento — ver Tech Decisions):
 | Debug HUD ganha `debugPlayerEffects` (`{haste, invincible}`) | Mesmo gate `isDebugAllowed()` dos status existentes | Sem isso, CHAR-16/17 (aplicação do efeito) não seria verificável sem ler pixels do canvas — mesmo raciocínio já usado pra `debugAbilityCooldown`/`debugPlayerPosition` na Emenda 1 |
 
 > Nenhuma decisão aqui supera um `AD-NNN` ativo — a extração de `drawCharacterBody` e a migração de `activeCharacter` pra closure variable são decisões locais desta feature, não convenções de projeto.
+
+---
+
+## Design — Emenda 4 (2026-08-30): Refactor Dash ganha limpeza de área
+
+**CHAR-26**: `power.kind === "dash"` ganha um campo opcional `clearRadius?: number`. A decisão de QUAIS inimigos remover foi extraída como função pura `selectEnemiesToClear(player, enemies, clearRadius)` em `lib/characters.ts` (filtra `enemy.kind !== "boss"` dentro do raio), testável com fixtures simples sem canvas/DOM — mesma filosofia de `resolveDashDirection`. `triggerActivePower` (branch `"dash"`, `app/page.tsx`) chama essa função e reaplica a remoção/pontuação/progresso/partícula com o EXATO mesmo código já usado pelo power-up "Rollback" (`localScore += enemy.kind === "data" ? 45 : 25`, `countBossProgress()`, `burst(...)`), evitando duplicar regras de balanceamento em dois lugares com significados diferentes.
+
+**Tech Decision**: extrair só a decisão "quem remover" como função pura, mantendo a execução (splice, pontuação, partícula) em `app/page.tsx` — reaproveita o padrão já estabelecido (`resolveDashDirection` também só decide, não executa). Evita duplicar a fórmula de distância: `selectEnemiesToClear` usa a `distance()` privada já existente no módulo `lib/characters.ts`, não uma nova.
+
+**Risco aceito**: não há teste de integração end-to-end confirmando que pressionar `Q` numa partida real remove um inimigo (a posição de spawn dos inimigos é aleatória, sem debug action para posicioná-los deterministicamente perto do jogador) — mesma limitação já aceita para o caso do `player.fury` na Emenda 2 (T7). A lógica de decisão (`selectEnemiesToClear`) está integralmente coberta por teste unitário com sensor de mutação; a integração (chamada correta, reaproveito do código de pontuação) foi confirmada por leitura direta do diff.

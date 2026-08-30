@@ -26,7 +26,13 @@ import {
   waitForNextScorePost,
 } from "@/lib/score-sync";
 import { appendCheatBuffer, matchCheatCode } from "@/lib/cheat-codes";
-import { CHARACTERS, DEFAULT_CHARACTER_ID, resolveCharacter, resolveDashDirection } from "@/lib/characters";
+import {
+  CHARACTERS,
+  DEFAULT_CHARACTER_ID,
+  resolveCharacter,
+  resolveDashDirection,
+  selectEnemiesToClear,
+} from "@/lib/characters";
 
 const adsenseClientId = getPublicAdsenseClientId();
 const adsenseBannerSlotId = getAdsenseBannerSlotId();
@@ -969,6 +975,17 @@ export default function Home() {
       effectBanner = 100;
     }
 
+    function clearNearbyEnemies(clearRadius: number) {
+      const removed = selectEnemiesToClear(player, enemies, clearRadius);
+      for (const enemy of removed) {
+        const index = enemies.indexOf(enemy);
+        if (index >= 0) enemies.splice(index, 1);
+        localScore += enemy.kind === "data" ? 45 : 25;
+        countBossProgress();
+        burst(enemy.x, enemy.y, "#7dd3fc", 10);
+      }
+    }
+
     function collectPowerUp(powerUp: PowerUp) {
       if (powerUp.kind === "promotion") {
         finalChoicePending = false;
@@ -1006,14 +1023,7 @@ export default function Home() {
         player.fury = 6;
         announceEffect("REFACTOR: tiros acelerados");
       } else if (powerUp.kind === "rollback") {
-        const removed = enemies.filter((enemy) => enemy.kind !== "boss" && distance(enemy, player) < 190);
-        for (const enemy of removed) {
-          const index = enemies.indexOf(enemy);
-          if (index >= 0) enemies.splice(index, 1);
-          localScore += enemy.kind === "data" ? 45 : 25;
-          countBossProgress();
-          burst(enemy.x, enemy.y, "#7dd3fc", 10);
-        }
+        clearNearbyEnemies(190);
         announceEffect("ROLLBACK: caos revertido");
       } else if (powerUp.kind === "hotfix") {
         player.hp = clamp(player.hp + 32, 0, player.maxHp);
@@ -1105,6 +1115,7 @@ export default function Home() {
         const direction = resolveDashDirection({ x: lastMoveX, y: lastMoveY }, player, enemies);
         player.x = clamp(player.x + direction.x * power.dashDistance, 28, WORLD.width - 28);
         player.y = clamp(player.y + direction.y * power.dashDistance, 36, WORLD.height - 28);
+        if (power.clearRadius) clearNearbyEnemies(power.clearRadius);
       } else if (power.kind === "haste") {
         player.haste = Math.max(player.haste, power.durationSeconds);
       } else if (power.kind === "shield") {

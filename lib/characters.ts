@@ -8,6 +8,7 @@ export type CharacterSpecialPower =
       cooldownSeconds: number;
       kind: "dash";
       dashDistance: number;
+      clearRadius?: number;
     }
   | {
       id: string;
@@ -47,10 +48,11 @@ export const CHARACTERS: readonly CharacterDefinition[] = [
     specialPower: {
       id: "refactor-dash",
       name: "Refactor Dash",
-      description: "Teleporte curto na direção do movimento.",
-      cooldownSeconds: 6,
+      description: "Teleporte curto na direção do movimento e remove ameaças próximas.",
+      cooldownSeconds: 15,
       kind: "dash",
       dashDistance: 140,
+      clearRadius: 190,
     },
   },
   {
@@ -103,6 +105,14 @@ function distance(a: Vector2, b: Vector2) {
 function normalize(x: number, y: number): Vector2 {
   const length = Math.hypot(x, y) || 1;
   return { x: x / length, y: y / length };
+}
+
+export function selectEnemiesToClear<T extends Vector2 & { kind: string }>(
+  player: Vector2,
+  enemies: readonly T[],
+  clearRadius: number,
+): T[] {
+  return enemies.filter((enemy) => enemy.kind !== "boss" && distance(enemy, player) < clearRadius);
 }
 
 export function resolveDashDirection(
