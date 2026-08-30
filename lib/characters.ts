@@ -1,12 +1,30 @@
 export type Vector2 = { x: number; y: number };
 
-export type CharacterSpecialPower = {
-  id: string;
-  name: string;
-  description: string;
-  cooldownSeconds: number;
-  dashDistance: number;
-};
+export type CharacterSpecialPower =
+  | {
+      id: string;
+      name: string;
+      description: string;
+      cooldownSeconds: number;
+      kind: "dash";
+      dashDistance: number;
+    }
+  | {
+      id: string;
+      name: string;
+      description: string;
+      cooldownSeconds: number;
+      kind: "haste";
+      durationSeconds: number;
+    }
+  | {
+      id: string;
+      name: string;
+      description: string;
+      cooldownSeconds: number;
+      kind: "shield";
+      durationSeconds: number;
+    };
 
 export type CharacterDefinition = {
   id: string;
@@ -14,6 +32,7 @@ export type CharacterDefinition = {
   maxHp: number;
   speed: number;
   size: number;
+  bodyColor: string;
   specialPower: CharacterSpecialPower | null;
 };
 
@@ -24,12 +43,46 @@ export const CHARACTERS: readonly CharacterDefinition[] = [
     maxHp: 100,
     speed: 210,
     size: 24,
+    bodyColor: "#0ea5e9",
     specialPower: {
       id: "refactor-dash",
       name: "Refactor Dash",
       description: "Teleporte curto na direção do movimento.",
       cooldownSeconds: 6,
+      kind: "dash",
       dashDistance: 140,
+    },
+  },
+  {
+    id: "estagiario",
+    name: "Estagiário",
+    maxHp: 70,
+    speed: 260,
+    size: 20,
+    bodyColor: "#2dd4bf",
+    specialPower: {
+      id: "ja-terminei",
+      name: "Já Terminei!",
+      description: "Aumenta a velocidade de movimento temporariamente.",
+      cooldownSeconds: 10,
+      kind: "haste",
+      durationSeconds: 4,
+    },
+  },
+  {
+    id: "sre",
+    name: "SRE",
+    maxHp: 130,
+    speed: 190,
+    size: 28,
+    bodyColor: "#64748b",
+    specialPower: {
+      id: "incident-response",
+      name: "Modo Incident Response",
+      description: "Concede invencibilidade temporária.",
+      cooldownSeconds: 30,
+      kind: "shield",
+      durationSeconds: 2.5,
     },
   },
 ];

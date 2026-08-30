@@ -17,13 +17,15 @@ Explicitamente excluído nesta entrega. Documentado para evitar scope creep.
 
 | Feature | Reason |
 | --- | --- |
-| Segundo personagem "de verdade" jogável | Decisão do usuário: MVP só formaliza o "Dev Pleno" atual como 1º item do catálogo; a extensibilidade é provada por teste unitário (CHAR-09), não por um 2º personagem balanceado. |
-| Persistência da escolha entre sessões (localStorage) | Decisão explícita do usuário: reseta a cada reload, mesmo padrão já adotado para o desbloqueio do menu escondido (`_docs/roadmap.md`). |
-| Promover o menu de personagens para uma entrada oficial/visível no menu principal | Decisão explícita do usuário: "futuramente pode virar uma opção oficial". Por ora continua atrás do cheat code `iddqd`/`idkfa`; a UI é construída de forma independente do gate para que essa promoção seja só uma mudança de entrada de menu, não um redesenho. |
-| Seletor de personagem multi-opção (picker/carrossel) | Sem função prática com apenas 1 personagem no catálogo; entra quando houver 2+ personagens reais. |
-| Botão de toque para acionar o poder especial no mobile | Fora do pedido original; a tecla `Q` é suficiente para provar a infraestrutura. Mobile hoje só tem arrastar (movimento) e tiro automático. |
-| Registrar o personagem usado no ranking/high score | Não solicitado; adicionaria campo ao payload de score sem necessidade nesta entrega. |
-| Balanceamento competitivo entre personagens | Não há disputa 1x1 nem ranking segmentado por personagem no jogo hoje. |
+| ~~Segundo personagem "de verdade" jogável~~ | **Superado pela Emenda 2** — agora em escopo (CHAR-13, CHAR-14: Estagiário e SRE). |
+| Persistência da escolha entre sessões (localStorage) | Reafirmado na Emenda 2 (CHAR-23): decisão explícita do usuário, mesmo com seletor real de 3 personagens — reseta a cada reload. |
+| Promover o menu de personagens para uma entrada oficial/visível no menu principal | Ainda fora de escopo: decisão do usuário de manter atrás do cheat code `iddqd`/`idkfa` também na Emenda 2. |
+| ~~Seletor de personagem multi-opção (picker/carrossel)~~ | **Superado pela Emenda 2** — agora em escopo (CHAR-21: seletor real com 3 cards). |
+| Botão de toque para acionar o poder especial no mobile | Ainda fora de escopo — nenhum dos 2 novos poderes (haste/shield) muda essa decisão. |
+| Registrar o personagem usado no ranking/high score | Ainda fora de escopo — não solicitado nesta emenda. |
+| Balanceamento competitivo entre personagens | Ainda fora de escopo — não há disputa 1x1 nem ranking segmentado por personagem. |
+| Arquivo de imagem real (PNG/SVG) por personagem | Decisão explícita do usuário na Emenda 2: retrato reaproveita a técnica de canvas já usada em `drawPlayer()`, não um asset novo. |
+| Navegação do seletor por teclado (setas/Enter) | Não pedido; clique do mouse é suficiente, consistente com os outros botões do mesmo painel ("Jogar"/"Voltar ao início"), que também não têm nav por seta hoje. |
 
 ---
 
@@ -94,6 +96,73 @@ Every ambiguity is resolved or recorded here — nothing is left silently unclea
 
 ---
 
+## Emenda 2 — 2026-08-29: Dois novos personagens, mecânicas diferentes, seletor visual real
+
+**Contexto**: `sistema-personagens` (P1) entregou só o "Dev Pleno" (1 personagem, poder tipo dash) — decisão explícita na época de manter a infraestrutura mínima. Agora o usuário quer 2 personagens novos com **mecânicas de poder diferentes** (não variações numéricas do mesmo dash), **diferença visual** (retrato no seletor + sprite em jogo) e um **seletor de verdade** no menu escondido (hoje é só leitura de 1 personagem).
+
+**Scan do código antes de especificar**: o jogo não usa nenhum arquivo de imagem em lugar nenhum — o personagem em jogo é desenhado em canvas com blocos coloridos (`drawPlayer()`, `app/page.tsx:1711-1748`, via `pixelRect()` já extraída como função standalone em `app/page.tsx:181`) e a tela de título usa a mesma filosofia só que em CSS (`.pixel-dev` com `<div>`/`<span>`, sem imagem). Confirmado com o usuário: o retrato do seletor deve reaproveisar a MESMA técnica de `drawPlayer()` (pixel art em canvas), não um arquivo de imagem novo.
+
+### Novos personagens
+
+| Personagem | Atributos (perfil) | Poder | Tipo de poder |
+| --- | --- | --- | --- |
+| Estagiário | `maxHp` baixo, `speed` alto, `size` pequeno — rápido e frágil | "Já Terminei!" | **haste** (buff de velocidade temporário) |
+| SRE / DevOps | `maxHp` alto, `speed` normal, `size` maior — tanque | "Modo Incident Response" | **shield** (invencibilidade temporária) |
+
+Ambos reaproveitam campos que **já existem** em `player` e já são usados por power-ups de arena: `player.haste` (multiplicador de velocidade 1.34x, já lido em `update()`) e `player.invincible` (já usado pelo power-up "rollback" e já desenhado com efeito de "piscar" em `drawPlayer()`). Isso reduz o risco da mecânica nova — o EFEITO já existe e já é testado via power-up; o que é novo é só o disparo por tecla/cooldown, no lugar de um pickup de arena.
+
+### Acceptance Criteria
+
+13. WHEN o registry é consultado THEN SHALL existir uma definição "Estagiário" com `maxHp` menor, `speed` maior e `size` menor que o "Dev Pleno", e poder `kind: "haste"` chamado "Já Terminei!".
+14. WHEN o registry é consultado THEN SHALL existir uma definição "SRE" (ou "DevOps") com `maxHp` maior, `speed` igual ou levemente menor e `size` maior que o "Dev Pleno", e poder `kind: "shield"` chamado "Modo Incident Response".
+15. WHEN `CharacterSpecialPower` é definido THEN SHALL ter um campo discriminador `kind` (`"dash" | "haste" | "shield"`); `triggerActivePower` SHALL despachar o efeito genericamente por `kind`, sem `if`/`else` hardcoded por personagem — CHAR-09 (genericidade) se estende a poderes de tipos diferentes, não só a variações do mesmo tipo.
+16. WHEN um poder `kind: "haste"` é ativado (tecla `Q`, fora de cooldown, `gameState === "playing"`) THEN o sistema SHALL aplicar `player.haste` pela duração configurada no poder, e então iniciar o cooldown — reaproveitando o multiplicador de velocidade já existente, sem nova lógica de movimento.
+17. WHEN um poder `kind: "shield"` é ativado (mesmas guardas) THEN o sistema SHALL aplicar `player.invincible` pela duração configurada no poder, e então iniciar o cooldown — reaproveitando a invencibilidade e o efeito visual de "piscar" já existentes.
+18. WHEN as regras já estabelecidas para o poder tipo dash (bloqueio durante cooldown — CHAR-04; ativação por borda de subida, sem repetição ao segurar — CHAR-05; reset do cooldown em nova partida — CHAR-06; sem efeito fora de `gameState === "playing"` — CHAR-07) são aplicadas a um poder `kind: "haste"` ou `kind: "shield"` THEN o comportamento SHALL ser idêntico — essas regras são do sistema de ativação de poder, não específicas de dash.
+19. WHEN o jogador ativo tem uma cor de corpo (`bodyColor`) definida no registry THEN `drawPlayer()` SHALL desenhar o corpo do personagem com essa cor, em vez da cor fixa `#0ea5e9` usada hoje só para o "Dev Pleno".
+20. WHEN uma partida está em andamento THEN o rótulo de texto acima do jogador SHALL exibir o nome do personagem ativo (`activeCharacter.name`), não mais o texto fixo "Java Pleno".
+21. WHEN o painel escondido "Personagens & Skins" é aberto THEN SHALL exibir as 3 definições do registry como cards selecionáveis, cada um com nome, atributos, poder (nome/descrição/cooldown) e um retrato estático desenhado com a mesma técnica de sprite de `drawPlayer()` (mesma paleta de cores do personagem, sem animação — pose fixa).
+22. WHEN o jogador clica num card de personagem no seletor THEN aquele personagem SHALL ficar marcado como selecionado (destaque visual no card ativo) e a seleção SHALL valer a partir da PRÓXIMA nova partida ou "novo chamado" (reset) — nunca retroativamente numa partida já em andamento.
+23. WHEN a página é recarregada THEN a seleção SHALL voltar ao personagem padrão (primeiro do registry, "Dev Pleno") — sem persistência entre sessões, mesmo padrão já decidido para o desbloqueio do menu.
+
+### Edge Cases
+
+- WHEN o jogador troca de personagem no seletor enquanto uma partida está em andamento (painel aberto via pausa, se possível) THEN a partida atual SHALL continuar com o personagem com que ela começou; só a próxima partida usa o novo selecionado.
+- WHEN um personagem do registry não define `specialPower` (`null`) THEN o seletor SHALL continuar mostrando "Sem poder especial" (comportamento já implementado em CHAR-08, reafirmado aqui pro caso de um 4º personagem futuro sem poder).
+- WHEN o retrato estático é desenhado no seletor THEN SHALL ser uma única chamada de desenho (sem loop de animação, sem "correr"/"piscar") — evita duplicar o motor de animação do jogo fora do loop principal.
+
+### Assumptions & Open Questions (desta emenda)
+
+| Assumption / decision | Chosen default | Rationale | Confirmed? |
+| --- | --- | --- | --- |
+| Duração/cooldown do "Já Terminei!" (haste) | 4s de duração, 10s de cooldown | Simétrico ao "Refactor Dash" (poder forte, cooldown maior que a duração); ajustável sem mudar arquitetura | y |
+| Duração/cooldown do "Modo Incident Response" (shield) | 2.5s de duração, **30s de cooldown** | Usuário ajustou o cooldown recomendado (12s → 30s): invencibilidade é o efeito mais forte do jogo, cooldown bem mais longo que os outros dois poderes acentua o perfil "tanque defensivo raro" do SRE | y |
+| Cor de corpo por personagem | Estagiário: verde-água (`#2dd4bf`); SRE: cinza-ardósia (`#64748b`); Dev Pleno mantém o azul atual (`#0ea5e9`) | Cores distintas entre si e das cores já usadas com significado no HUD (vermelho=dano, laranja=fúria, roxo=foco, dourado=UI) | y |
+| Retrato do seletor é canvas por card ou canvas único reaproveitado | 3 elementos `<canvas>` pequenos, um por card, cada um desenhado 1x quando o painel abre | Mais simples que gerenciar troca de personagem num canvas único; custo é desprezível (3 desenhos estáticos, sem loop) | y (decisão técnica de baixo risco, não é uma escolha de produto) |
+| Seleção some do estado ao recarregar | Confirmado nesta emenda — mesmo padrão da entrega anterior | Decisão explícita do usuário nesta sessão | y |
+
+**Open questions**: nenhuma — todas as linhas acima confirmadas pelo usuário (cooldown do shield ajustado de 12s para 30s).
+
+---
+
+## Emenda 3 — 2026-08-30 (achados de `/code-review` pós-Execute da Emenda 2)
+
+**CHAR-24**: código-review encontrou que `player.haste = power.durationSeconds` (poder "Já Terminei!") sobrescreve direto, ao contrário de `player.invincible = Math.max(player.invincible, power.durationSeconds)` (poder "Modo Incident Response"). Isso permite que ativar o poder do Estagiário **encolha** um buff de `haste` mais longo já ativo (ex: vindo do power-up de café, que dá 6s). A spec original (CHAR-16) não definia esse caso. **Decisão do usuário**: trocar para `Math.max`, igual ao shield — o poder nunca deve piorar um buff já ativo.
+
+**Acceptance Criteria**:
+
+24. WHEN o poder `kind: "haste"` é ativado e `player.haste` já tem um valor restante maior que `power.durationSeconds` (ex: buff de power-up ainda ativo) THEN o sistema SHALL manter o maior dos dois (`player.haste = Math.max(player.haste, power.durationSeconds)`), nunca encolher um buff já ativo — mesma regra já usada pelo poder `kind: "shield"`.
+
+**CHAR-25**: código-review encontrou que os cards do seletor de personagem (`role="radio"`, classes `character-card`/`character-card-selected`/`character-portrait`) não têm nenhuma regra correspondente em `app/globals.css` — renderizam sem estilo, e o card selecionado não tem nenhum destaque visual pra quem usa mouse (só `aria-checked`, invisível). Isso viola CHAR-22 ("destaque visual no card ativo"), que ficou satisfeito só a nível de acessibilidade, não visualmente. **Correção**: adicionar CSS pras 3 classes, com destaque visual claro (ex: borda/cor diferente) no card com `aria-checked="true"`.
+
+**Acceptance Criteria**:
+
+25. WHEN o painel "skins" é renderizado THEN os cards de personagem SHALL ter estilo visual consistente com o resto do jogo (mesmo padrão de borda/fundo pixel art já usado em `.menu-panel`/`.frame-panel`), e o card selecionado (`aria-checked="true"`) SHALL ter um destaque visualmente distinto dos outros (não só `aria-checked`).
+
+**Independent Test**: Abrir o painel "skins", ver visualmente qual personagem está selecionado sem precisar inspecionar o DOM; clicar em outro personagem e ver o destaque mudar de card.
+
+---
+
 ## Requirement Traceability
 
 | Requirement ID | Story | Phase | Status |
@@ -110,18 +179,32 @@ Every ambiguity is resolved or recorded here — nothing is left silently unclea
 | CHAR-10 | P1: Invariantes de dados do registry (valores válidos) | Verified | Verified |
 | CHAR-11 | P1: Sem persistência entre sessões | Verified | Verified |
 | CHAR-12 | Emenda: Dash atravessa obstáculos (intencional) | Verified | Verified — comportamento já existente, sem código novo |
+| CHAR-13 | Emenda 2: Personagem "Estagiário" (haste) | Verified | Verified |
+| CHAR-14 | Emenda 2: Personagem "SRE" (shield) | Verified | Verified |
+| CHAR-15 | Emenda 2: Discriminador `kind` + despacho genérico | Verified | Verified |
+| CHAR-16 | Emenda 2: Ativação de poder `kind: "haste"` | Verified | Verified |
+| CHAR-17 | Emenda 2: Ativação de poder `kind: "shield"` | Verified | Verified |
+| CHAR-18 | Emenda 2: Regras de cooldown/borda/reset/estado genéricas por kind | Verified | Verified |
+| CHAR-19 | Emenda 2: Cor de corpo por personagem em `drawPlayer()` | Verified | Verified (fix cycle 1 — `278a787`) |
+| CHAR-20 | Emenda 2: Rótulo em jogo usa nome do personagem ativo | Verified | Verified |
+| CHAR-21 | Emenda 2: Seletor real com retrato no menu escondido | Verified | Verified |
+| CHAR-22 | Emenda 2: Seleção só vale na próxima partida | Verified | Verified |
+| CHAR-23 | Emenda 2: Sem persistência entre sessões | Verified | Verified |
+| CHAR-24 | Emenda 3: Haste usa `Math.max` (não sobrescreve buff maior) | Design | Pending |
+| CHAR-25 | Emenda 3: Destaque visual do card selecionado no seletor | Design | Pending |
 
 **ID format:** `CHAR-NN`
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 12 total, 12 mapeados a tasks, 0 unmapped — validado em `validation.md` (PASS)
+**Coverage:** 25 total, 23 Verified (Emenda 1 + Emenda 2), 2 novos da Emenda 3 (fix cycle a caminho)
 
 ---
 
 ## Success Criteria
 
-- [ ] Um novo personagem pode ser adicionado editando apenas o arquivo de registry — comprovado por teste unitário com uma 2ª entrada (CHAR-09), sem tocar em `app/page.tsx` além da leitura genérica já existente.
-- [ ] O jogador consegue ativar "Refactor Dash" numa partida real e observar o cooldown bloqueando reativação imediata.
-- [ ] O painel escondido "Personagens & Skins" mostra dados reais do personagem, não mais o placeholder.
-- [ ] Nenhum dos 195 testes existentes quebra; a suíte sobe com os novos testes desta feature.
+- [x] Um novo personagem pode ser adicionado editando apenas o arquivo de registry — comprovado por teste unitário com uma 2ª entrada (CHAR-09), sem tocar em `app/page.tsx` além da leitura genérica já existente.
+- [x] O jogador consegue ativar "Refactor Dash" numa partida real e observar o cooldown bloqueando reativação imediata.
+- [ ] O painel escondido "Personagens & Skins" mostra um seletor real com 3 personagens, cada um com retrato visual distinto, atributos e poder de mecânica diferente (dash/haste/shield).
+- [ ] O personagem selecionado aparece diferente em jogo (cor do corpo, nome no rótulo) na próxima partida após a seleção.
+- [ ] Nenhum teste existente quebra; a suíte sobe com os novos testes desta emenda.

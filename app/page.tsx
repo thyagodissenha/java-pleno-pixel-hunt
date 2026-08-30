@@ -26,11 +26,10 @@ import {
   waitForNextScorePost,
 } from "@/lib/score-sync";
 import { appendCheatBuffer, matchCheatCode } from "@/lib/cheat-codes";
-import { DEFAULT_CHARACTER_ID, resolveCharacter, resolveDashDirection } from "@/lib/characters";
+import { CHARACTERS, DEFAULT_CHARACTER_ID, resolveCharacter, resolveDashDirection } from "@/lib/characters";
 
 const adsenseClientId = getPublicAdsenseClientId();
 const adsenseBannerSlotId = getAdsenseBannerSlotId();
-const activeCharacter = resolveCharacter(DEFAULT_CHARACTER_ID);
 
 type Actor = {
   x: number;
@@ -190,6 +189,25 @@ function pixelRect(
   ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
 }
 
+function drawCharacterBody(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  options: { bodyColor: string; faceColor?: string; runOffset?: number },
+) {
+  const { bodyColor, faceColor = "#f5d0a9", runOffset = 0 } = options;
+  pixelRect(ctx, x + 6, y, 12, 7, faceColor);
+  pixelRect(ctx, x + 5, y - 3, 14, 4, "#78350f");
+  pixelRect(ctx, x + 4, y + 7, 16, 13, bodyColor);
+  pixelRect(ctx, x + 1, y + 10, 6, 5, "#78350f");
+  pixelRect(ctx, x + 17, y + 10, 8, 5, "#78350f");
+  pixelRect(ctx, x + 2, y + 20 + runOffset, 7, 5, "#111827");
+  pixelRect(ctx, x + 15, y + 21 - runOffset, 7, 5, "#111827");
+  pixelRect(ctx, x + 8, y + 9, 3, 3, "#111827");
+  pixelRect(ctx, x + 14, y + 9, 3, 3, "#111827");
+  pixelRect(ctx, x + 7, y + 15, 10, 3, "#fef3c7");
+}
+
 function loadSoundSettings() {
   if (typeof window === "undefined") return { muted: false, volume: 0.35 };
   try {
@@ -214,6 +232,8 @@ export default function Home() {
   const stateRef = useRef<GameState>("menu");
   const runOriginRef = useRef<RunOrigin>("normal");
   const menuPanelRef = useRef<MenuPanel>("home");
+  const selectedCharacterIdRef = useRef(DEFAULT_CHARACTER_ID);
+  const characterPortraitRefs = useRef<Array<HTMLCanvasElement | null>>([]);
   const menuIndexRef = useRef(0);
   const startGameRef = useRef<() => void>(() => undefined);
   const audioRef = useRef<AudioContext | null>(null);
@@ -247,6 +267,7 @@ export default function Home() {
   const [scoreMessage, setScoreMessage] = useState("Ranking global carregando...");
   const [lastOutcome, setLastOutcome] = useState<"over" | "won">("over");
   const [menuPanel, setMenuPanel] = useState<MenuPanel>("home");
+  const [selectedCharacterId, setSelectedCharacterId] = useState(DEFAULT_CHARACTER_ID);
   const [menuIndex, setMenuIndex] = useState(0);
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(0.35);
@@ -258,6 +279,7 @@ export default function Home() {
   const [debugPowerUpCount, setDebugPowerUpCount] = useState(0);
   const [debugAbilityCooldown, setDebugAbilityCooldown] = useState(0);
   const [debugPlayerPosition, setDebugPlayerPosition] = useState({ x: 0, y: 0 });
+  const [debugPlayerEffects, setDebugPlayerEffects] = useState({ haste: 0, invincible: 0 });
   const [burstStaminaPct, setBurstStaminaPct] = useState(BURST_STAMINA_MAX);
   const [promotionCountdown, setPromotionCountdown] = useState(3);
   const [debugOpen, setDebugOpen] = useState(false);
@@ -268,6 +290,20 @@ export default function Home() {
 
   useEffect(() => {
     menuPanelRef.current = menuPanel;
+  }, [menuPanel]);
+
+  useEffect(() => {
+    selectedCharacterIdRef.current = selectedCharacterId;
+  }, [selectedCharacterId]);
+
+  useEffect(() => {
+    if (menuPanel !== "skins") return;
+    CHARACTERS.forEach((character, index) => {
+      const canvas = characterPortraitRefs.current[index];
+      const ctx = canvas?.getContext("2d") as CanvasRenderingContext2D | null;
+      if (!ctx) return;
+      drawCharacterBody(ctx, 8, 6, { bodyColor: character.bodyColor });
+    });
   }, [menuPanel]);
 
   useEffect(() => {
@@ -647,6 +683,7 @@ export default function Home() {
     let abilityCooldownRemaining = 0;
     let lastMoveX = 0;
     let lastMoveY = 0;
+    let activeCharacter = resolveCharacter(selectedCharacterIdRef.current);
 
     const player = {
       x: WORLD.width / 2,
@@ -686,6 +723,10 @@ export default function Home() {
       if (isDebugAllowed()) {
         setDebugAbilityCooldown(Math.max(0, abilityCooldownRemaining));
         setDebugPlayerPosition({ x: Math.round(player.x), y: Math.round(player.y) });
+        setDebugPlayerEffects({
+          haste: Math.max(0, player.haste),
+          invincible: Math.max(0, player.invincible),
+        });
       }
     }
 
@@ -793,6 +834,10 @@ export default function Home() {
       abilityCooldownRemaining = 0;
       lastMoveX = 0;
       lastMoveY = 0;
+      activeCharacter = resolveCharacter(selectedCharacterIdRef.current);
+      player.maxHp = activeCharacter.maxHp;
+      player.speed = activeCharacter.speed;
+      player.size = activeCharacter.size;
       player.x = WORLD.width / 2;
       player.y = WORLD.height / 2;
       player.hp = player.maxHp;
@@ -1056,9 +1101,15 @@ export default function Home() {
       if (!power) return;
       if (abilityCooldownRemaining > 0) return;
 
-      const direction = resolveDashDirection({ x: lastMoveX, y: lastMoveY }, player, enemies);
-      player.x = clamp(player.x + direction.x * power.dashDistance, 28, WORLD.width - 28);
-      player.y = clamp(player.y + direction.y * power.dashDistance, 36, WORLD.height - 28);
+      if (power.kind === "dash") {
+        const direction = resolveDashDirection({ x: lastMoveX, y: lastMoveY }, player, enemies);
+        player.x = clamp(player.x + direction.x * power.dashDistance, 28, WORLD.width - 28);
+        player.y = clamp(player.y + direction.y * power.dashDistance, 36, WORLD.height - 28);
+      } else if (power.kind === "haste") {
+        player.haste = Math.max(player.haste, power.durationSeconds);
+      } else if (power.kind === "shield") {
+        player.invincible = Math.max(player.invincible, power.durationSeconds);
+      }
       abilityCooldownRemaining = power.cooldownSeconds;
       syncHud();
     }
@@ -1723,23 +1774,18 @@ export default function Home() {
         pixelRect(ctx, x - 4, y + 5, 4, 14, "#f97316");
         pixelRect(ctx, x + 24, y + 5, 4, 14, "#f97316");
       }
-      pixelRect(ctx, x + 6, y, 12, 7, blink ? "#fee2e2" : "#f5d0a9");
-      pixelRect(ctx, x + 5, y - 3, 14, 4, "#78350f");
-      pixelRect(ctx, x + 4, y + 7, 16, 13, player.fury > 0 ? "#f97316" : "#0ea5e9");
-      pixelRect(ctx, x + 1, y + 10, 6, 5, "#78350f");
-      pixelRect(ctx, x + 17, y + 10, 8, 5, "#78350f");
-      pixelRect(ctx, x + 2, y + 20 + run, 7, 5, "#111827");
-      pixelRect(ctx, x + 15, y + 21 - run, 7, 5, "#111827");
-      pixelRect(ctx, x + 8, y + 9, 3, 3, "#111827");
-      pixelRect(ctx, x + 14, y + 9, 3, 3, "#111827");
-      pixelRect(ctx, x + 7, y + 15, 10, 3, "#fef3c7");
+      drawCharacterBody(ctx, x, y, {
+        bodyColor: player.fury > 0 ? "#f97316" : activeCharacter.bodyColor,
+        faceColor: blink ? "#fee2e2" : "#f5d0a9",
+        runOffset: run,
+      });
       pixelRect(ctx, x + 20, y + 6, 16, 7, "#facc15");
       pixelRect(ctx, x + 34, y + 8, 7, 3, "#fde68a");
       if (stateRef.current !== "choice" && shotTimer < 0.06) pixelRect(ctx, x + 40, y + 7, 10, 5, "#f97316");
       ctx.fillStyle = "#f8fafc";
       ctx.font = "10px 'Courier New', monospace";
       ctx.textAlign = "center";
-      ctx.fillText("Java Pleno", player.x, player.y - 20);
+      ctx.fillText(activeCharacter.name, player.x, player.y - 20);
       if (callLoops > 0) {
         ctx.fillStyle = "#facc15";
         ctx.font = "bold 14px 'Courier New', monospace";
@@ -1955,6 +2001,11 @@ export default function Home() {
             {debugPlayerPosition.x}, {debugPlayerPosition.y}
           </output>
         )}
+        {isDebugAllowed() && (
+          <output aria-label="Efeitos do jogador debug">
+            {debugPlayerEffects.haste.toFixed(1)}, {debugPlayerEffects.invincible.toFixed(1)}
+          </output>
+        )}
         <div className="hud-card jdk-card">
           <strong>{upgrade}</strong>
           <span className="mini-bars" aria-hidden="true">
@@ -2155,23 +2206,49 @@ export default function Home() {
               {menuPanel === "skins" && (
                 <>
                   <h2>Personagens & Skins</h2>
-                  <h3>{activeCharacter.name}</h3>
-                  <ul className="help-list">
-                    <li><strong>Vida</strong><span>{activeCharacter.maxHp}</span></li>
-                    <li><strong>Velocidade</strong><span>{activeCharacter.speed}</span></li>
-                    <li><strong>Tamanho</strong><span>{activeCharacter.size}</span></li>
-                  </ul>
-                  {activeCharacter.specialPower ? (
-                    <p>
-                      <strong>{activeCharacter.specialPower.name}</strong>
-                      {": "}
-                      {activeCharacter.specialPower.description}
-                      {" "}
-                      (cooldown: {activeCharacter.specialPower.cooldownSeconds}s)
-                    </p>
-                  ) : (
-                    <p>Sem poder especial.</p>
-                  )}
+                  <div role="radiogroup" aria-label="Escolha de personagem">
+                    {CHARACTERS.map((character, index) => (
+                      <button
+                        key={character.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={character.id === selectedCharacterId}
+                        className={
+                          character.id === selectedCharacterId
+                            ? "character-card character-card-selected"
+                            : "character-card"
+                        }
+                        onClick={() => setSelectedCharacterId(character.id)}
+                      >
+                        <canvas
+                          ref={(el) => {
+                            characterPortraitRefs.current[index] = el;
+                          }}
+                          width={40}
+                          height={40}
+                          aria-hidden="true"
+                          className="character-portrait"
+                        />
+                        <h3>{character.name}</h3>
+                        <ul className="help-list">
+                          <li><strong>Vida</strong><span>{character.maxHp}</span></li>
+                          <li><strong>Velocidade</strong><span>{character.speed}</span></li>
+                          <li><strong>Tamanho</strong><span>{character.size}</span></li>
+                        </ul>
+                        {character.specialPower ? (
+                          <p>
+                            <strong>{character.specialPower.name}</strong>
+                            {": "}
+                            {character.specialPower.description}
+                            {" "}
+                            (cooldown: {character.specialPower.cooldownSeconds}s)
+                          </p>
+                        ) : (
+                          <p>Sem poder especial.</p>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                   <div className="menu-actions two">
                     <button type="button" onClick={startNewGame}>Jogar</button>
                     <button type="button" onClick={() => setMenuPanel("home")}>Voltar ao início</button>

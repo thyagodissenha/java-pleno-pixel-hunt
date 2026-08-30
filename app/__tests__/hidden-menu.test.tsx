@@ -4,6 +4,7 @@ import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "@/app/page";
+import { CHARACTERS } from "@/lib/characters";
 
 const canvasContext = {
   fillRect: vi.fn(),
@@ -119,5 +120,98 @@ describe("hidden skins menu", () => {
     typeKeys("dqd");
 
     expect(screen.queryByRole("dialog", { name: "Personagens e Skins" })).not.toBeInTheDocument();
+  });
+
+  it("renders one selectable radio card per registry character, Dev Pleno checked by default (CHAR-21, CHAR-22)", () => {
+    render(<Home />);
+    typeKeys("iddqd");
+
+    const radios = screen.getAllByRole("radio");
+    expect(radios).toHaveLength(CHARACTERS.length);
+    for (const character of CHARACTERS) {
+      const radio = screen.getByRole("radio", { name: new RegExp(character.name) });
+      expect(radio).toHaveAttribute(
+        "aria-checked",
+        character.id === CHARACTERS[0].id ? "true" : "false",
+      );
+    }
+  });
+
+  it("moves aria-checked to the clicked character card (CHAR-22)", () => {
+    render(<Home />);
+    typeKeys("iddqd");
+
+    const estagiario = CHARACTERS.find((character) => character.id === "estagiario");
+    if (!estagiario) throw new Error("Expected an Estagiário entry in CHARACTERS for this test");
+
+    fireEvent.click(screen.getByRole("radio", { name: new RegExp(estagiario.name) }));
+
+    expect(screen.getByRole("radio", { name: new RegExp(estagiario.name) })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.getByRole("radio", { name: new RegExp(CHARACTERS[0].name) })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+  });
+
+  it("starts the next match with the selected character's maxHp instead of the default's (CHAR-22)", () => {
+    render(<Home />);
+    typeKeys("iddqd");
+
+    const estagiario = CHARACTERS.find((character) => character.id === "estagiario");
+    if (!estagiario) throw new Error("Expected an Estagiário entry in CHARACTERS for this test");
+
+    fireEvent.click(screen.getByRole("radio", { name: new RegExp(estagiario.name) }));
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Jogar" }));
+    });
+
+    expect(screen.getByText(String(estagiario.maxHp))).toBeVisible();
+  });
+
+  it("resets the selection back to the default character on a fresh render, simulating a reload (CHAR-23)", () => {
+    const { unmount } = render(<Home />);
+    typeKeys("iddqd");
+    const estagiario = CHARACTERS.find((character) => character.id === "estagiario");
+    if (!estagiario) throw new Error("Expected an Estagiário entry in CHARACTERS for this test");
+    fireEvent.click(screen.getByRole("radio", { name: new RegExp(estagiario.name) }));
+    expect(screen.getByRole("radio", { name: new RegExp(estagiario.name) })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    unmount();
+
+    render(<Home />);
+    typeKeys("iddqd");
+
+    expect(screen.getByRole("radio", { name: new RegExp(CHARACTERS[0].name) })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+  });
+
+  it("draws a static portrait canvas for every character card when the skins panel opens (CHAR-21)", () => {
+    render(<Home />);
+    const fillRectCallsBefore = canvasContext.fillRect.mock.calls.length;
+
+    typeKeys("iddqd");
+
+    const dialog = screen.getByRole("dialog", { name: "Personagens e Skins" });
+    const canvases = dialog.querySelectorAll("canvas");
+    expect(canvases).toHaveLength(CHARACTERS.length);
+    expect(canvasContext.fillRect.mock.calls.length).toBeGreaterThan(fillRectCallsBefore);
+  });
+
+  it("re-opens the skins panel without throwing and keeps exactly one portrait canvas per card (CHAR-21 edge case)", () => {
+    render(<Home />);
+    typeKeys("iddqd");
+    fireEvent.click(screen.getByRole("button", { name: "Voltar ao início" }));
+
+    expect(() => typeKeys("iddqd")).not.toThrow();
+
+    const dialog = screen.getByRole("dialog", { name: "Personagens e Skins" });
+    expect(dialog.querySelectorAll("canvas")).toHaveLength(CHARACTERS.length);
   });
 });

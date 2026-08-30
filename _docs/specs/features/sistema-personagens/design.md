@@ -168,3 +168,127 @@ Catálogo inicial (1 entrada, CHAR-01):
 | CHAR-12 (emenda, achado de `/code-review`): dash atravessa obstáculos | `triggerActivePower` só faz `clamp` nos limites do mundo, sem chamar `obstacleBlocksCircle` — decisão do usuário: manter, é intencional (habilidade de escape) | O código-review apontou a ausência de checagem de colisão com obstáculo como inconsistência com o movimento normal; o usuário decidiu que essa é a intenção do poder (diferenciá-lo do movimento comum), não um bug — formalizado como AC em vez de corrigido |
 
 > Nenhuma decisão aqui estabelece uma convenção de projeto nova além do já registrado em `AD-008` (lógica pura fora de `app/page.tsx`) — que já está em `STATE.md`. Sem novo `AD-NNN` necessário.
+
+---
+
+## Design — Emenda 2 (2026-08-29): Personagens visuais, poderes com mecânicas diferentes, seletor real
+
+**Spec**: `_docs/specs/features/sistema-personagens/spec.md` (seção "Emenda 2")
+
+### Architecture Overview
+
+Três mudanças arquiteturais novas, todas reaproveitando estrutura que já existe:
+
+1. **`CharacterSpecialPower` vira union discriminada por `kind`** (`"dash" | "haste" | "shield"`) em vez de sempre exigir `dashDistance`. `triggerActivePower` passa a despachar por `power.kind` (um `if/else`/`switch` sobre 3 casos, não por personagem) — CHAR-15/18.
+2. **`activeCharacter` deixa de ser constante de módulo e vira uma variável de closure re-resolvida em `resetWaveOne()`** a partir de um `selectedCharacterIdRef` sincronizado com o novo estado React `selectedCharacterId`. Isso resolve o Risco R4 já registrado na Emenda 1 ("trocar de personagem só valeria após reload") — CHAR-22.
+3. **O desenho do corpo do jogador é extraído de `drawPlayer()` para uma função `drawCharacterBody()` reutilizável**, parametrizada por cor — chamada tanto pelo jogo (com efeitos de fúria/piscar/animação de corrida) quanto por um retrato estático no seletor (sem efeitos, pose fixa) — CHAR-19/21.
+
+```mermaid
+graph TD
+    A["CHARACTERS registry<br/>(3 entradas, cada uma com bodyColor + specialPower.kind)"] --> B["resolveCharacter(selectedCharacterIdRef.current)"]
+    B -->|"chamado 1x no mount<br/>+ toda vez em resetWaveOne()"| C["activeCharacter<br/>(closure var, não mais const de módulo)"]
+    C --> D["player.maxHp/speed/size<br/>reaplicados a cada reset"]
+    C --> E["drawPlayer() → drawCharacterBody(ctx, x, y, {bodyColor, faceColor, runOffset})"]
+    F["Painel 'skins': 3 cards"] -->|"onClick"| G["setSelectedCharacterId(id)<br/>(estado React, só afeta render + ref)"]
+    G -->|"useEffect"| H["selectedCharacterIdRef.current = id"]
+    F --> I["useEffect ao abrir o painel:<br/>desenha 1x cada portrait via drawCharacterBody"]
+    J["triggerActivePower()"] --> K{"power.kind?"}
+    K -->|dash| L["resolveDashDirection + clamp (já existe)"]
+    K -->|haste| M["player.haste = power.durationSeconds"]
+    K -->|shield| N["player.invincible = max(player.invincible, power.durationSeconds)"]
+```
+
+### Code Reuse Analysis (Emenda 2)
+
+| Componente existente | Local | Como é reaproveitado |
+| --- | --- | --- |
+| `player.haste` (multiplicador de velocidade 1.34x já lido em `update()`) | `app/page.tsx:1218` | O poder "haste" só faz `player.haste = power.durationSeconds` — o efeito de velocidade em si já existe e já é usado pelo power-up "coffee"/similar, zero lógica de movimento nova |
+| `player.invincible` (já usado por `drawPlayer` pro efeito de piscar e por combate pra ignorar dano) | `app/page.tsx:1377-1388`, `1712` | O poder "shield" só faz `player.invincible = Math.max(player.invincible, power.durationSeconds)` — mesmo padrão `Math.max` já usado pelo power-up "rollback" |
+| `pixelRect(ctx, x, y, w, h, color)` | `app/page.tsx:181` | Reaproveitada tal como está pra desenhar tanto o corpo no jogo quanto o retrato estático |
+| Mock global de `getContext` já usado em todos os testes de componente | `app/__tests__/*.test.tsx` | Os 3 `<canvas>` novos do seletor recebem o mesmo mock — nenhuma mudança de setup de teste necessária |
+| `resetWaveOne()` | `app/page.tsx` | Ganha 1 linha (`activeCharacter = resolveCharacter(...)`) além das que já reseta (`abilityCooldownRemaining = 0` da Emenda 1) — mesmo ponto de entrada pra "início de partida" |
+
+### Components (novos/modificados)
+
+#### `lib/characters.ts` (modificado)
+
+- **`CharacterSpecialPower`**: vira union discriminada:
+  ```typescript
+  type CharacterSpecialPower =
+    | { id: string; name: string; description: string; cooldownSeconds: number; kind: "dash"; dashDistance: number }
+    | { id: string; name: string; description: string; cooldownSeconds: number; kind: "haste"; durationSeconds: number }
+    | { id: string; name: string; description: string; cooldownSeconds: number; kind: "shield"; durationSeconds: number };
+  ```
+- **`CharacterDefinition`**: ganha campo `bodyColor: string` (obrigatório — inclusive pro "Dev Pleno" já existente, que passa a declarar `bodyColor: "#0ea5e9"` explicitamente em vez de a cor ficar hardcoded em `drawPlayer()`).
+- **`CHARACTERS`**: ganha 2 entradas (Estagiário, SRE) com os valores da tabela de Assumptions da spec.
+- **Sem novas funções puras**: `resolveCharacter`/`resolveDashDirection` não mudam de assinatura; a lógica de haste/shield é trivial demais pra justificar extração (1 linha cada), fica direto em `triggerActivePower`.
+
+#### `app/page.tsx` (modificado)
+
+- **`drawCharacterBody(ctx, x, y, options)`** (nova função standalone, ao lado de `pixelRect`): desenha só a identidade recolorável do sprite (cabelo, rosto, corpo/camisa, braços, pernas, olhos) — sem sombra, anel de foco, barras de fúria, arma/caneca ou texto, que continuam em `drawPlayer()`. Parâmetros: `bodyColor` (obrigatório), `faceColor` (default cor normal — `drawPlayer` passa a cor de piscar quando `player.invincible > 0`), `runOffset` (default `0` — `drawPlayer` passa o frame de animação; o retrato estático nunca anima, sempre usa o default).
+- **`triggerActivePower()`**: passa a fazer `switch`/`if-else` em `power.kind` (dash/haste/shield) em vez de assumir sempre dash.
+- **`resetWaveOne()`**: ganha `activeCharacter = resolveCharacter(selectedCharacterIdRef.current);` antes de reaplicar `player.maxHp/speed/size/hp`.
+- **Novo estado/ref**: `selectedCharacterId` (`useState`, default `DEFAULT_CHARACTER_ID`) + `selectedCharacterIdRef` (sincronizado via `useEffect`, mesmo padrão de `menuPanelRef`/`stateRef`).
+- **Painel "skins"**: troca o sheet único por um `role="radiogroup"` com 3 `<button role="radio" aria-checked={...}>`, cada um contendo: nome, atributos, poder (nome/descrição/cooldown), e um `<canvas>` pequeno pro retrato.
+- **`useEffect` novo**: quando `menuPanel === "skins"` (painel abre), desenha 1x em cada canvas de retrato via `drawCharacterBody` (sem loop de animação — satisfaz o Edge Case da spec).
+- **Debug HUD**: mais um status `role="status"` — `debugPlayerEffects` (`{ haste, invincible }`, arredondados) — necessário pra provar CHAR-16/17 (que o poder de fato aplicou o efeito), mesmo padrão/gate (`isDebugAllowed()`) dos status já existentes.
+
+### Data Models (Emenda 2)
+
+```typescript
+type CharacterSpecialPower =
+  | { id: string; name: string; description: string; cooldownSeconds: number; kind: "dash"; dashDistance: number }
+  | { id: string; name: string; description: string; cooldownSeconds: number; kind: "haste"; durationSeconds: number }
+  | { id: string; name: string; description: string; cooldownSeconds: number; kind: "shield"; durationSeconds: number };
+
+type CharacterDefinition = {
+  id: string;
+  name: string;
+  maxHp: number;
+  speed: number;
+  size: number;
+  bodyColor: string;
+  specialPower: CharacterSpecialPower | null;
+};
+```
+
+Novo catálogo completo (valores de balanceamento — ver Tech Decisions):
+
+```typescript
+[
+  { id: "dev-pleno", name: "Dev Pleno", maxHp: 100, speed: 210, size: 24, bodyColor: "#0ea5e9",
+    specialPower: { id: "refactor-dash", name: "Refactor Dash", ..., kind: "dash", cooldownSeconds: 6, dashDistance: 140 } },
+  { id: "estagiario", name: "Estagiário", maxHp: 70, speed: 260, size: 20, bodyColor: "#2dd4bf",
+    specialPower: { id: "ja-terminei", name: "Já Terminei!", ..., kind: "haste", cooldownSeconds: 10, durationSeconds: 4 } },
+  { id: "sre", name: "SRE", maxHp: 130, speed: 190, size: 28, bodyColor: "#64748b",
+    specialPower: { id: "incident-response", name: "Modo Incident Response", ..., kind: "shield", cooldownSeconds: 30, durationSeconds: 2.5 } },
+]
+```
+
+### Error Handling Strategy (Emenda 2)
+
+| Cenário | Tratamento | Impacto pro usuário |
+| --- | --- | --- |
+| `power.kind` desconhecido (novo kind futuro sem branch em `triggerActivePower`) | TypeScript com union discriminada torna isso um erro de compilação, não um erro em runtime — `npm run build` falha se um kind novo for adicionado sem o branch correspondente | Nenhum (pego em build, não em produção) |
+| Personagem selecionado é trocado durante uma partida em andamento | Não é alcançável na UI hoje (o painel "skins" só abre em `gameState === "menu"`, nunca durante `"playing"`/`"paused"`) — `activeCharacter` só é re-resolvido em `resetWaveOne()` | Nenhum — mas o design já deixa isso correto por construção, caso um botão "trocar personagem" seja adicionado à tela de pausa no futuro |
+| Retrato desenhado antes do canvas ter dimensão/contexto pronto | `useEffect` roda depois do primeiro paint, quando o `<canvas>` já está no DOM; mesma garantia que já vale pro canvas principal do jogo | Nenhum |
+
+### Risks & Concerns (Emenda 2)
+
+| Concern | Location | Impact | Mitigation |
+| --- | --- | --- | --- |
+| R5 — `drawCharacterBody` fica com 3 parâmetros opcionais (`faceColor`, `runOffset`) só pra servir 2 chamadores com necessidades um pouco diferentes | `app/page.tsx` (nova função) | Baixo — função pequena (10 linhas), parâmetros com default sensato, não é uma abstração especulativa (os 2 chamadores já existem nesta mesma entrega) | Aceito — é exatamente o nível de reuse pedido pela spec (mesma técnica de sprite no jogo e no seletor) |
+| R6 — `resolveCharacter` agora é chamado 2x por partida (mount + cada reset), não mais 1x na vida do módulo | `app/page.tsx` (`resetWaveOne`) | Nenhum — é uma busca linear num array de 3 itens, custo desprezível | Nenhuma mitigação necessária |
+| R7 — Union discriminada de `CharacterSpecialPower` quebra a assinatura antiga (que sempre tinha `dashDistance`) | `lib/characters.ts` | Baixo — só há 1 consumidor real (`triggerActivePower`) e os testes existentes de `characters.test.ts`/`character-power.test.tsx` que constroem `CharacterSpecialPower` literal precisam adicionar `kind: "dash"` | Migração mecânica — o compilador TypeScript aponta exatamente onde `kind` falta, sem ambiguidade |
+
+### Tech Decisions (Emenda 2)
+
+| Decision | Choice | Rationale |
+| --- | --- | --- |
+| Atributos numéricos do Estagiário e do SRE | Estagiário: `maxHp: 70, speed: 260, size: 20`. SRE: `maxHp: 130, speed: 190, size: 28` | Valores de balanceamento (a spec só definiu "perfil": rápido/frágil vs tanque) — deltas proporcionais ao "Dev Pleno" (100/210/24), ajustáveis sem mudar arquitetura |
+| `player.haste`/`player.invincible` atribuídos direto, não via `Math.max` (exceto invincible) | `haste = duration` direto; `invincible = Math.max(invincible, duration)` | Replica exatamente o padrão já usado pelos power-ups equivalentes (`haste = 6` direto na coleta; `invincible = Math.max(...)` no rollback) — não inventa uma convenção nova |
+| `drawCharacterBody` fica em `app/page.tsx`, não em `lib/` | Função não-exportada, só desenha em canvas (efeito colateral via `ctx`) | Não precisa ser testada diretamente (mesma situação de `pixelRect`/`drawPlayer`, nunca testados isoladamente) — `AD-008` só exige mover pra `lib/` o que precisa ser importado por teste direto |
+| Seletor usa `role="radiogroup"` + `role="radio"` | Padrão de acessibilidade padrão pra "escolher 1 entre N visualmente distintos" | Consistente com `testing-a11y` (queries por role); alternativa (`listbox`/`option`) seria equivalente mas radio é mais direto pra "seleção única, sempre 1 marcado" |
+| Debug HUD ganha `debugPlayerEffects` (`{haste, invincible}`) | Mesmo gate `isDebugAllowed()` dos status existentes | Sem isso, CHAR-16/17 (aplicação do efeito) não seria verificável sem ler pixels do canvas — mesmo raciocínio já usado pra `debugAbilityCooldown`/`debugPlayerPosition` na Emenda 1 |
+
+> Nenhuma decisão aqui supera um `AD-NNN` ativo — a extração de `drawCharacterBody` e a migração de `activeCharacter` pra closure variable são decisões locais desta feature, não convenções de projeto.

@@ -1,10 +1,17 @@
 # Validation — sistema-personagens
 
 ## Status atual
-Veredito: PASS
-Spec vigente: spec.md (12 ACs, CHAR-01 a CHAR-12 — CHAR-12 adicionado por emenda em 2026-08-29 pós-code-review)
-HEAD: 32a656d
-Gaps abertos: 0. Fix cycle 1 (ca3aa1e) fechou o gap Minor de CHAR-09. `/code-review high` pós-Execute levantou 8 achados: 2 viravam fix cycle 2 (dash com vetor zero quando inimigo coincide com o jogador; setState de debug sem gate `isDebugAllowed()`), 1 virou emenda de spec CHAR-12 (dash atravessa obstáculos — decisão do usuário: comportamento intencional, sem mudança de código), 5 registrados em "Questões abertas" do code-review (não implementados, fora do escopo dos ACs). Fix cycle 2 (32a656d) fechou os 2 gaps reais (a) — re-verificado nesta rodada, PASS, sem regressão.
+Veredito: PASS (CHAR-24 e CHAR-25 fechados no fix cycle 2; resta apenas 1 gap Cosmetic aceito — `player.fury` sem teste automatizado)
+Spec vigente: spec.md (25 ACs, CHAR-01 a CHAR-25 — Emenda 3 de 2026-08-30 adicionou CHAR-24/CHAR-25)
+HEAD: 2e2c54f
+Gaps abertos: 1, não bloqueante.
+1. **[Cosmetic, aceito]** Regressão de `player.fury` sobrepondo a cor do corpo mesmo com personagem diferente (T7, "Done when" não marcado `[x]`) — sem teste automatizado, justificativa do autor confirmada por inspeção de código (ver seção "Confirmação do SPEC_DEVIATION" abaixo — não há caminho de debug determinístico para forçar `player.fury > 0`).
+
+Histórico do gap CHAR-24/CHAR-25 (fechado): o `/code-review high` na Emenda 2 encontrou que o poder haste sobrescrevia `player.haste` em vez de usar `Math.max` (como o shield), e que os cards do seletor não tinham CSS correspondente às classes `character-card`/`character-card-selected`/`character-portrait`. Formalizados como CHAR-24/CHAR-25 (`24e29b6`). Fechados pelo fix cycle 2 (`2e2c54f`): `app/page.tsx:1109` agora usa `Math.max`, e `app/globals.css` ganhou as 3 classes com destaque visual real. Re-verificado nesta rodada — mutação inversa (reatribuição direta) KILLED pelo teste novo. Ver seção "Execução ... 278a787..2e2c54f" abaixo.
+
+Histórico do gap CHAR-19 (fechado): o sensor de discriminação da rodada `2b19cda..ff71371` havia encontrado um gap Minor de isolamento de evidência no teste de CHAR-19 (`captured[]` contaminado pelo retrato do seletor). Fechado pelo fix cycle 1 (`278a787`): `captured.length = 0` inserido em `character-power.test.tsx:362`, entre a seleção do personagem e o avanço do frame de jogo. Re-verificado nesta rodada — mutação re-aplicada em `app/page.tsx:1778` agora KILLED. Ver seção "Execução ... ff71371..278a787" abaixo.
+
+Histórico anterior (Emenda 1, CHAR-01 a CHAR-12): todos `Verified`, sem regressão confirmada nesta rodada (ver "Escopo" abaixo — nenhum teste de T1-T3 mudou de contagem ou quebrou).
 
 ---
 
@@ -253,3 +260,199 @@ O "novo código" do Sonar é medido a partir de um baseline (`PREVIOUS_VERSION`,
 **Nenhuma ação tomada nesta feature** — as 3 violações são de código já mergeado na `main` antes desta branch existir, fora do escopo de `sistema-personagens` (regra "Nada fora da spec"). Registrado aqui para o usuário decidir se abre uma tarefa de limpeza separada para a feature de cheat-code.
 
 **75 issues pré-existentes adicionais** (`sinceLeakPeriod=true`, período mais amplo) não investigadas uma a uma — a maioria concentrada em `app/page.tsx` (complexidade cognitiva alta em funções do motor do jogo, ternários aninhados, `Math.random` sinalizado como PRNG "inseguro" em contexto de gameplay, não de segurança) — débito técnico anterior a toda esta sessão, fora do escopo desta validação.
+
+---
+
+## Execução 2026-08-29 — sistema-personagens Emenda 2 — commit range 2b19cda..ff71371
+
+**PASS** (com 1 gap Minor de isolamento de sensor — CHAR-19 — e 1 gap Cosmetic aceito, já registrado pelo autor)
+
+### Evidência por AC (CHAR-13 a CHAR-23)
+
+**CHAR-13** (Estagiário: maxHp menor, speed maior, size menor, poder `kind: "haste"`)
+`lib/characters.ts:56-71` — entrada `estagiario`: `maxHp: 70, speed: 260, size: 20, bodyColor: "#2dd4bf"`, poder `{ kind: "haste", cooldownSeconds: 10, durationSeconds: 4, name: "Já Terminei!" }`. Teste: `lib/__tests__/characters.test.ts:58-64` — `expect(estagiario.maxHp).toBeLessThan(devPleno.maxHp)`, `.speed).toBeGreaterThan`, `.size).toBeLessThan`. Outcome da spec: perfil "rápido e frágil" com esses 3 comparativos + poder haste nomeado. ✅ PASS — comparação relativa (não só valor absoluto), exatamente o que a AC pede.
+
+**CHAR-14** (SRE: maxHp maior, speed igual/menor, size maior, poder `kind: "shield"`)
+`lib/characters.ts:72-87` — entrada `sre`: `maxHp: 130, speed: 190, size: 28, bodyColor: "#64748b"`, poder `{ kind: "shield", cooldownSeconds: 30, durationSeconds: 2.5, name: "Modo Incident Response" }`. Teste: `lib/__tests__/characters.test.ts:66-72` — `expect(sre.maxHp).toBeGreaterThan`, `.speed).toBeLessThanOrEqual`, `.size).toBeGreaterThan`. ✅ PASS.
+
+**CHAR-15** (discriminador `kind` + despacho genérico sem `if`/`else` por personagem)
+Tipo: `lib/characters.ts:3-27` — union discriminada `{ kind: "dash", dashDistance } | { kind: "haste", durationSeconds } | { kind: "shield", durationSeconds }`. Despacho: `app/page.tsx:1104-1112` — `if (power.kind === "dash") {...} else if (power.kind === "haste") {...} else if (power.kind === "shield") {...}` — ramifica por `power.kind`, nunca por `activeCharacter.id`/nome. ✅ PASS por leitura direta — confirmado que não existe nenhum `if (activeCharacter.id === ...)` em `triggerActivePower` (`grep -n "activeCharacter.id" app/page.tsx` não retorna nada dentro da função).
+
+**Confirmação do SPEC_DEVIATION reportado (guarda de narrowing temporária em T5)**
+
+`git show 3bf54f8 -- app/page.tsx` confirma que T5 introduziu `if (power.kind !== "dash") return;` logo após as guardas de cooldown, comentada explicitamente como `// SPEC_DEVIATION: guard added ahead of schedule (T5, not T6)...`. `git show 838aa54 -- app/page.tsx` confirma que T6 **removeu essa linha e o comentário por completo**, substituindo-os pelo `if/else if` de 3 ramos (dash/haste/shield) mostrado acima. Verificação direta do HEAD (`ff71371`): `grep -n "SPEC_DEVIATION\|power.kind !== \"dash\"" app/page.tsx` não retorna nenhuma ocorrência — nenhum resquício da guarda temporária, nenhum comportamento remanescente dela (o ramo `haste`/`shield` não passa mais por um `return` antecipado). **Confirmado: resolvido, sem gap.**
+
+**CHAR-16** (ativação de poder `kind: "haste"` aplica `player.haste` + inicia cooldown)
+`app/__tests__/character-power.test.tsx:233-243` — `selectCharacterAndStart("estagiario")`, pressiona `Q`, afirma `expect(playerEffectsStatus().haste).toBeCloseTo(hastePower.durationSeconds, 1)` (4) e `expect(cooldownStatus()).toBe(\`${hastePower.cooldownSeconds.toFixed(1)}s\`)` (10.0s). Código: `app/page.tsx:1108-1109` — `player.haste = power.durationSeconds`. ✅ PASS — valor exato, não apenas "mudou". Sensor: mutação 1 abaixo, killed.
+
+**CHAR-17** (ativação de poder `kind: "shield"` aplica `player.invincible` + inicia cooldown)
+`app/__tests__/character-power.test.tsx:245-255` — `selectCharacterAndStart("sre")`, pressiona `Q`, afirma `expect(playerEffectsStatus().invincible).toBeGreaterThanOrEqual(shieldPower.durationSeconds)` (2.5) e cooldown `30.0s`. Código: `app/page.tsx:1110-1111` — `player.invincible = Math.max(player.invincible, power.durationSeconds)`. ✅ PASS. Sensor: mutação 2 abaixo, killed.
+
+**CHAR-18** (regras de cooldown/borda/reset/estado idênticas para haste/shield)
+Cooldown durante bloqueio: `character-power.test.tsx:257-269` (`"blocks a repeated Q while a haste power is on cooldown... (CHAR-18, mirrors CHAR-04)"`) — dispara, captura efeitos/cooldown, dispara de novo, afirma `toEqual`/`toBe` (sem mudança). Fora de `"playing"`: `character-power.test.tsx:271-281` (`"has no effect for a shield power when Q is pressed outside gameState 'playing' (CHAR-18, mirrors CHAR-07)"`) — seleciona SRE, volta ao menu, pressiona `Q`, afirma `{haste:0, invincible:0}` e cooldown `"0.0s"`. Ambos os testes são duplicações reais (não apenas comentário) das regras de CHAR-04/CHAR-07, aplicadas a personagens não-dash — cumpre exatamente o que a task T6 exigia ("prova CHAR-18 na prática, não só por inspeção de código"). Reset de cooldown (CHAR-06) e borda de subida (CHAR-05) não têm uma cópia dedicada para haste/shield — o mecanismo de guarda (`abilityCooldownRemaining`) é o mesmo código compartilhado entre os 3 `kind`s, já provado por CHAR-06/05 com dash; não há um `file:line` que repita especificamente esses 2 sub-casos para haste/shield. ⚠️ **Spec-precision gap parcial**: CHAR-18 cobre cooldown-block e fora-de-playing com teste duplicado real; reset-on-new-match e edge-triggering ficam cobertos só pela inspeção de que o código é o mesmo (não específico por `kind`), consistente com a alegação do design ("essas regras são do sistema de ativação de poder, não específicas de dash") mas sem duplicação de teste explícita para os 2 sub-casos restantes.
+
+**CHAR-19** (cor de corpo por personagem em `drawPlayer()`)
+`app/__tests__/character-power.test.tsx:356-365` — técnica: `testCanvasContext.fillRect` é uma função não-arrow que lê `this.fillStyle` no momento da chamada (linhas 339-342), capturando `{color, args}` para cada `fillRect`; seleciona Estagiário, avança 1 frame, afirma `captured.find(fill => fill.color === "#2dd4bf" && fill.args[2] === 16 && fill.args[3] === 13)` está definido — a técnica de captura é genuína (não é um mock raso "foi chamado"), prova que ALGUMA chamada `fillRect` usou a cor `#2dd4bf` no shape exato da camisa (16×13). Código: `app/page.tsx:1777-1781` — `drawCharacterBody(ctx, x, y, { bodyColor: player.fury > 0 ? "#f97316" : activeCharacter.bodyColor, ... })`. ⚠️ **GAP real encontrado pelo sensor de discriminação** (ver abaixo): a evidência não isola exclusivamente o código de `drawPlayer()` — o mesmo `captured[]` também recebe os `fillRect` do retrato do seletor (`app/page.tsx:305`, mesmo shape porque `drawCharacterBody` é reutilizada), que já roda durante `selectCharacterAndStart()` (clique no radio, antes de "Jogar"). Mutar só a linha 1778 (jogo) para uma cor fixa não derruba o teste, porque o retrato (linha 305, não mutado) já produz a mesma combinação cor+shape. **Resultado: GAP (Minor)** — a AC está implementada corretamente (confirmado por leitura direta do código, que usa `activeCharacter.bodyColor` tanto no jogo quanto no retrato), mas o teste como está não prova unicamente que `drawPlayer()` (e não só o retrato) usa a cor do personagem.
+
+**CHAR-20** (rótulo em jogo usa `activeCharacter.name`)
+`app/__tests__/character-power.test.tsx:367-377` — seleciona Estagiário, avança 1 frame, `expect(testCanvasContext.fillText).toHaveBeenCalledWith("Estagiário", expect.any(Number), expect.any(Number))`. Código: `app/page.tsx:1789` (`ctx.fillText(activeCharacter.name, player.x, player.y - 20)`). ✅ PASS — valor exato do nome, não apenas presença da chamada.
+
+**CHAR-21** (seletor real com 3 cards + retrato desenhado)
+Cards: `app/__tests__/hidden-menu.test.tsx:125-138` (`"renders one selectable radio card per registry character, Dev Pleno checked by default (CHAR-21, CHAR-22)"`) — `expect(radios).toHaveLength(CHARACTERS.length)` (3) e cada `role="radio"` com `aria-checked` correto. Retrato: `hidden-menu.test.tsx:195-205` — abre painel, `dialog.querySelectorAll("canvas")` tem `CHARACTERS.length` (3) elementos e `canvasContext.fillRect.mock.calls.length` aumentou — prova desenho real, não só a tag presente. Edge case (reabrir sem duplicar/sem erro): `hidden-menu.test.tsx:207-216`. Código: `app/page.tsx:298-306` (`useEffect` dependente de `menuPanel`, desenha 1x por canvas via `drawCharacterBody`). ✅ PASS.
+
+**CHAR-22** (seleção só vale na próxima partida)
+`hidden-menu.test.tsx:140-157` (`aria-checked` move ao clicar) e `:159-172` (`"starts the next match with the selected character's maxHp instead of the default's"`) — seleciona Estagiário, clica "Jogar", `expect(screen.getByText(String(estagiario.maxHp))).toBeVisible()` (70). Código: `app/page.tsx:802-806` (`resetWaveOne`: `activeCharacter = resolveCharacter(selectedCharacterIdRef.current); player.maxHp = activeCharacter.maxHp; ...`). ✅ PASS — valor exato (70), não genérico.
+
+**CHAR-23** (sem persistência entre sessões)
+`hidden-menu.test.tsx:174-193` — seleciona Estagiário, `unmount()`, novo `render(<Home />)`, reabre painel, afirma `aria-checked="true"` de volta no `CHARACTERS[0]` (Dev Pleno). ✅ PASS — simula reload de forma real (unmount+remount, não apenas reset de estado interno).
+
+### Confirmação de não-regressão (CHAR-01 a CHAR-12)
+
+`git diff 2b19cda..ff71371 --stat` (ver "Escopo" abaixo) mostra que os arquivos de T1-T3 (`lib/characters.ts`, `app/page.tsx`) foram modificados, mas de forma aditiva sobre a mesma estrutura — nenhum teste de `characters.test.ts`/`character-power.test.tsx`/`hidden-menu.test.tsx` referente a CHAR-01 a CHAR-11 mudou de asserção ou foi removido (confirmado por leitura: as describes/its de "character active power (Refactor Dash)" e "resolveCharacter"/"resolveDashDirection" permanecem intactas, linha por linha, com os mesmos valores exatos: `dashDistance`, `cooldownSeconds: 6`, fallback `(0,-1)`). CHAR-12 (dash atravessa obstáculos) permanece válido por leitura direta: `triggerActivePower` não ganhou nenhuma chamada a `obstacleBlocksCircle` no ramo `dash` (`app/page.tsx:1105-1107`, idêntico ao comportamento pré-Emenda-2). `npm test -- --run` = 226/226 (nenhuma falha) confirma ausência de regressão end-to-end.
+
+### Sensor de discriminação
+
+Estado descartável: edições diretas em `app/page.tsx`, revertidas com `git checkout --`/reversão manual simétrica antes de terminar; `git status --short` confirmado limpo antes e depois de cada mutação.
+
+| # | Arquivo:linha | Mutação | Resultado |
+| - | -- | -- | -- |
+| 1 | `app/page.tsx:1109` | `player.haste = power.durationSeconds;` → `player.haste = 0;` | ✅ Killed — `character-power.test.tsx` CHAR-16 falhou (`expected +0 to be close to 4`) |
+| 2 | `app/page.tsx:1111` | `player.invincible = Math.max(player.invincible, power.durationSeconds);` → subtrai `power.durationSeconds` de volta (neutraliza o efeito) | ✅ Killed — `character-power.test.tsx` CHAR-17 falhou (`expected 0 to be greater than or equal to 2.5`) |
+| 3 | `app/page.tsx:1778` | `bodyColor: player.fury > 0 ? "#f97316" : activeCharacter.bodyColor` → `bodyColor: player.fury > 0 ? "#f97316" : "#0ea5e9"` (cor fixa, ignora o personagem ativo em jogo) | ❌ **Survived** — `character-power.test.tsx` CHAR-19 continuou passando (13/13). Causa raiz: o `captured[]` do teste também recebe os `fillRect` do retrato do seletor (`app/page.tsx:305`, mesmo `bodyColor`/shape, não mutado), disparados por `selectCharacterAndStart()` antes de `advanceFrames(1)`. Confirmado isoladamente com `npx vitest run ... -t "CHAR-19"` (1/1 passou mesmo com a mutação ativa). Mutação revertida; `git diff app/page.tsx` limpo e suíte completa voltou a 226/226 após reversão. |
+
+**Sensor depth**: lightweight (default, 3 mutações). **Resultado**: 2/3 killed, 1/3 survived — mutante sobrevivente vira o gap Minor de CHAR-19 registrado acima (fix task recomendada: limpar/isolar `captured[]` antes de `advanceFrames(1)` em `character-power.test.tsx:358`, ou restringir a asserção a um `fillRect` capturado estritamente após esse ponto).
+
+### Escopo
+
+`git diff 2b19cda..ff71371 --stat`:
+```
+_docs/specs/features/sistema-personagens/tasks.md |  50 +++---
+app/__tests__/character-power.test.tsx            | 207 +++++++++++++++++++++-
+app/__tests__/hidden-menu.test.tsx                |  94 ++++++++++
+app/page.tsx                                       | 143 +++++++++++----
+lib/__tests__/characters.test.ts                  |  59 +++++-
+lib/characters.ts                                 |  67 ++++++-
+6 files changed, 550 insertions(+), 70 deletions(-)
+```
+Exatamente os arquivos esperados por T4 (`lib/characters.ts` + teste), T5/T6/T7 (`app/page.tsx` + os 2 arquivos de teste de componente), mais `tasks.md` (atualização de status das tasks, parte do próprio processo). Nenhum arquivo fora do escopo declarado em `design.md`/`tasks.md` foi tocado.
+
+### Comandos executados
+
+- `npm test -- --run` → **226 passed (226)**, 16 arquivos de teste, 0 falhas. Base antes da Emenda 2 (`2b19cda`) era 211 → delta de **+15** (novos casos em `characters.test.ts`, `character-power.test.tsx`, `hidden-menu.test.tsx`), batendo a contagem esperada pelo pedido de verificação.
+- `npm run build` → sucesso, `Compiled successfully in 652ms`, TypeScript OK, 5 páginas estáticas geradas, sem erros.
+- `npm run lint` → **0 erros**, 2 warnings pré-existentes e não relacionados a esta emenda (`coverage/lcov-report/block-navigation.js` — arquivo gerado — e `lib/debug.ts:26` `_search` não usado, mesmos das rodadas anteriores).
+
+### Gaps encontrados
+
+1. **[Minor] CHAR-19 — sensor de discriminação sobrevivente.** `app/__tests__/character-power.test.tsx:356-365` não isola a evidência à cor de corpo desenhada por `drawPlayer()` — o `captured[]` compartilhado também absorve os `fillRect` do retrato do seletor (`app/page.tsx:305`), que usa a mesma cor/shape e roda antes de `advanceFrames(1)`. Mutar só o código de jogo (`app/page.tsx:1778`) não derruba o teste. A AC está implementada corretamente por leitura direta do código (confirmado: `activeCharacter.bodyColor` é usado tanto no jogo quanto no retrato, exatamente como o design pede), mas o teste como está não prova exclusivamente esse ponto. **Sugestão de fix** (não aplicada, apenas registrada): limpar `captured.length = 0` (ou reatribuir `captured = []`) imediatamente antes de `advanceFrames(1)` em `character-power.test.tsx:359`, isolando a evidência aos `fillRect` do frame de jogo, não aos do painel de seleção que já rodou antes.
+2. **[Cosmetic, aceito] `player.fury` sobrepondo a cor do corpo — sem teste automatizado.** Já registrado pelo próprio autor no "Done when" de T7 (`tasks.md`, item não marcado `[x]`) como não coberto por teste automatizado, com a justificativa de que não há caminho de debug determinístico para forçar `player.fury > 0` nesta suíte (só via coleta de power-up "refactor" com spawn randomizado). **Confirmado nesta rodada**: `grep -n "fury" app/page.tsx` não revela nenhum hook de debug para forçar `player.fury` diretamente (ao contrário de `debugPlayerEffects` para `haste`/`invincible`, que foi adicionado especificamente em T6 para tornar CHAR-16/17 testáveis). Por inspeção direta de `app/page.tsx:1778`, o ternário `player.fury > 0 ? "#f97316" : activeCharacter.bodyColor` preserva exatamente a condição e o branch verdadeiro do código anterior (`player.fury > 0 ? "#f97316" : "#0ea5e9"`) — só o branch falso mudou de literal fixo para campo do personagem ativo. Justificativa aceita como válida; gap classificado como Cosmetic e não bloqueante, consistente com a ausência de qualquer outro caminho de teste determinístico para `player.fury` já documentado em rodadas anteriores desta mesma feature.
+
+Nenhum dos 2 gaps bloqueia o PASS: CHAR-19 está corretamente implementada (o gap é de isolamento do sensor de teste, não de comportamento), e o gap de `player.fury` é uma limitação de testabilidade já conhecida e aceita, não uma falha funcional.
+
+---
+
+## Execução 2026-08-29 — sistema-personagens Emenda 2 — commit range ff71371..278a787 (fix cycle 1 — re-verificação de CHAR-19)
+
+PASS
+
+### Evidência do fix
+
+`git show 278a787` toca exatamente 1 arquivo: `app/__tests__/character-power.test.tsx` (4 linhas adicionadas, 0 removidas).
+
+O diff insere, dentro do teste de CHAR-19 (`it("draws the active character's shirt with their bodyColor instead of the fixed #0ea5e9 (CHAR-19)"`):
+
+```diff
+     render(<Home />);
+     selectCharacterAndStart("estagiario");
++    // Discard any fillRect calls captured so far (e.g. the character selector's static
++    // portrait, drawn when the "skins" panel opens/selects) so the assertion below can
++    // only be satisfied by the in-game drawPlayer() draw that follows.
++    captured.length = 0;
+     advanceFrames(1);
+```
+
+Lido no arquivo atual (`app/__tests__/character-power.test.tsx:356-369`): `captured.length = 0` está na linha 362 — depois de `selectCharacterAndStart("estagiario")` (linha 358, que dispara o desenho do retrato estático do seletor via `app/page.tsx:305`) e antes de `advanceFrames(1)` (linha 363, que dispara o frame de jogo real, incluindo `drawPlayer()`). A asserção subsequente (`captured.find(fill => fill.color === "#2dd4bf" && fill.args[2] === 16 && fill.args[3] === 13)`, linhas 365-368) só pode ser satisfeita por `fillRect`s ocorridos **depois** do zeramento — ou seja, exclusivamente pelo frame de jogo, não mais pelo retrato do seletor. A posição do `captured.length = 0` está correta: depois do desenho do retrato, antes do desenho do jogo, exatamente como o gap pedia.
+
+### Sensor de discriminação (mutação re-aplicada)
+
+Mutação idêntica à da rodada anterior: `app/page.tsx:1778` — `bodyColor: player.fury > 0 ? "#f97316" : activeCharacter.bodyColor,` → `bodyColor: player.fury > 0 ? "#f97316" : "#0ea5e9",` (cor fixa, ignora o personagem ativo em jogo).
+
+Resultado: ✅ **Killed** (antes: Survived). `npx vitest run app/__tests__/character-power.test.tsx -t "CHAR-19"` reprovou com a mutação ativa:
+```
+AssertionError: expected undefined to be defined
+ ❯ app/__tests__/character-power.test.tsx:368:19
+```
+(1 failed | 12 skipped). Isso confirma que, com `captured[]` isolado ao frame de jogo, a asserção agora depende exclusivamente da cor usada por `drawPlayer()` — a mesma mutação que sobrevivia na rodada anterior agora derruba o teste.
+
+Mutação revertida com `git checkout -- app/page.tsx`; `git status --porcelain` confirma árvore limpa exceto `_docs/specs/features/sistema-personagens/validation.md` (a própria edição desta rodada de verificação). `npm test -- --run` volta a 226/226 após a reversão.
+
+### Regressão nas outras ACs
+
+`git diff ff71371..278a787 --stat` mostra que o fix tocou somente `app/__tests__/character-power.test.tsx` (+4/-0) — nenhum arquivo de produção (`app/page.tsx`, `lib/characters.ts`) nem outro arquivo de teste (`hidden-menu.test.tsx`, `characters.test.ts`) foi alterado. As demais 10 ACs da Emenda 2 (CHAR-13 a CHAR-18, CHAR-20 a CHAR-23) não tiveram seu código ou testes tocados por este fix cycle; a suíte completa (226/226, mesma contagem) e build/lint limpos confirmam ausência de regressão. Evidência detalhada por AC permanece a da rodada `2b19cda..ff71371` acima.
+
+### Comandos executados
+
+- `npm test -- --run` → **226 passed (226)**, 16 arquivos de teste, 0 falhas — mesma contagem da rodada anterior (o fix reforçou um teste existente com uma linha de isolamento, não adicionou/removeu casos).
+- `npm run build` → sucesso, `Compiled successfully in 642ms`, TypeScript OK, 5 páginas geradas, sem erros.
+- `npm run lint` → **0 erros**, 2 warnings pré-existentes e não relacionados (`coverage/lcov-report/block-navigation.js` e `lib/debug.ts:26` `_search` não usado — mesmos das rodadas anteriores).
+
+### Gaps encontrados
+
+Nenhum. O gap Minor de CHAR-19 (isolamento de evidência do sensor de discriminação) está fechado: `captured.length = 0` em `character-power.test.tsx:362` isola corretamente a evidência ao frame de jogo, confirmado por leitura de código (`file:line`) e por sensor de discriminação re-aplicado (mutação que antes sobrevivia agora mata o teste). O gap Cosmetic de `player.fury` (sem teste automatizado, justificativa aceita em rodada anterior) permanece registrado, sem mudança nesta rodada.
+
+---
+
+## Execução 2026-08-30 — sistema-personagens Emenda 3 — commit range 278a787..2e2c54f (fix cycle 2 — CHAR-24/CHAR-25)
+
+PASS
+
+### Evidência CHAR-24
+
+`app/page.tsx:1109` — `player.haste = Math.max(player.haste, power.durationSeconds);` (antes: `player.haste = power.durationSeconds;`). Confirmado por `git show 2e2c54f`, único hunk de produção em `app/page.tsx`: substitui a atribuição direta pelo `Math.max`, no mesmo padrão já usado pelo shield (`app/page.tsx:1110-1111`, inalterado nesta rodada).
+
+Teste novo: `app/__tests__/character-power.test.tsx:265-284` — `"does not shrink player.haste when a longer coffee buff is already active (CHAR-24)"`. Não é um teste genérico/vazio: seleciona o Estagiário, fixa a sequência de `Math.random()` (`vi.spyOn(Math, "random")`, fila `[0.5, 0.5, 0, 0]`) para forçar `spawnPowerUp()` a colocar um power-up do tipo `"coffee"` exatamente na posição de spawn do jogador (`x = 70 + 0.5*(960-140) = 480`, `y = 70 + 0.5*(540-140) = 270`, `kinds[Math.floor(0*6)] = "coffee"`), dispara a ação de debug `add_powerup` (`fireEvent(window, new CustomEvent(DEBUG_ACTION_EVENT, { detail: "add_powerup" }))`), avança 1 frame (a colisão de pickup a distância 0 aplica o power-up, que dá 6s de haste — `app/page.tsx:1003`, `player.haste = 6`), confirma `hasteAfterCoffee > hastePower.durationSeconds` (6 > 4), só então pressiona `Q` (ativa o poder do Estagiário, 4s), e afirma:
+```ts
+expect(playerEffectsStatus().haste).toBeGreaterThanOrEqual(hastePower.durationSeconds); // >= 4
+expect(playerEffectsStatus().haste).toBeCloseTo(hasteAfterCoffee, 0); // ainda ~6, não caiu pra 4
+```
+Isso é uma reprodução end-to-end determinística do bug relatado (spawn real de power-up via `Math.random` fixado + debug action + ativação real do poder), não um teste matemático isolado.
+
+**Mutação inversa aplicada e revertida por mim**: `app/page.tsx:1109` `player.haste = Math.max(player.haste, power.durationSeconds);` → `player.haste = power.durationSeconds;` (volta à atribuição direta pré-fix). Resultado:
+```
+FAIL app/__tests__/character-power.test.tsx > ... > does not shrink player.haste when a longer coffee buff is already active (CHAR-24)
+AssertionError: expected 4 to be close to 6, received difference is 2, but expected 0.5
+ ❯ app/__tests__/character-power.test.tsx:284:41
+```
+✅ **Killed** — exatamente o teste-alvo falha (1 failed | 13 skipped), confirmando que ele depende de fato do `Math.max`. Revertido com `git checkout -- app/page.tsx`; `git status --porcelain` confirmou árvore limpa (exceto esta própria edição de `validation.md`) antes de prosseguir.
+
+### Evidência CHAR-25
+
+`app/globals.css:979-1021` (bloco inserido por `2e2c54f`) — 3 classes novas:
+- `.character-card` (linhas 979-994): `border: 3px solid #475569`, fundo em gradiente escuro (`rgba(15,23,42,.96)` → `rgba(2,6,23,.96)`), consistente com a paleta escura do resto do jogo (mesmos tons de slate usados em `.menu-panel`/`.frame-panel`); `:hover`/`:focus-visible` mudam a borda para `#7dd3fc` (azul claro).
+- `.character-card-selected` (linhas 996-1004): sobrescreve a borda para `#facc15` (amarelo/dourado), fundo com tingimento âmbar (`rgba(63,47,4,.55)`) e adiciona um anel externo (`box-shadow: 0 0 0 3px rgba(250,204,21,.45)`) — visualmente bem distinto do card não selecionado (cinza-azulado vs. dourado com glow), coerente com o uso de amarelo/dourado como cor de destaque/seleção já visto em outros elementos de UI do jogo (ex. HUD de power-up).
+- `.character-portrait` (linhas 1006-1012): `width/height: 56px`, `image-rendering: pixelated` (mantém a estética pixel art), borda escura própria.
+
+Aplicação real confirmada em `app/page.tsx:2217-2219`: `className={character.id === selectedCharacterId ? "character-card character-card-selected" : "character-card"}` — a classe de destaque é aplicada condicionalmente ao mesmo card cujo `aria-checked` (linha 2216) já refletia a seleção, satisfazendo CHAR-25 (destaque visual, não só a nível de acessibilidade). `app/page.tsx:2230` aplica `className="character-portrait"` ao `<canvas>` do retrato.
+
+Confirmado por leitura direta do CSS (não é obrigatório testar via Vitest/jsdom, que não renderiza layout) — a diferença visual entre estado normal (borda `#475569`, cinza-azulado) e selecionado (borda `#facc15` + glow dourado + fundo âmbar) é clara e não trivial (não é uma diferença de 1px ou de uma cor quase idêntica).
+
+### Regressão nas outras ACs
+
+`git show 2e2c54f --stat`:
+```
+app/__tests__/character-power.test.tsx | 42 +++++++++++++++++++++++++++++++
+app/globals.css                        | 42 +++++++++++++++++++++++++++++++
+app/page.tsx                           |  2 +-
+3 files changed, 84 insertions(+), 2 deletions(-)
+```
+Único hunk de produção fora do CSS é a linha 1109 (`player.haste`). Nenhum outro arquivo de produção ou teste foi tocado — `lib/characters.ts`, `hidden-menu.test.tsx`, `characters.test.ts` permanecem intactos. CHAR-12 (dash atravessa obstáculos) e o guard `isDebugAllowed()` do fix cycle 2 anterior (`cc37ce4..32a656d`) não foram tocados por este commit. Suíte completa (227/227, delta de +1 sobre os 226 anteriores, exatamente o novo teste de CHAR-24) e build/lint limpos confirmam ausência de regressão.
+
+### Comandos executados
+
+- `npm test -- --run` → **227 passed (227)**, 16 arquivos de teste, 0 falhas. Delta de **+1** sobre a rodada anterior (226), exatamente o novo teste de CHAR-24 (nenhum outro caso foi adicionado/removido — CHAR-25 é CSS puro, sem teste Vitest, conforme a própria tarefa previa).
+- `npm run build` → sucesso, `Compiled successfully in 960ms`, TypeScript OK, 5 páginas geradas, sem erros.
+- `npm run lint` → **0 erros**, 2 warnings pré-existentes e não relacionados (`coverage/lcov-report/block-navigation.js` e `lib/debug.ts:26` `_search` não usado — mesmos das rodadas anteriores).
+
+### Gaps encontrados
+
+Nenhum. CHAR-24 está fechado com evidência `file:line` (`app/page.tsx:1109`), teste end-to-end determinístico não-genérico, e mutação inversa confirmada KILLED (revertida em seguida). CHAR-25 está fechado com evidência `file:line` do CSS (`app/globals.css:979-1021`) e confirmação de que a classe condicional é aplicada ao card certo (`app/page.tsx:2217-2219`), com destaque visual claramente distinto e coerente com a paleta do jogo. Gate completo (lint/build/test) limpo, 227/227 testes, sem regressão nas demais ACs. O gap Cosmetic de `player.fury` (sem teste automatizado, justificativa aceita em rodadas anteriores) permanece registrado, fora do escopo desta Emenda.
