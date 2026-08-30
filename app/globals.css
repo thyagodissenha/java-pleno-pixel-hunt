@@ -83,8 +83,8 @@ canvas {
     minmax(120px, 0.72fr)
     minmax(108px, 0.62fr)
     minmax(142px, 0.8fr)
-    minmax(220px, 1.25fr)
-    minmax(170px, 0.9fr);
+    minmax(196px, 1.05fr)
+    minmax(206px, 1.05fr);
 }
 
 .ad-banner-slot {
@@ -184,9 +184,12 @@ canvas {
   color: #facc15;
 }
 
-.score-card strong,
-.hp-card strong {
+.score-card strong {
   font-size: clamp(24px, 2.6vw, 38px);
+}
+
+.hp-card strong {
+  font-size: clamp(18px, 1.9vw, 26px);
 }
 
 .hp-card span,
@@ -196,8 +199,8 @@ canvas {
 
 .hp-card i {
   display: block;
-  height: 10px;
-  margin-top: 8px;
+  height: 8px;
+  margin-top: 4px;
   border: 2px solid #020617;
   background:
     linear-gradient(90deg, #22c55e var(--hp), #1f2937 var(--hp)),
@@ -229,7 +232,7 @@ canvas {
 
 .utility-card .stamina-meter {
   display: grid;
-  grid-template-columns: auto minmax(54px, 88px) auto;
+  grid-template-columns: 58px minmax(54px, 88px) 36px;
   align-items: center;
   gap: 6px;
   min-width: 0;
@@ -307,6 +310,17 @@ canvas {
 .sound-controls input {
   width: 100%;
   accent-color: #facc15;
+}
+
+.debug-strip {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  color: #7dd3fc;
+  font-size: 11px;
+  text-transform: uppercase;
 }
 
 .game-stage {

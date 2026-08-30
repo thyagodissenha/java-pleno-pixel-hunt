@@ -2003,31 +2003,6 @@ export default function Home() {
           <p>Java Pleno Pixel Hunt</p>
           <h1>{status}</h1>
         </div>
-        {debugBossHealth && (
-          <output aria-label="Vida do boss debug">
-            {debugBossHealth.hp}/{debugBossHealth.maxHp} HP
-          </output>
-        )}
-        {debugPowerUpCount > 0 && (
-          <output aria-label="Power-ups debug">
-            {debugPowerUpCount} power-up disponível
-          </output>
-        )}
-        {isDebugAllowed() && (
-          <output aria-label="Cooldown do poder especial debug">
-            {debugAbilityCooldown.toFixed(1)}s
-          </output>
-        )}
-        {isDebugAllowed() && (
-          <output aria-label="Posição do jogador debug">
-            {debugPlayerPosition.x}, {debugPlayerPosition.y}
-          </output>
-        )}
-        {isDebugAllowed() && (
-          <output aria-label="Efeitos do jogador debug">
-            {debugPlayerEffects.haste.toFixed(1)}, {debugPlayerEffects.invincible.toFixed(1)}
-          </output>
-        )}
         <div className="hud-card jdk-card">
           <strong>{upgrade}</strong>
           <span className="mini-bars" aria-hidden="true">
@@ -2090,6 +2065,29 @@ export default function Home() {
             </label>
           </div>
         </div>
+        {isDebugAllowed() && (
+          <div className="debug-strip">
+            {debugBossHealth && (
+              <output aria-label="Vida do boss debug">
+                {debugBossHealth.hp}/{debugBossHealth.maxHp} HP
+              </output>
+            )}
+            {debugPowerUpCount > 0 && (
+              <output aria-label="Power-ups debug">
+                {debugPowerUpCount} power-up disponível
+              </output>
+            )}
+            <output aria-label="Cooldown do poder especial debug">
+              {debugAbilityCooldown.toFixed(1)}s
+            </output>
+            <output aria-label="Posição do jogador debug">
+              {debugPlayerPosition.x}, {debugPlayerPosition.y}
+            </output>
+            <output aria-label="Efeitos do jogador debug">
+              {debugPlayerEffects.haste.toFixed(1)}, {debugPlayerEffects.invincible.toFixed(1)}
+            </output>
+          </div>
+        )}
       </section>
 
       <section className="game-stage" aria-label="Arena do jogo">
