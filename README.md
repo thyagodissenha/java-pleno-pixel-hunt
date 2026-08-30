@@ -50,6 +50,16 @@ O jogo mistura humor de desenvolvimento, correria de go-live e aquele leve deses
 
 No celular ou tablet, arraste na arena para mover o personagem.
 
+## Recursos escondidos
+
+- **Código secreto de personagens**: na tela inicial do menu (painel "Jogar"), digite `iddqd` ou `idkfa` no teclado (sem precisar clicar em nada) para abrir o painel escondido "Personagens & Skins" e escolher entre os personagens abaixo, cada um com vida, velocidade e poder especial próprios (ativado com `Q`):
+
+  | Personagem | Vida | Velocidade | Poder especial |
+  | --- | --- | --- | --- |
+  | Dev Pleno (padrão) | 100 | 210 | **Refactor Dash** — teleporte curto na direção do movimento e remove ameaças próximas (cooldown 15s) |
+  | Estagiário | 70 | 260 | **Já Terminei!** — aumenta a velocidade de movimento por 4s (cooldown 10s) |
+  | SRE | 130 | 190 | **Modo Incident Response** — invencibilidade por 2,5s (cooldown 30s) |
+
 ## Power-ups
 
 - **Café** aumenta a velocidade por alguns segundos.
