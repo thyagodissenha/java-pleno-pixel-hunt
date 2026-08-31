@@ -255,8 +255,6 @@ export function NeonHud(props: HudProps) {
         {menuScreen && menuPanel === "home" && (
           <div className="menu-overlay menu-overlay-full" role="dialog" aria-label="Menu inicial">
             <div className={`menu-panel ${menuPanel === "home" ? "title-menu-panel" : ""}`}>
-              <p className="menu-kicker">Build instável detectada</p>
-
               <div className="retro-title-screen" aria-label="Tela inicial pixel art do Java Pleno Pixel Hunt">
               <div className="retro-title-stage">
                 <PixelTitlePanels />

@@ -6,6 +6,14 @@ import { drawCharacterBody } from "@/lib/character-sprite";
 
 type ColorMap = Record<string, string>;
 
+const CANVAS_WIDTH = 960;
+const CANVAS_ART_HEIGHT = 720;
+// Faixa extra reservada no topo do canvas para "Build instável detectada",
+// somada à altura original (720) sem afetar as posições dos painéis/título
+// desenhados abaixo dela (ver o ctx.translate em loop()).
+const KICKER_HEIGHT = 44;
+const CANVAS_HEIGHT = CANVAS_ART_HEIGHT + KICKER_HEIGHT;
+
 const PAL = {
   bg: "#f5e6a3",
   titleRed: "#d42020",
@@ -544,6 +552,15 @@ export function PixelTitlePanels() {
       ctx.fillStyle = PAL.bg;
       ctx.fillRect(0, 0, cv.width, cv.height);
 
+      // "Build instável detectada" mora dentro do quadro (moldura do
+      // canvas) em vez de flutuar acima dele. Reservamos essa faixa
+      // deslocando TODO o resto do desenho para baixo com um translate —
+      // nenhum painel/título muda de tamanho ou proporção, só a origem.
+      txt("BUILD INSTÁVEL DETECTADA", cv.width / 2, 14, 11, "#5b8dee", "center");
+
+      ctx.save();
+      ctx.translate(0, KICKER_HEIGHT);
+
       const pw = 280;
       const ph = 180;
       drawPanelDev(20, 20, pw, ph, t);
@@ -556,6 +573,8 @@ export function PixelTitlePanels() {
       drawPanelCICD(cv.width - pw - 20, 620, pw, 80);
 
       drawTitle(t);
+
+      ctx.restore();
 
       rafId = requestAnimationFrame(loop);
     }
@@ -575,8 +594,8 @@ export function PixelTitlePanels() {
   return (
     <canvas
       ref={canvasRef}
-      width={960}
-      height={720}
+      width={CANVAS_WIDTH}
+      height={CANVAS_HEIGHT}
       aria-hidden="true"
       className="retro-title-canvas"
     />
