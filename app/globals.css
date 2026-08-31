@@ -335,7 +335,11 @@ canvas {
   box-shadow:
     0 6px 0 #020617,
     inset 0 0 0 2px rgba(125, 211, 252, 0.08);
-  padding: 8px;
+  /* >= 10px: a segunda camada da box-shadow do canvas (regra global
+     `canvas`) desce 10px abaixo dele — com menos padding que isso, essa
+     sombra avança por cima da borda do .game-stage em vez de ficar
+     contida dentro do respiro. */
+  padding: 10px;
 }
 
 .canvas-frame {
@@ -1251,7 +1255,7 @@ canvas {
 
   .game-stage {
     align-content: start;
-    padding: 5px;
+    padding: 10px;
     border-width: 2px;
   }
 
