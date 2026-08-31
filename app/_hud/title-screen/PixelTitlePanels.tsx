@@ -125,9 +125,6 @@ export function PixelTitlePanels() {
       // verdade na arena (app/page.tsx), não um pixel-art à parte — só
       // desenhado 75% maior aqui via transform do canvas (ancorado nos
       // "pés", dx+12/dy+25) para não mexer no tamanho real do gameplay.
-      // Teclado (arma) e xícara ficam dentro do MESMO transform do corpo —
-      // eles são "segurados" nas mãos, então precisam escalar e se mover
-      // junto com os braços, não só o corpo sozinho.
       const heroScale = 1.75;
       const heroAnchorX = dx + 12;
       const heroAnchorY = dy + 25;
@@ -136,13 +133,25 @@ export function PixelTitlePanels() {
       ctx.scale(heroScale, heroScale);
       ctx.translate(-heroAnchorX, -heroAnchorY);
       drawCharacterBody(ctx, dx, dy, { bodyColor: CHARACTERS[0].bodyColor });
-      drawPixelMap(M_KEYBOARD, dx + 30, dy + 10, 3, "#888");
-      ctx.fillStyle = "#ff8c3d";
-      ctx.fillRect(dx + 54 + Math.sin(t * 10) * 3, dy + 12, 6, 4);
-      ctx.fillStyle = "#ffe94d";
-      ctx.fillRect(dx + 58 + Math.sin(t * 10) * 3, dy + 13, 4, 2);
-      drawPixelMap(M_MUG, dx - 15, dy + 15, 3, COL);
       ctx.restore();
+      // Teclado e xícara ficam no tamanho original (escalá-los junto vira
+      // pixel art ilegível nesse detalhe) — só a POSIÇÃO acompanha as mãos
+      // do corpo maior, aplicando a mesma transformação de escala do corpo
+      // a cada ponto de encaixe (mão) sem redesenhar em escala.
+      const toHeroSpace = (px: number, py: number) => ({
+        x: heroAnchorX + (px - heroAnchorX) * heroScale,
+        y: heroAnchorY + (py - heroAnchorY) * heroScale,
+      });
+      const keyboardGrip = toHeroSpace(dx + 30, dy + 10);
+      drawPixelMap(M_KEYBOARD, keyboardGrip.x, keyboardGrip.y, 3, "#888");
+      const fireGrip = toHeroSpace(dx + 54 + Math.sin(t * 10) * 3, dy + 12);
+      ctx.fillStyle = "#ff8c3d";
+      ctx.fillRect(fireGrip.x, fireGrip.y, 6, 4);
+      const fireTip = toHeroSpace(dx + 58 + Math.sin(t * 10) * 3, dy + 13);
+      ctx.fillStyle = "#ffe94d";
+      ctx.fillRect(fireTip.x, fireTip.y, 4, 2);
+      const mugGrip = toHeroSpace(dx - 15, dy + 15);
+      drawPixelMap(M_MUG, mugGrip.x, mugGrip.y, 3, COL);
       ctx.fillStyle = "#2a5a2a";
       ctx.fillRect(x + 10, y + h - 30, 15, 20);
       ctx.fillStyle = "#5a3a1a";
