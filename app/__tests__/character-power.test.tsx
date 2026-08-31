@@ -17,10 +17,12 @@ const canvasContext = {
   // used by PixelTitlePanels' decorative title-screen canvas
   arc: vi.fn(),
   beginPath: vi.fn(),
+  clip: vi.fn(),
   closePath: vi.fn(),
   fill: vi.fn(),
   lineTo: vi.fn(),
   moveTo: vi.fn(),
+  rect: vi.fn(),
   rotate: vi.fn(),
   scale: vi.fn(),
   stroke: vi.fn(),

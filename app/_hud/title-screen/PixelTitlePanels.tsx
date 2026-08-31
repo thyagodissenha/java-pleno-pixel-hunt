@@ -597,6 +597,58 @@ export function PixelTitlePanels() {
       ctx.restore();
     }
 
+    function drawBuildAlert(x: number, y: number, w: number, h: number, t: number) {
+      if (!ctx) return;
+      void t;
+      // Clip com margem de 5px em cada lado — não vaza para os painéis.
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x + 5, y + 5, w - 10, h - 10);
+      ctx.clip();
+
+      const fontSize = 18;
+      const glitch = Math.random() > 0.82;
+      const shakeX = glitch ? (Math.random() - 0.5) * 10 : 0;
+      const shakeY = glitch ? (Math.random() - 0.5) * 8 : 0;
+
+      const glitchColors = ["rgba(255, 0, 0, 0.85)", "rgba(0, 120, 255, 0.85)", "rgba(255, 255, 255, 0.95)"];
+      const color1 = glitchColors[Math.floor(Math.random() * 3)];
+      const color2 = glitchColors[Math.floor(Math.random() * 3)];
+
+      ctx.save();
+      ctx.translate(x + w / 2 + shakeX, y + h / 2 + shakeY);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `bold ${fontSize}px "Press Start 2P", monospace`;
+
+      if (glitch) {
+        ctx.fillStyle = color1;
+        ctx.fillText("BUILD INSTÁVEL", -5, 0);
+        ctx.fillStyle = color2;
+        ctx.fillText("BUILD INSTÁVEL", 5, 0);
+      }
+
+      ctx.fillStyle = "#fff";
+      ctx.fillText("BUILD INSTÁVEL", 0, 0);
+      ctx.restore();
+
+      if (Math.random() > 0.88) {
+        ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+        const ly = y + 5 + Math.random() * (h - 10);
+        ctx.fillRect(x + 5, ly, w - 10, 2);
+      }
+
+      if (Math.random() > 0.9) {
+        const blockColor = glitchColors[Math.floor(Math.random() * 3)];
+        ctx.fillStyle = blockColor;
+        const bx = x + 5 + Math.random() * (w - 10) * 0.7;
+        const by = y + 5 + Math.random() * (h - 10);
+        ctx.fillRect(bx, by, 30 + Math.random() * 60, 3);
+      }
+
+      ctx.restore();
+    }
+
     function loop(ms: number) {
       // cv.isConnected is a synchronous DOM-truth check — unlike `cancelled`
       // (set from this effect's own cleanup), it can't be stale relative to
@@ -609,11 +661,11 @@ export function PixelTitlePanels() {
       ctx.fillStyle = PAL.bg;
       ctx.fillRect(0, 0, cv.width, cv.height);
 
-      // "Build instável detectada" mora dentro do quadro (moldura do
-      // canvas) em vez de flutuar acima dele. Reservamos essa faixa
-      // deslocando TODO o resto do desenho para baixo com um translate —
-      // nenhum painel/título muda de tamanho ou proporção, só a origem.
-      txt("BUILD INSTÁVEL DETECTADA", cv.width / 2, 14, 11, "#5b8dee", "center");
+      // "Build instável" mora dentro do quadro (moldura do canvas) em vez
+      // de flutuar acima dele. Reservamos essa faixa deslocando TODO o
+      // resto do desenho para baixo com um translate — nenhum
+      // painel/título muda de tamanho ou proporção, só a origem.
+      drawBuildAlert(0, 0, cv.width, KICKER_HEIGHT, t);
 
       ctx.save();
       ctx.translate(0, KICKER_HEIGHT);
