@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { CHARACTERS } from "@/lib/characters";
+import { drawCharacterBody } from "@/lib/character-sprite";
 
 type ColorMap = Record<string, string>;
 
@@ -21,7 +23,6 @@ const PAL = {
 };
 
 const M_HEART = [".XX.XX.", "XXXXXXX", "XXXXXXX", ".XXXXX.", "..XXX..", "...X..."];
-const M_DEV = ["..HHH...", "..HHH...", "..FFF...", "..FEF...", "..FFF...", ".SSSSS..", "SSSSSSS.", "S.SSS.S."];
 const M_KEYBOARD = ["XXXXXXXX", "X......X", "XXXXXXXX"];
 const M_MUG = [".XXXX.", "XXXXX.", "XXXXX.", ".XXX."];
 const M_ZOMBIE = ["..GGG..", "..GGG..", "..GRG..", "..GGG..", ".GGGGG.", "G.GGG.G", ".G...G."];
@@ -120,7 +121,9 @@ export function PixelTitlePanels() {
       ctx.fillRect(x + 70, y + 12, 45, 8);
       const dx = x + w / 2 - 20;
       const dy = y + h / 2 - 10;
-      drawPixelMap(M_DEV, dx, dy, 4, COL);
+      // O mesmo modelo (drawCharacterBody) e cor do "Dev Pleno" usados de
+      // verdade na arena (app/page.tsx), não um pixel-art à parte.
+      drawCharacterBody(ctx, dx, dy, { bodyColor: CHARACTERS[0].bodyColor });
       drawPixelMap(M_KEYBOARD, dx + 30, dy + 10, 3, "#888");
       ctx.fillStyle = "#ff8c3d";
       ctx.fillRect(dx + 54 + Math.sin(t * 10) * 3, dy + 12, 6, 4);
