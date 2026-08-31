@@ -12,7 +12,13 @@ const CANVAS_ART_HEIGHT = 720;
 // somada à altura original (720) sem afetar as posições dos painéis/título
 // desenhados abaixo dela (ver o ctx.translate em loop()).
 const KICKER_HEIGHT = 44;
-const CANVAS_HEIGHT = CANVAS_ART_HEIGHT + KICKER_HEIGHT;
+// A última fileira de painéis (SQL/CI-CD) termina em y=700 dentro do bloco
+// deslocado (620+80), ou seja y=744 no canvas final — deixando só 20px até
+// a borda de baixo contra os 64px (20+KICKER_HEIGHT) até a borda de cima.
+// Este padding só soma espaço vazio embaixo (nada é redesenhado/movido)
+// até igualar as duas margens: 744 + 64 = 808.
+const BOTTOM_PADDING = 44;
+const CANVAS_HEIGHT = CANVAS_ART_HEIGHT + KICKER_HEIGHT + BOTTOM_PADDING;
 
 const PAL = {
   bg: "#f5e6a3",
