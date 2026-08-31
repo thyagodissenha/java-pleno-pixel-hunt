@@ -5,6 +5,7 @@ import { isDebugAllowed, triggerDebugAction } from "@/lib/debug";
 import { getAdsenseBannerSlotId, getPublicAdsenseClientId } from "@/lib/adsense";
 import { CHARACTERS, resolveCharacter } from "@/lib/characters";
 import type { HudProps, MenuPanel } from "@/app/_hud/hud-props";
+import { PixelTitlePanels } from "@/app/_hud/title-screen/PixelTitlePanels";
 import "./neon.css";
 
 // WORLD/frameScreenLabel are declared locally in app/page.tsx today (it can't
@@ -257,56 +258,8 @@ export function NeonHud(props: HudProps) {
               <p className="menu-kicker">Build instável detectada</p>
 
               <div className="retro-title-screen" aria-label="Tela inicial pixel art do Java Pleno Pixel Hunt">
-                <div className="retro-scene hero-scene" aria-hidden="true">
-                  <div className="pixel-dev">
-                    <span className="hair" />
-                    <span className="head" />
-                    <span className="body" />
-                    <span className="arm mug" />
-                    <span className="arm keyboard" />
-                    <span className="leg left" />
-                    <span className="leg right" />
-                  </div>
-                  <span className="java-mug">JAVA</span>
-                  <span className="code-shot" />
-                </div>
-
-                <div className="retro-scene call-scene" aria-hidden="true">
-                  <span className="window-title">MEETING CALL</span>
-                  <span className="boss-face" />
-                  <span className="speech">PRA ONTEM!</span>
-                </div>
-
-                <div className="retro-logo" aria-label="Java Pleno Pixel Hunt">
-                  <span>Java</span>
-                  <span>Pleno</span>
-                  <span>Pixel Hunt</span>
-                </div>
-
-                <div className="retro-scene users-scene" aria-hidden="true">
-                  <span className="speech">USUÁRIOS!</span>
-                  <span className="user u1" />
-                  <span className="user u2" />
-                  <span className="user u3" />
-                </div>
-
-                <div className="retro-scene cloud-scene" aria-hidden="true">
-                  <span className="cloud" />
-                  <span className="cube c1" />
-                  <span className="cube c2" />
-                  <span className="binary">101<br />010</span>
-                </div>
-
-                <div className="retro-scene deploy-scene" aria-hidden="true">
-                  <span className="terminal">$ deploy --prod<br />tests...<br />success!</span>
-                  <span className="rocket">DEPLOY</span>
-                </div>
-
-                <div className="retro-scene incident-scene" aria-hidden="true">
-                  <span className="incident-title">PROD INCIDENT</span>
-                  <span className="explosion" />
-                  <span className="alert-sign">!</span>
-                </div>
+              <div className="retro-title-stage">
+                <PixelTitlePanels />
 
                 <div className="title-menu-actions" role="menu" aria-label="Opções do jogo (use as setas e Enter)">
                   <button
@@ -360,6 +313,7 @@ export function NeonHud(props: HudProps) {
                     {menuIndex === 4 ? "▶ " : ""}Apoie o jogo
                   </button>
                 </div>
+              </div>
               </div>
               <p className="menu-copy">
                 Sobreviva aos usuários, derrote os chefes e tente entrar no ranking global antes que alguém peça um deploy em sexta-feira.

@@ -43,6 +43,16 @@ const canvasContext = {
   save: vi.fn(),
   strokeRect: vi.fn(),
   translate: vi.fn(),
+  // used by PixelTitlePanels' decorative title-screen canvas
+  beginPath: vi.fn(),
+  closePath: vi.fn(),
+  fill: vi.fn(),
+  lineTo: vi.fn(),
+  moveTo: vi.fn(),
+  rotate: vi.fn(),
+  scale: vi.fn(),
+  stroke: vi.fn(),
+  strokeText: vi.fn(),
 };
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));

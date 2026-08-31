@@ -14,6 +14,16 @@ const canvasContext = {
   save: vi.fn(),
   strokeRect: vi.fn(),
   translate: vi.fn(),
+  // used by PixelTitlePanels' decorative title-screen canvas
+  beginPath: vi.fn(),
+  closePath: vi.fn(),
+  fill: vi.fn(),
+  lineTo: vi.fn(),
+  moveTo: vi.fn(),
+  rotate: vi.fn(),
+  scale: vi.fn(),
+  stroke: vi.fn(),
+  strokeText: vi.fn(),
 };
 
 const server = setupServer();
@@ -34,9 +44,13 @@ afterAll(() => server.close());
 function advanceFrames(amount: number) {
   act(() => {
     for (let index = 0; index < amount; index += 1) {
-      const callback = animationFrames.shift();
       frameTime += 33;
-      callback?.(frameTime);
+      // Drain every callback queued for this tick (not just one) so an
+      // independent rAF loop (e.g. PixelTitlePanels' decorative canvas)
+      // mounted alongside the game loop can't steal frame slots meant
+      // for it, the way a single shift() per tick would.
+      const pending = animationFrames.splice(0, animationFrames.length);
+      pending.forEach((callback) => callback(frameTime));
     }
   });
 }
