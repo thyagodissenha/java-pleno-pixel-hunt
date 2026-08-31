@@ -615,7 +615,6 @@ canvas {
   display: flex;
   justify-content: center;
   height: 100%;
-  margin-top: 10px;
 }
 
 /* Caixa com a mesma proporcao do canvas (960x720) do painel animado
