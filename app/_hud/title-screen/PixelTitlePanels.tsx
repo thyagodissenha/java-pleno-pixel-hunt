@@ -61,6 +61,7 @@ export function PixelTitlePanels() {
     ctx.imageSmoothingEnabled = false;
 
     let rafId = 0;
+    let cancelled = false;
 
     function txt(
       str: string,
@@ -240,6 +241,36 @@ export function PixelTitlePanels() {
       ctx.fillStyle = "#e8eef4";
       ctx.fillRect(fx - 1 * s, fy + 4 * s, 7 * s, 2 * s);
 
+      // xícara de café no punho, com fumaça animada
+      const cupX = fx + 0.5 * s;
+      const cupY = fy - 2.5 * s;
+      const cupW = 4.5 * s;
+      const cupH = 4 * s;
+
+      ctx.fillStyle = "#f0f0f0";
+      ctx.fillRect(cupX, cupY, cupW, cupH);
+
+      ctx.fillStyle = "#3e2723";
+      ctx.fillRect(cupX + 0.5 * s, cupY + 0.5 * s, cupW - 1 * s, 1 * s);
+
+      ctx.fillStyle = "#f0f0f0";
+      ctx.fillRect(cupX + cupW, cupY + 1 * s, 1.5 * s, 2.5 * s);
+      ctx.fillStyle = "#0f1f3a";
+      ctx.fillRect(cupX + cupW + 0.4 * s, cupY + 1.4 * s, 0.7 * s, 1.7 * s);
+
+      ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+      const steam1 = Math.sin(t * 4) * 2;
+      const steam2 = Math.sin(t * 4 + 1.5) * 2;
+      const steam3 = Math.sin(t * 4 + 3) * 2;
+
+      ctx.fillRect(cupX + 1 * s, cupY - 1 * s + steam1, 1 * s, 1 * s);
+      ctx.fillRect(cupX + 1.2 * s, cupY - 2 * s + steam1, 0.6 * s, 1 * s);
+
+      ctx.fillRect(cupX + 2.5 * s, cupY - 1.5 * s + steam2, 1 * s, 1 * s);
+      ctx.fillRect(cupX + 2.7 * s, cupY - 2.5 * s + steam2, 0.6 * s, 1 * s);
+
+      ctx.fillRect(cupX + 1.8 * s, cupY - 3.5 * s + steam3, 1 * s, 1 * s);
+
       ctx.restore();
 
       const spW = 130;
@@ -314,23 +345,38 @@ export function PixelTitlePanels() {
       txt("USUÁRIOS!", x + 15, y + 15, 9, "#000");
     }
 
-    function drawPanelCloud(x: number, y: number, w: number, h: number) {
+    function drawPanelCloud(x: number, y: number, w: number, h: number, t: number) {
       if (!ctx) return;
       panel(x, y, w, h);
       ctx.fillStyle = "#5ca0ff";
       ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
-      const cx = x + w / 2 - 30;
-      const cy = y + h / 2 - 20;
+
+      // velocidades e fases diferentes por elemento para um movimento
+      // independente e orgânico, em vez de tudo balançando em uníssono
+      const floatCloudY = Math.sin(t * 1.2) * 4;
+      const floatCloudX = Math.sin(t * 0.8) * 3;
+
+      const floatNum1 = Math.sin(t * 1.8 + 1) * 6;
+      const floatNum2 = Math.sin(t * 2.0 + 2) * 5;
+      const floatNum3 = Math.sin(t * 1.5 + 3) * 7;
+      const floatNum4 = Math.sin(t * 1.9 + 4) * 4;
+
+      const floatCube = Math.sin(t * 1.6 + 2.5) * 5;
+
+      const cx = x + w / 2 - 30 + floatCloudX;
+      const cy = y + h / 2 - 20 + floatCloudY;
       drawPixelMap(M_CLOUD, cx, cy, 6, COL);
+
       ctx.fillStyle = "#fff";
-      txt("1", cx - 20, cy + 10, 10, PAL.white);
-      txt("0", cx + 50, cy, 10, PAL.white);
-      txt("1", cx + 60, cy + 20, 10, PAL.white);
-      txt("0", cx - 30, cy + 30, 10, PAL.white);
+      txt("1", cx - 25, cy + 10 + floatNum1, 10, PAL.white);
+      txt("0", cx + 55, cy - 5 + floatNum2, 10, PAL.white);
+      txt("1", cx + 65, cy + 25 + floatNum3, 10, PAL.white);
+      txt("0", cx - 35, cy + 35 + floatNum4, 10, PAL.white);
+
       ctx.fillStyle = "#2a6fd4";
-      ctx.fillRect(x + 20, y + 30, 20, 20);
-      ctx.fillRect(x + w - 40, y + h - 50, 20, 20);
-      ctx.fillRect(x + 30, y + h - 40, 20, 20);
+      ctx.fillRect(x + 20, y + 30 + floatCube, 20, 20);
+      ctx.fillRect(x + w - 40, y + h - 50 + floatNum3, 20, 20);
+      ctx.fillRect(x + 30, y + h - 40 + floatNum1, 20, 20);
     }
 
     function drawPanelDeploy(x: number, y: number, w: number, h: number, t: number) {
@@ -474,7 +520,12 @@ export function PixelTitlePanels() {
     }
 
     function loop(ms: number) {
-      if (!ctx || !cv) return;
+      // cv.isConnected is a synchronous DOM-truth check — unlike `cancelled`
+      // (set from this effect's own cleanup), it can't be stale relative to
+      // an unmount that already happened, so it catches a queued frame
+      // firing after the canvas left the document even if cleanup timing
+      // ever changes.
+      if (!ctx || !cv || cancelled || !cv.isConnected) return;
       const t = ms / 1000;
 
       ctx.fillStyle = PAL.bg;
@@ -485,7 +536,7 @@ export function PixelTitlePanels() {
       drawPanelDev(20, 20, pw, ph, t);
       drawPanelBoss(cv.width - pw - 20, 20, pw, ph, t);
       drawPanelUsers(20, 220, pw, ph, t);
-      drawPanelCloud(cv.width - pw - 20, 220, pw, ph);
+      drawPanelCloud(cv.width - pw - 20, 220, pw, ph, t);
       drawPanelDeploy(20, 420, pw, ph, t);
       drawPanelIncident(cv.width - pw - 20, 420, pw, ph, t);
       drawPanelSQL(20, 620, pw, 80);
@@ -499,6 +550,11 @@ export function PixelTitlePanels() {
     rafId = requestAnimationFrame(loop);
 
     return () => {
+      // Belt-and-suspenders alongside cancelAnimationFrame(rafId): in the
+      // test suite's rAF mock, cancelAnimationFrame is a no-op, so a frame
+      // already queued at unmount time would otherwise still fire once and
+      // re-queue itself, leaking this loop into later tests indefinitely.
+      cancelled = true;
       cancelAnimationFrame(rafId);
     };
   }, []);
