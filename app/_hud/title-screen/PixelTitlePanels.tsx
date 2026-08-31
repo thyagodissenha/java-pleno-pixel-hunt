@@ -466,13 +466,22 @@ export function PixelTitlePanels() {
       ctx.fillRect(x + w - 65, y + h - 45, 5, 5);
     }
 
-    function drawPanelSQL(x: number, y: number, w: number, h: number) {
+    function drawPanelSQL(x: number, y: number, w: number, h: number, t: number) {
       if (!ctx) return;
       panel(x, y, w, h);
       ctx.fillStyle = "#1a2a3a";
       ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
-      drawPixelMap(M_DB, x + 20, y + h / 2 - 20, 8, COL);
+
+      // DB pulsando
+      const dbPulse = 1 + Math.sin(t * 3) * 0.1;
+      ctx.save();
+      ctx.translate(x + 36, y + h / 2);
+      ctx.scale(dbPulse, dbPulse);
+      drawPixelMap(M_DB, -16, -20, 8, COL);
+      ctx.restore();
       txt("SQL", x + 25, y + h / 2 + 10, 10, PAL.white, "center");
+
+      // Query com cursor piscando
       ctx.fillStyle = "#fff";
       ctx.fillRect(x + 80, y + 20, 100, 30);
       ctx.strokeStyle = "#000";
@@ -480,37 +489,79 @@ export function PixelTitlePanels() {
       ctx.strokeRect(x + 80, y + 20, 100, 30);
       txt("SELECT * FROM", x + 85, y + 25, 7, "#000");
       txt("PROBLEMS;", x + 85, y + 37, 7, "#000");
+      if (Math.floor(t * 2) % 2 === 1) {
+        ctx.fillStyle = "#000";
+        ctx.fillRect(x + 165, y + 37, 6, 7);
+      }
+
+      // Kafka: pacotes se movendo
+      const kafkaOffset = (t * 50) % 130;
       ctx.fillStyle = "#ff8c3d";
       for (let i = 0; i < 3; i++) {
-        ctx.fillRect(x + 30 + i * 35, y + h - 30, 25, 15);
+        let px = x + 20 + i * 45 + kafkaOffset;
+        if (px > x + w - 20) px -= 135;
+        ctx.fillRect(px, y + h - 25, 22, 12);
         ctx.fillStyle = "#000";
-        ctx.fillRect(x + 35 + i * 35, y + h - 27, 15, 9);
+        ctx.fillRect(px + 5, y + h - 22, 12, 6);
         ctx.fillStyle = "#ff8c3d";
       }
       txt("KAFKA", x + w / 2, y + h - 10, 9, PAL.white, "center");
+
+      // Envelopes flutuando
+      const envY = y + 30 + Math.sin(t * 2) * 3;
       ctx.fillStyle = "#ffe94d";
-      ctx.fillRect(x + w - 50, y + 30, 20, 15);
-      ctx.fillRect(x + w - 50, y + 55, 20, 15);
+      ctx.fillRect(x + w - 50, envY, 20, 15);
+      ctx.fillRect(x + w - 50, envY + 25, 20, 15);
     }
 
-    function drawPanelCICD(x: number, y: number, w: number, h: number) {
+    function drawPanelCICD(x: number, y: number, w: number, h: number, t: number) {
       if (!ctx) return;
       panel(x, y, w, h);
       ctx.fillStyle = "#1a2a3a";
       ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
       txt("CI/CD", x + 15, y + 15, 12, PAL.white);
+
       const stages = ["CODE", "BUILD", "TEST", "DEPLOY"];
       const sy = y + h / 2;
+      const progress = (Math.sin(t * 1.2) + 1) / 2;
+      const activeStage = Math.floor(progress * 4);
+
       for (let i = 0; i < 4; i++) {
-        const sx = x + 30 + i * 60;
-        drawPixelMap(M_CHECK, sx, sy - 10, 6, COL);
-        txt(stages[i], sx + 5, sy + 15, 7, PAL.white, "center");
+        const sx = x + 25 + i * 55;
+        const isActive = i <= activeStage;
+
+        if (isActive) {
+          drawPixelMap(M_CHECK, sx, sy - 10, 6, { ...COL, G: "#3dff7c" });
+        } else {
+          ctx.fillStyle = "#333";
+          ctx.fillRect(sx, sy - 10, 24, 24);
+          ctx.strokeStyle = "#555";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(sx, sy - 10, 24, 24);
+        }
+
+        txt(stages[i], sx + 5, sy + 15, 7, isActive ? PAL.white : "#888", "center");
+
         if (i < 3) {
-          ctx.fillStyle = "#3dff7c";
-          ctx.fillRect(sx + 25, sy - 5, 15, 4);
+          ctx.fillStyle = isActive ? "#3dff7c" : "#333";
+          ctx.fillRect(sx + 25, sy - 2, 15, 4);
+          if (isActive && i === activeStage) {
+            const dotX = sx + 25 + ((Math.sin(t * 6) + 1) / 2) * 15;
+            ctx.fillStyle = "#fff";
+            ctx.beginPath();
+            ctx.arc(dotX, sy, 3, 0, 7);
+            ctx.fill();
+          }
         }
       }
-      drawPixelMap(M_ROBOT, x + w - 50, y + h - 50, 5, COL);
+
+      // Robô com antena piscando e leve flutuação
+      const robotY = y + h - 50 + Math.sin(t * 3) * 2;
+      drawPixelMap(M_ROBOT, x + w - 50, robotY, 5, COL);
+      if (Math.floor(t * 4) % 2 === 0) {
+        ctx.fillStyle = "#ff3b3b";
+        ctx.fillRect(x + w - 30, robotY - 5, 4, 4);
+      }
     }
 
     function drawTitle(t: number) {
@@ -575,8 +626,8 @@ export function PixelTitlePanels() {
       drawPanelCloud(cv.width - pw - 20, 220, pw, ph, t);
       drawPanelDeploy(20, 420, pw, ph, t);
       drawPanelIncident(cv.width - pw - 20, 420, pw, ph, t);
-      drawPanelSQL(20, 620, pw, 80);
-      drawPanelCICD(cv.width - pw - 20, 620, pw, 80);
+      drawPanelSQL(20, 620, pw, 80, t);
+      drawPanelCICD(cv.width - pw - 20, 620, pw, 80, t);
 
       drawTitle(t);
 

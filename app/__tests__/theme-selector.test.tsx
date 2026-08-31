@@ -13,6 +13,7 @@ const canvasContext = {
   strokeRect: vi.fn(),
   translate: vi.fn(),
   // used by PixelTitlePanels' decorative title-screen canvas
+  arc: vi.fn(),
   beginPath: vi.fn(),
   closePath: vi.fn(),
   fill: vi.fn(),
