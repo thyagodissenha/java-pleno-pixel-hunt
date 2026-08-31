@@ -1988,7 +1988,18 @@ export default function Home() {
       window.removeEventListener("pointercancel", onPointerUp);
       stopMusic();
     };
-  }, [activateMenuOption, playSound, resumeGame, startMusic, stopMusic]);
+    // `theme` is a dependency on purpose: ClassicHud and NeonHud each own a
+    // separate <canvas ref={canvasRef}>, so switching themes (including the
+    // classico->neon swap useThemePreference does right after mount, once
+    // it reads the saved cookie) unmounts one canvas and mounts the other
+    // under the same ref. Without re-running this effect, it stays bound
+    // (via the `canvas` closure above) to whichever canvas existed when it
+    // first ran, and the arena reads as permanently black once that one is
+    // detached. Safe to reset on: theme can only be changed from the title
+    // screen (see ClassicHud/NeonHud, no "Configurações" entry point exists
+    // during "playing"/"paused"), so there's never a run in progress to
+    // lose.
+  }, [activateMenuOption, playSound, resumeGame, startMusic, stopMusic, theme]);
 
   const status = gameState === "playing" ? "Em combate" : gameState === "choice" ? "Escolha final" : gameState === "paused" ? "Pausado" : gameState === "promotion" ? "Promoção?" : gameState === "won" ? "Vitória" : gameState === "over" ? "Fim de jogo" : "Pronto";
   const showAdBanner = gameState === "playing" && Boolean(adsenseClientId && adsenseBannerSlotId);
