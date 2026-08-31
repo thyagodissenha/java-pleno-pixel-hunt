@@ -122,8 +122,18 @@ export function PixelTitlePanels() {
       const dx = x + w / 2 - 20;
       const dy = y + h / 2 - 10;
       // O mesmo modelo (drawCharacterBody) e cor do "Dev Pleno" usados de
-      // verdade na arena (app/page.tsx), não um pixel-art à parte.
+      // verdade na arena (app/page.tsx), não um pixel-art à parte — só
+      // desenhado 75% maior aqui via transform do canvas (ancorado nos
+      // "pés", dx+12/dy+25) para não mexer no tamanho real do gameplay.
+      const heroScale = 1.75;
+      const heroAnchorX = dx + 12;
+      const heroAnchorY = dy + 25;
+      ctx.save();
+      ctx.translate(heroAnchorX, heroAnchorY);
+      ctx.scale(heroScale, heroScale);
+      ctx.translate(-heroAnchorX, -heroAnchorY);
       drawCharacterBody(ctx, dx, dy, { bodyColor: CHARACTERS[0].bodyColor });
+      ctx.restore();
       drawPixelMap(M_KEYBOARD, dx + 30, dy + 10, 3, "#888");
       ctx.fillStyle = "#ff8c3d";
       ctx.fillRect(dx + 54 + Math.sin(t * 10) * 3, dy + 12, 6, 4);
