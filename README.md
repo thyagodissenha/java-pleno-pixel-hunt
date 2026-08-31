@@ -71,7 +71,7 @@ No celular ou tablet, arraste na arena para mover o personagem.
 
 ## Menu inicial
 
-A tela inicial tem acesso rápido para iniciar a partida, abrir o ranking global e consultar os controles antes de jogar.
+A tela inicial tem acesso rápido para iniciar a partida, abrir o ranking global, consultar os controles antes de jogar e apoiar o projeto. O item **Configurações** abre um painel com a escolha de tema visual (**Clássico** ou **Neon**, persistida em cookie entre visitas) e o controle de volume/mute do jogo.
 
 ## Ranking
 

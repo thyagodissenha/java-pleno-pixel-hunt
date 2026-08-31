@@ -1,0 +1,358 @@
+/*
+ * Estudo de redesign do HUD (header/footer) do jogo real.
+ * Reaproveita o motor real (canvas, estado, áudio) de app/page.tsx —
+ * só o topbar/bottombar (agora .study-header/.study-footer) mudam de
+ * marcação/CSS. Inspirado em _docs/reference/game-frame-layout-concept.png.
+ */
+
+:root {
+  --amber: #facc15;
+  --red: #ef4444;
+  --cyan: #7dd3fc;
+  --green: #22c55e;
+  --blue: #3b82f6;
+  --panel-bg: linear-gradient(180deg, #16233f, #0c1730);
+  --panel-border: #2f5fb0;
+}
+
+.study-bolt {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.5), 0 0 4px rgba(239, 68, 68, 0.6);
+  z-index: 1;
+}
+
+.study-bolt.tl { top: 6px; left: 6px; }
+.study-bolt.tr { top: 6px; right: 6px; }
+.study-bolt.bl { bottom: 6px; left: 6px; }
+.study-bolt.br { bottom: 6px; right: 6px; }
+
+/* ---------- outer chassis wrapping header + arena + footer ---------- */
+
+.study-outer-frame {
+  position: relative;
+  border: 3px solid var(--panel-border);
+  border-radius: 14px;
+  background: #0a1224;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.25), 0 18px 40px rgba(0, 0, 0, 0.5);
+  padding: 10px;
+}
+
+/* ---------- arena gets the same frame language as header/footer ---------- */
+
+.study-arena-frame {
+  border: 2px solid var(--panel-border);
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px rgba(148, 197, 253, 0.08);
+}
+
+/* ---------- shared panel bar (header + footer) ---------- */
+
+.study-panel {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  background: var(--panel-bg);
+  border: 2px solid var(--panel-border);
+  border-radius: 8px;
+  overflow: visible;
+  box-shadow: inset 0 0 0 1px rgba(148, 197, 253, 0.08);
+  font-family: "Courier New", ui-monospace, monospace;
+  color: #f8fafc;
+}
+
+.study-panel .debug-strip {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  color: var(--cyan);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.study-header {
+  min-height: 76px;
+}
+
+.study-footer {
+  min-height: 76px;
+}
+
+.study-section {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 8px 14px;
+  border-right: 2px solid rgba(59, 130, 246, 0.28);
+}
+
+.study-section:last-child {
+  border-right: none;
+}
+
+.study-section-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--cyan);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.study-section-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* brand */
+
+.study-section-brand {
+  flex: 1.3 1 0;
+  justify-content: center;
+  gap: 2px;
+}
+
+.study-section-brand h1 {
+  margin: 0;
+  font-size: clamp(14px, 1.5vw, 19px);
+  line-height: 1.05;
+  color: #f87171;
+  text-shadow: 2px 2px 0 #14532d;
+  text-transform: uppercase;
+}
+
+.study-section-brand .study-status {
+  font-size: 10px;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+/* generic value sections */
+
+.study-section-value {
+  flex: 0.85 1 0;
+}
+
+.study-section-value strong {
+  font-size: clamp(14px, 1.4vw, 19px);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+/* segmented bar (jdk / burst / power) */
+
+.study-segments {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  width: 90px;
+}
+
+.study-segments i {
+  display: block;
+  height: 10px;
+  background: #1f2937;
+  border: 1px solid #020617;
+}
+
+.study-segments i.on {
+  background: var(--amber);
+}
+
+.study-segments.burst i.on {
+  background: var(--blue);
+}
+
+.study-segments.power i.on {
+  background: #38bdf8;
+}
+
+/* hp hearts + bar */
+
+.study-section-hp {
+  flex: 1 1 0;
+}
+
+.study-hearts {
+  display: flex;
+  gap: 3px;
+  font-size: 13px;
+  line-height: 1;
+  color: #334155;
+}
+
+.study-hearts span.filled {
+  color: var(--red);
+}
+
+.study-hp-track {
+  width: 100%;
+  height: 8px;
+  border: 1px solid #020617;
+  background: #1f2937;
+}
+
+.study-hp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--green), #15803d);
+  transition: width 120ms linear;
+}
+
+.study-hp-fill.low {
+  background: linear-gradient(90deg, var(--red), #7f1d1d);
+}
+
+/* sound */
+
+.study-section-sound {
+  flex: 0.6 1 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.study-sound-button {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--amber);
+  background: #111827;
+  color: var(--amber);
+  font-size: 16px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.study-sound-button[aria-pressed="true"] {
+  border-color: #64748b;
+  color: #64748b;
+}
+
+.study-volume {
+  width: 70px;
+  margin-top: 4px;
+  accent-color: var(--amber);
+}
+
+/* ---------- footer sections ---------- */
+
+.study-section-movement {
+  flex: 0.9 1 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.study-dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 20px);
+  grid-template-rows: repeat(2, 20px);
+  gap: 3px;
+  justify-content: center;
+}
+
+.study-dpad-key {
+  display: grid;
+  place-items: center;
+  border: 1px solid #475569;
+  background: #111827;
+  color: #64748b;
+  font-size: 10px;
+  border-radius: 3px;
+}
+
+.study-dpad-key.active {
+  border-color: var(--amber);
+  background: #7f1d1d;
+  color: var(--amber);
+}
+
+.study-dpad-up { grid-column: 2; grid-row: 1; }
+.study-dpad-left { grid-column: 1; grid-row: 2; }
+.study-dpad-down { grid-column: 2; grid-row: 2; }
+.study-dpad-right { grid-column: 3; grid-row: 2; }
+
+.study-section-key {
+  flex: 0.7 1 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.study-keycap {
+  min-width: 64px;
+  text-align: center;
+  padding: 8px 10px;
+  border: 2px solid #475569;
+  border-radius: 4px;
+  background: #111827;
+  color: #cbd5f5;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.study-keycap.active {
+  border-color: var(--blue);
+  background: #1d4ed8;
+  color: #f8fafc;
+}
+
+.study-section-boss {
+  flex: 1.4 1 0;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.study-section-boss strong {
+  display: block;
+  font-size: 13px;
+  color: #fca5a5;
+  text-transform: uppercase;
+}
+
+.study-section-phase {
+  flex: 0.8 1 0;
+}
+
+.study-section-phase strong {
+  font-size: 14px;
+  color: var(--cyan);
+  text-transform: uppercase;
+}
+
+.study-section-progress {
+  flex: 1 1 0;
+}
+
+.study-section-progress strong {
+  font-size: 12px;
+  color: #f8fafc;
+  text-transform: uppercase;
+}
+
+@media (max-width: 860px) {
+  .study-panel {
+    flex-wrap: wrap;
+    height: auto !important;
+  }
+
+  .study-section {
+    flex: 1 1 45% !important;
+    border-right: none;
+    border-bottom: 2px solid rgba(59, 130, 246, 0.28);
+  }
+}

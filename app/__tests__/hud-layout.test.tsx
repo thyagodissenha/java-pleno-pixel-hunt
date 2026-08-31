@@ -126,7 +126,7 @@ describe("HUD layout (sponsor card removal, sound controls, power cooldown meter
   });
 });
 
-describe("title menu 'Apoie o jogo' option (4th menu item)", () => {
+describe("title menu 'Apoie o jogo' option (5th menu item)", () => {
   beforeEach(() => {
     localStorage.clear();
     server.use(
@@ -152,15 +152,16 @@ describe("title menu 'Apoie o jogo' option (4th menu item)", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows 4 menu items: Jogar, High Scores, Como Jogar, Apoie o jogo (HUD-02)", () => {
+  it("shows 5 menu items: Jogar, High Scores, Configurações, Como Jogar, Apoie o jogo (HUD-02, THEME-13)", () => {
     render(<Home />);
 
     const items = screen.getAllByRole("menuitem");
-    expect(items).toHaveLength(4);
+    expect(items).toHaveLength(5);
     expect(items[0]).toHaveTextContent("Jogar");
     expect(items[1]).toHaveTextContent("High Scores");
-    expect(items[2]).toHaveTextContent("Como Jogar");
-    expect(items[3]).toHaveTextContent("Apoie o jogo");
+    expect(items[2]).toHaveTextContent("Configurações");
+    expect(items[3]).toHaveTextContent("Como Jogar");
+    expect(items[4]).toHaveTextContent("Apoie o jogo");
   });
 
   it("opens the support panel when 'Apoie o jogo' is clicked (HUD-02)", () => {
@@ -177,14 +178,16 @@ describe("title menu 'Apoie o jogo' option (4th menu item)", () => {
     fireEvent.keyDown(window, { key: "ArrowDown" });
     fireEvent.keyDown(window, { key: "ArrowDown" });
     fireEvent.keyDown(window, { key: "ArrowDown" });
+    fireEvent.keyDown(window, { key: "ArrowDown" });
     fireEvent.keyDown(window, { key: "Enter" });
 
     expect(screen.getByRole("dialog", { name: "Apoie o jogo" })).toBeVisible();
   });
 
-  it("wraps ArrowDown from the 4th option (index 3) back to the 1st (Jogar) (HUD-03)", () => {
+  it("wraps ArrowDown from the 5th option (index 4) back to the 1st (Jogar) (HUD-03)", () => {
     render(<Home />);
 
+    fireEvent.keyDown(window, { key: "ArrowDown" });
     fireEvent.keyDown(window, { key: "ArrowDown" });
     fireEvent.keyDown(window, { key: "ArrowDown" });
     fireEvent.keyDown(window, { key: "ArrowDown" });
@@ -195,7 +198,7 @@ describe("title menu 'Apoie o jogo' option (4th menu item)", () => {
     expect(screen.getByRole("menuitem", { name: /^▶?\s*Jogar$/ })).toHaveAttribute("aria-current", "true");
   });
 
-  it("wraps ArrowUp from the 1st option (index 0) to the 4th (Apoie o jogo) (HUD-03)", () => {
+  it("wraps ArrowUp from the 1st option (index 0) to the 5th (Apoie o jogo) (HUD-03)", () => {
     render(<Home />);
 
     expect(screen.getByRole("menuitem", { name: /^▶?\s*Jogar$/ })).toHaveAttribute("aria-current", "true");
@@ -205,7 +208,7 @@ describe("title menu 'Apoie o jogo' option (4th menu item)", () => {
     expect(screen.getByRole("menuitem", { name: /Apoie o jogo/ })).toHaveAttribute("aria-current", "true");
   });
 
-  it("still navigates and activates the 3 pre-existing options (Jogar, High Scores, Como Jogar) as before", () => {
+  it("still navigates and activates the pre-existing options (Jogar, High Scores, Como Jogar) as before", () => {
     render(<Home />);
 
     fireEvent.click(screen.getByRole("menuitem", { name: "High Scores" }));
@@ -214,6 +217,16 @@ describe("title menu 'Apoie o jogo' option (4th menu item)", () => {
 
     fireEvent.click(screen.getByRole("menuitem", { name: "Como Jogar" }));
     expect(screen.getByRole("dialog", { name: "Como jogar" })).toBeVisible();
+  });
+
+  it("clicking 'Configurações' (index 2) pauses/opens settings state without touching the other panels (THEME-13)", () => {
+    render(<Home />);
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Configurações" }));
+
+    expect(screen.queryByRole("dialog", { name: "High Scores" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Como jogar" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Apoie o jogo" })).not.toBeInTheDocument();
   });
 
   it("shows Privacidade/Sobre links inside the 'Apoie o jogo' panel (HUD-09)", () => {
@@ -229,5 +242,58 @@ describe("title menu 'Apoie o jogo' option (4th menu item)", () => {
     expect(privacyLink).toHaveAttribute("href", "/privacidade");
     expect(aboutLink).toBeVisible();
     expect(aboutLink).toHaveAttribute("href", "/sobre");
+  });
+});
+
+describe("theme dispatch (ClassicHud/NeonHud)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    document.cookie = "jphud-theme=; path=/; max-age=0";
+    server.use(
+      http.get("http://localhost/api/scores", () => HttpResponse.json({ scores: [] })),
+      http.post("http://localhost/api/scores", () => HttpResponse.json({ scores: [] })),
+    );
+    vi.stubGlobal("requestAnimationFrame", vi.fn());
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+      canvasContext as unknown as CanvasRenderingContext2D,
+    );
+  });
+
+  afterEach(() => {
+    cleanup();
+    server.resetHandlers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    document.cookie = "jphud-theme=; path=/; max-age=0";
+  });
+
+  it("renders ClassicHud (DOM topbar, no canvas header) by default with no theme cookie (THEME-02, THEME-16)", () => {
+    render(<Home />);
+
+    expect(screen.getByText("Java Pleno Pixel Hunt")).toBeInTheDocument();
+    expect(document.querySelector(".qwen-hud-canvas")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("menuitem")).toHaveLength(5);
+  });
+
+  it("renders NeonHud (canvas header/footer) when the theme cookie is 'neon' (THEME-02, THEME-17)", () => {
+    document.cookie = "jphud-theme=neon; path=/";
+    render(<Home />);
+
+    expect(document.querySelector(".qwen-hud-canvas")).toBeInTheDocument();
+    expect(document.querySelector(".qwen-footer-canvas")).toBeInTheDocument();
+    expect(screen.getAllByRole("menuitem")).toHaveLength(5);
+  });
+
+  it("keeps High Scores/Como Jogar/Apoie o jogo reachable in the neon theme too (THEME-04 parity smoke test)", () => {
+    document.cookie = "jphud-theme=neon; path=/";
+    render(<Home />);
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "High Scores" }));
+    expect(screen.getByRole("dialog", { name: "High Scores" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Voltar ao início" }));
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Apoie o jogo" }));
+    expect(screen.getByRole("dialog", { name: "Apoie o jogo" })).toBeVisible();
   });
 });

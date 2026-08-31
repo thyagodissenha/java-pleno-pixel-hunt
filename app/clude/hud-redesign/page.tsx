@@ -1,11 +1,13 @@
 "use client";
 
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import {
   createDebugKeyHandler,
   DEBUG_ACTION_EVENT,
   isDebugAction,
   isDebugAllowed,
+  triggerDebugAction,
 } from "@/lib/debug";
 import { getAdsenseBannerSlotId, getPublicAdsenseClientId } from "@/lib/adsense";
 import { circleIntersectsRect, obstacleCount, pointInRect } from "@/lib/obstacles";
@@ -24,10 +26,7 @@ import {
   waitForNextScorePost,
 } from "@/lib/score-sync";
 import { appendCheatBuffer, matchCheatCode } from "@/lib/cheat-codes";
-import { useThemePreference } from "@/lib/theme/use-theme-preference";
-import type { GameState, HudProps, MenuPanel } from "@/app/_hud/hud-props";
-import { ClassicHud } from "@/app/_hud/classic/ClassicHud";
-import { NeonHud } from "@/app/_hud/neon/NeonHud";
+import "./study.css";
 import {
   CHARACTERS,
   DEFAULT_CHARACTER_ID,
@@ -72,7 +71,9 @@ type Particle = {
   color: string;
 };
 
+type GameState = "menu" | "playing" | "paused" | "over" | "won" | "promotion" | "choice";
 type RunOrigin = "normal" | "debug";
+type MenuPanel = "home" | "scores" | "help" | "skins";
 type EnemyKind = "user" | "boss" | "data" | "qa" | "vip" | "incident" | "legacy";
 type ObstacleKind = "desk" | "server" | "firewall" | "board";
 type PowerUpKind =
@@ -158,6 +159,12 @@ function weaponLevelForWave(wave: number) {
   if (wave >= 4) return 3;
   if (wave >= 2) return 2;
   return 1;
+}
+
+function frameScreenLabel(panel: MenuPanel) {
+  if (panel === "scores") return "High Scores";
+  if (panel === "skins") return "Personagens e Skins";
+  return "Como jogar";
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -284,14 +291,14 @@ export default function Home() {
   const [abilityCooldownPct, setAbilityCooldownPct] = useState(100);
   const [promotionCountdown, setPromotionCountdown] = useState(3);
   const [debugOpen, setDebugOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [bossKillsCount, setBossKillsCount] = useState(0);
-  const [bossKillTargetCount, setBossKillTargetCount] = useState(bossKillTarget(1, 0));
-  const [bossEncountered, setBossEncountered] = useState(false);
-  const [bossIncident, setBossIncident] = useState(false);
-  const [enemyCount, setEnemyCount] = useState(0);
-  const [damageFlash, setDamageFlash] = useState(0);
-  const { theme, setTheme } = useThemePreference();
+  const [activeMove, setActiveMove] = useState({
+    up: false,
+    down: false,
+    left: false,
+    right: false,
+    burst: false,
+    power: false,
+  });
 
   useEffect(() => {
     stateRef.current = gameState;
@@ -568,19 +575,6 @@ export default function Home() {
     setSupportOpen(true);
   }
 
-  function openSettingsPanel() {
-    if (stateRef.current === "playing") {
-      stateRef.current = "paused";
-      setGameState("paused");
-      stopMusic();
-    }
-    setSettingsOpen(true);
-  }
-
-  function closeSettingsPanel() {
-    setSettingsOpen(false);
-  }
-
   useEffect(() => {
     if (gameState !== "promotion") return;
     const interval = window.setInterval(() => {
@@ -604,9 +598,8 @@ export default function Home() {
     else if (index === 1) {
       setMenuPanel("scores");
       refreshHighScores();
-    } else if (index === 2) openSettingsPanel();
-    else if (index === 3) setMenuPanel("help");
-    else if (index === 4) openSupportPanel();
+    } else if (index === 2) setMenuPanel("help");
+    else if (index === 3) openSupportPanel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -760,12 +753,6 @@ export default function Home() {
           invincible: Math.max(0, player.invincible),
         });
       }
-      setBossKillsCount(Math.min(bossKills, bossKillTarget(localWave, callLoops)));
-      setBossKillTargetCount(bossKillTarget(localWave, callLoops));
-      setBossEncountered(bossSpawned);
-      setBossIncident(bossBanner > 0);
-      setEnemyCount(enemies.length);
-      setDamageFlash(damageFlash);
     }
 
     function countBossProgress() {
@@ -1176,11 +1163,11 @@ export default function Home() {
       }
       if (stateRef.current === "menu" && menuPanelRef.current === "home") {
         if (event.key === "ArrowUp" || event.key === "w" || event.key === "W") {
-          menuIndexRef.current = (menuIndexRef.current + 4) % 5;
+          menuIndexRef.current = (menuIndexRef.current + 3) % 4;
           setMenuIndex(menuIndexRef.current);
           playSound("hit");
         } else if (event.key === "ArrowDown" || event.key === "s" || event.key === "S") {
-          menuIndexRef.current = (menuIndexRef.current + 1) % 5;
+          menuIndexRef.current = (menuIndexRef.current + 1) % 4;
           setMenuIndex(menuIndexRef.current);
           playSound("hit");
         } else if (event.key === "Enter" || event.key === " ") {
@@ -1199,8 +1186,23 @@ export default function Home() {
         resumeGame();
       }
       keys.current.add(event.key.toLowerCase());
+      syncActiveMove();
     };
-    const onKeyUp = (event: KeyboardEvent) => keys.current.delete(event.key.toLowerCase());
+    const onKeyUp = (event: KeyboardEvent) => {
+      keys.current.delete(event.key.toLowerCase());
+      syncActiveMove();
+    };
+    function syncActiveMove() {
+      const pressed = keys.current;
+      setActiveMove({
+        up: pressed.has("arrowup") || pressed.has("w"),
+        down: pressed.has("arrowdown") || pressed.has("s"),
+        left: pressed.has("arrowleft") || pressed.has("a"),
+        right: pressed.has("arrowright") || pressed.has("d"),
+        burst: pressed.has(" "),
+        power: pressed.has("q"),
+      });
+    }
     const onPointerMove = (event: PointerEvent) => {
       event.preventDefault();
       const bounds = canvas.getBoundingClientRect();
@@ -1991,6 +1993,12 @@ export default function Home() {
   }, [activateMenuOption, playSound, resumeGame, startMusic, stopMusic]);
 
   const status = gameState === "playing" ? "Em combate" : gameState === "choice" ? "Escolha final" : gameState === "paused" ? "Pausado" : gameState === "promotion" ? "Promoção?" : gameState === "won" ? "Vitória" : gameState === "over" ? "Fim de jogo" : "Pronto";
+  const finalScreen = gameState === "over" || gameState === "won";
+  const promotionScreen = gameState === "promotion";
+  const menuScreen = gameState === "menu";
+  const supportScreen = supportOpen;
+  const pauseScreen = gameState === "paused" && !supportScreen;
+  const frameScreen = supportScreen || finalScreen || promotionScreen || (menuScreen && menuPanel !== "home");
   const showAdBanner = gameState === "playing" && Boolean(adsenseClientId && adsenseBannerSlotId);
 
   useEffect(() => {
@@ -2009,65 +2017,547 @@ export default function Home() {
     }
   }, [showAdBanner]);
 
-  const hudProps: HudProps = {
-    status,
-    hp,
-    score,
-    wave,
-    resetCount,
-    boss,
-    biome,
-    upgrade,
-    bossProgress,
-    burstStaminaPct,
-    abilityCooldownPct,
-    muted,
-    volume,
-    gameState,
-    menuPanel,
-    menuIndex,
-    highScores,
-    selectedCharacterId,
-    settingsOpen,
-    theme,
-    supportOpen,
-    debugOpen,
-    playerName,
-    scoreSaved,
-    scoreMessage,
-    promotionCountdown,
-    bossKillsCount,
-    bossKillTargetCount,
-    bossEncountered,
-    bossIncident,
-    enemyCount,
-    damageFlash,
-    debugBossHealth,
-    debugPowerUpCount,
-    debugAbilityCooldown,
-    debugPlayerPosition,
-    debugPlayerEffects,
-    setMuted,
-    setVolume,
-    setMenuIndex,
-    activateMenuOption,
-    setMenuPanel,
-    setSelectedCharacterId,
-    openSettingsPanel,
-    closeSettingsPanel,
-    setTheme,
-    setSupportOpen,
-    setDebugOpen,
-    setPlayerName,
-    submitScore,
-    startNewGame,
-    resumeGame,
-    returnToTitle,
-    canvasRef,
-    adBannerRef,
-    characterPortraitRefs,
-    debugFirstActionRef,
-  };
+  const jdkPower = upgrade === "JDK 21" ? 9 : upgrade === "JDK 17" ? 6 : 3;
 
-  return theme === "neon" ? <NeonHud {...hudProps} /> : <ClassicHud {...hudProps} />;
+  return (
+    <main className="game-shell">
+      <div className="game-frame study-outer-frame">
+      <span className="study-bolt tl" />
+      <span className="study-bolt tr" />
+      <span className="study-bolt bl" />
+      <span className="study-bolt br" />
+      <header className="study-panel study-header" aria-label="Painel do jogo">
+        <div className="study-section study-section-brand">
+          <h1>Java Pleno Pixel Hunt</h1>
+          <span className="study-status">{status}</span>
+        </div>
+
+        <div className="study-section study-section-value">
+          <span className="study-section-label">
+            <span className="study-section-icon">☕</span> {upgrade}
+          </span>
+          <div className="study-segments">
+            {Array.from({ length: 10 }).map((_, index) => (
+              <i key={index} className={index < jdkPower ? "on" : undefined} />
+            ))}
+          </div>
+        </div>
+
+        <div className="study-section study-section-value">
+          <span className="study-section-label">
+            <span className="study-section-icon">👥</span> Onda {wave}
+          </span>
+          <strong>Resets {resetCount}</strong>
+        </div>
+
+        <div className="study-section study-section-value">
+          <span className="study-section-label">
+            <span className="study-section-icon">★</span> Score
+          </span>
+          <strong>{score}</strong>
+        </div>
+
+        <div className="study-section study-section-hp">
+          <span className="study-section-label">HP</span>
+          <div className="study-hearts">
+            {[0, 1, 2].map((index) => (
+              <span key={index} className={index < Math.ceil((hp / 100) * 3) ? "filled" : undefined}>
+                ♥
+              </span>
+            ))}
+          </div>
+          <div className="study-hp-track">
+            <div className={`study-hp-fill${hp <= 33 ? " low" : ""}`} style={{ width: `${hp}%` }} />
+          </div>
+        </div>
+
+        <div className="study-section study-section-value">
+          <span className="study-section-label">
+            <span className="study-section-icon">⚡</span> Rajada
+          </span>
+          <div className="study-segments burst">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <i key={index} className={index < Math.round((burstStaminaPct / 100) * 6) ? "on" : undefined} />
+            ))}
+          </div>
+        </div>
+
+        {resolveCharacter(selectedCharacterId).specialPower && (
+          <div className="study-section study-section-value">
+            <span className="study-section-label">
+              <span className="study-section-icon">◆</span> Poder
+            </span>
+            <div className="study-segments power">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <i key={index} className={index < Math.round((abilityCooldownPct / 100) * 6) ? "on" : undefined} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="study-section study-section-sound">
+          <button
+            type="button"
+            className="study-sound-button"
+            aria-pressed={muted}
+            aria-label={muted ? "Ativar som" : "Mutar som"}
+            onClick={() => setMuted((current) => !current)}
+          >
+            {muted ? "🔇" : "🔊"}
+          </button>
+          <input
+            type="range"
+            className="study-volume"
+            aria-label="Volume"
+            min="0"
+            max="1"
+            step="0.05"
+            value={volume}
+            onChange={(event) => {
+              const nextVolume = Number(event.target.value);
+              setVolume(nextVolume);
+              setMuted(nextVolume <= 0);
+            }}
+          />
+        </div>
+
+        {isDebugAllowed() && (
+          <div className="debug-strip">
+            {debugBossHealth && (
+              <output aria-label="Vida do boss debug">
+                {debugBossHealth.hp}/{debugBossHealth.maxHp} HP
+              </output>
+            )}
+            {debugPowerUpCount > 0 && (
+              <output aria-label="Power-ups debug">
+                {debugPowerUpCount} power-up disponível
+              </output>
+            )}
+            <output aria-label="Cooldown do poder especial debug">
+              {debugAbilityCooldown.toFixed(1)}s
+            </output>
+            <output aria-label="Posição do jogador debug">
+              {debugPlayerPosition.x}, {debugPlayerPosition.y}
+            </output>
+            <output aria-label="Efeitos do jogador debug">
+              {debugPlayerEffects.haste.toFixed(1)}, {debugPlayerEffects.invincible.toFixed(1)}
+            </output>
+          </div>
+        )}
+      </header>
+
+      <section className="game-stage study-arena-frame" aria-label="Arena do jogo">
+        <div className={`canvas-frame ${frameScreen ? "frame-screen-active" : ""}`}>
+          <canvas ref={canvasRef} width={WORLD.width} height={WORLD.height} aria-label="Arena pixel art" />
+        {menuScreen && menuPanel === "home" && (
+          <div className="menu-overlay menu-overlay-full" role="dialog" aria-label="Menu inicial">
+            <div className={`menu-panel ${menuPanel === "home" ? "title-menu-panel" : ""}`}>
+              <p className="menu-kicker">Build instável detectada</p>
+
+              <div className="retro-title-screen" aria-label="Tela inicial pixel art do Java Pleno Pixel Hunt">
+                <div className="retro-scene hero-scene" aria-hidden="true">
+                  <div className="pixel-dev">
+                    <span className="hair" />
+                    <span className="head" />
+                    <span className="body" />
+                    <span className="arm mug" />
+                    <span className="arm keyboard" />
+                    <span className="leg left" />
+                    <span className="leg right" />
+                  </div>
+                  <span className="java-mug">JAVA</span>
+                  <span className="code-shot" />
+                </div>
+
+                <div className="retro-scene call-scene" aria-hidden="true">
+                  <span className="window-title">MEETING CALL</span>
+                  <span className="boss-face" />
+                  <span className="speech">PRA ONTEM!</span>
+                </div>
+
+                <div className="retro-logo" aria-label="Java Pleno Pixel Hunt">
+                  <span>Java</span>
+                  <span>Pleno</span>
+                  <span>Pixel Hunt</span>
+                </div>
+
+                <div className="retro-scene users-scene" aria-hidden="true">
+                  <span className="speech">USUÁRIOS!</span>
+                  <span className="user u1" />
+                  <span className="user u2" />
+                  <span className="user u3" />
+                </div>
+
+                <div className="retro-scene cloud-scene" aria-hidden="true">
+                  <span className="cloud" />
+                  <span className="cube c1" />
+                  <span className="cube c2" />
+                  <span className="binary">101<br />010</span>
+                </div>
+
+                <div className="retro-scene deploy-scene" aria-hidden="true">
+                  <span className="terminal">$ deploy --prod<br />tests...<br />success!</span>
+                  <span className="rocket">DEPLOY</span>
+                </div>
+
+                <div className="retro-scene incident-scene" aria-hidden="true">
+                  <span className="incident-title">PROD INCIDENT</span>
+                  <span className="explosion" />
+                  <span className="alert-sign">!</span>
+                </div>
+
+                <div className="title-menu-actions" role="menu" aria-label="Opções do jogo (use as setas e Enter)">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-current={menuIndex === 0}
+                    className={menuIndex === 0 ? "active" : undefined}
+                    onMouseEnter={() => setMenuIndex(0)}
+                    onClick={() => activateMenuOption(0)}
+                  >
+                    {menuIndex === 0 ? "▶ " : ""}Jogar
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-current={menuIndex === 1}
+                    className={menuIndex === 1 ? "active" : undefined}
+                    onMouseEnter={() => setMenuIndex(1)}
+                    onClick={() => activateMenuOption(1)}
+                  >
+                    {menuIndex === 1 ? "▶ " : ""}High Scores
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-current={menuIndex === 2}
+                    className={menuIndex === 2 ? "active" : undefined}
+                    onMouseEnter={() => setMenuIndex(2)}
+                    onClick={() => activateMenuOption(2)}
+                  >
+                    {menuIndex === 2 ? "▶ " : ""}Como Jogar
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-current={menuIndex === 3}
+                    className={menuIndex === 3 ? "active" : undefined}
+                    onMouseEnter={() => setMenuIndex(3)}
+                    onClick={() => activateMenuOption(3)}
+                  >
+                    {menuIndex === 3 ? "▶ " : ""}Apoie o jogo
+                  </button>
+                </div>
+              </div>
+              <p className="menu-copy">
+                Sobreviva aos usuários, derrote os chefes e tente entrar no ranking global antes que alguém peça um deploy em sexta-feira.
+              </p>
+            </div>
+          </div>
+        )}
+        {menuScreen && menuPanel !== "home" && (
+          <dialog open className="frame-screen" aria-label={frameScreenLabel(menuPanel)}>
+            <div className="menu-panel frame-panel">
+              <p className="menu-kicker">Java Pleno Pixel Hunt</p>
+
+              {menuPanel === "scores" && (
+                <>
+                  <h2>High Scores</h2>
+                  <p className="score-mode">{scoreMessage}</p>
+                  <ol className="score-list menu-score-list">
+                    {highScores.length ? (
+                      highScores.map((entry, index) => (
+                        <li key={`${entry.createdAt}-${entry.name}`}>
+                          <span>{String(index + 1).padStart(2, "0")}</span>
+                          <strong>{entry.name}</strong>
+                          <em>{entry.score}<small>Onda {entry.wave} · Resets {entry.resets ?? 0}</small></em>
+                        </li>
+                      ))
+                    ) : (
+                      <li className="empty-score">
+                        <strong>NENHUM SCORE AINDA</strong>
+                        <em>0</em>
+                      </li>
+                    )}
+                  </ol>
+                  <div className="menu-actions two">
+                    <button type="button" onClick={startNewGame}>Jogar</button>
+                    <button type="button" onClick={() => setMenuPanel("home")}>Voltar ao início</button>
+                  </div>
+                </>
+              )}
+
+              {menuPanel === "skins" && (
+                <>
+                  <h2>Personagens & Skins</h2>
+                  <div role="radiogroup" aria-label="Escolha de personagem">
+                    {CHARACTERS.map((character, index) => (
+                      <button
+                        key={character.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={character.id === selectedCharacterId}
+                        className={
+                          character.id === selectedCharacterId
+                            ? "character-card character-card-selected"
+                            : "character-card"
+                        }
+                        onClick={() => setSelectedCharacterId(character.id)}
+                      >
+                        <canvas
+                          ref={(el) => {
+                            characterPortraitRefs.current[index] = el;
+                          }}
+                          width={40}
+                          height={40}
+                          aria-hidden="true"
+                          className="character-portrait"
+                        />
+                        <h3>{character.name}</h3>
+                        <ul className="help-list">
+                          <li><strong>Vida</strong><span>{character.maxHp}</span></li>
+                          <li><strong>Velocidade</strong><span>{character.speed}</span></li>
+                          <li><strong>Tamanho</strong><span>{character.size}</span></li>
+                        </ul>
+                        {character.specialPower ? (
+                          <p>
+                            <strong>{character.specialPower.name}</strong>
+                            {": "}
+                            {character.specialPower.description}
+                            {" "}
+                            (cooldown: {character.specialPower.cooldownSeconds}s)
+                          </p>
+                        ) : (
+                          <p>Sem poder especial.</p>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="menu-actions two">
+                    <button type="button" onClick={startNewGame}>Jogar</button>
+                    <button type="button" onClick={() => setMenuPanel("home")}>Voltar ao início</button>
+                  </div>
+                </>
+              )}
+
+              {menuPanel === "help" && (
+                <>
+                  <h2>Como jogar</h2>
+                  <ul className="help-list">
+                    <li><strong>Mover</strong><span>WASD, setas ou arraste no celular.</span></li>
+                    <li><strong>Atirar</strong><span>Automático no inimigo mais próximo.</span></li>
+                    <li><strong>Rajada</strong><span>Espaço acelera os tiros enquanto houver estamina.</span></li>
+                    <li><strong>Power-ups</strong><span>Café, Refactor, Rollback, Hotfix, Code Review e Sprint ajudam na partida.</span></li>
+                    <li><strong>Final</strong><span>A promoção é uma cilada. Novo chamado mantém o score e recomeça a firma mais difícil.</span></li>
+                    <li><strong>Objetivo</strong><span>Sobreviva, derrube chefes e salve seu score.</span></li>
+                  </ul>
+                  <div className="menu-actions two">
+                    <button type="button" onClick={startNewGame}>Jogar</button>
+                    <button type="button" onClick={() => setMenuPanel("home")}>Voltar ao início</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </dialog>
+        )}
+        {supportScreen && (
+          <div className="frame-screen support-screen" role="dialog" aria-modal="true" aria-label="Apoie o jogo">
+            <div className="menu-panel frame-panel support-panel">
+              <p className="menu-kicker">Apoie o jogo</p>
+              <h2>PIXEL FUND</h2>
+              <p className="support-copy">
+                Quer apoiar o projeto ou virar patrocinador? Fale com o dev pelo repositório no GitHub.
+              </p>
+              <div className="support-options" aria-label="Opções de apoio">
+                <div>
+                  <strong>GitHub</strong>
+                  <span>Abra uma issue ou PR</span>
+                </div>
+                <div>
+                  <strong>Feedback</strong>
+                  <span>Sugestões e bugs são bem-vindos</span>
+                </div>
+                <div>
+                  <strong>Patrocínio</strong>
+                  <span>Contato direto via GitHub</span>
+                </div>
+              </div>
+              <nav className="sponsor-links" aria-label="Links institucionais">
+                <Link href="/privacidade">Privacidade</Link>
+                <Link href="/sobre">Sobre</Link>
+              </nav>
+              <div className="menu-actions two">
+                <button type="button" onClick={() => setSupportOpen(false)}>Fechar</button>
+                <button type="button" onClick={returnToTitle}>Menu inicial</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {pauseScreen && (
+          <div className="pause-menu-overlay" role="dialog" aria-modal="true" aria-label="Jogo pausado">
+            <div className="pause-panel">
+              <p className="menu-kicker">Jogo pausado</p>
+              <h2>PAUSADO</h2>
+              <div className="menu-actions two">
+                <button type="button" onClick={resumeGame}>Continuar</button>
+                <button type="button" onClick={returnToTitle}>Sair do jogo</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {debugOpen && (
+          <dialog
+            open
+            className="pause-menu-overlay"
+            aria-label="Ferramentas de debug"
+            onClose={() => setDebugOpen(false)}
+          >
+            <div className="pause-panel">
+              <p className="menu-kicker">Developer tools</p>
+              <h2>DEBUG</h2>
+              <div className="menu-actions">
+                <button ref={debugFirstActionRef} type="button" onClick={() => triggerDebugAction("spawn_boss")}>
+                  Invocar Boss
+                </button>
+                <button type="button" onClick={() => triggerDebugAction("max_stamina")}>
+                  Max Estamina
+                </button>
+                <button type="button" onClick={() => triggerDebugAction("win_game")}>
+                  Testar Tela de Vitória
+                </button>
+                <button type="button" onClick={() => triggerDebugAction("toggle_menu")}>
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </dialog>
+        )}
+        {promotionScreen && (
+          <div className="frame-screen" role="dialog" aria-modal="true" aria-label="Promoção para sênior">
+            <div className="score-panel frame-panel promotion-panel">
+              <p className="score-kicker">Promoção para Sênior</p>
+              <h2>ERA CILADA DO RH</h2>
+              <p className="promotion-copy">
+                Parabéns: você aceitou o cargo, herdou o legado sem teste, ganhou acesso a mais reuniões e morreu de responsabilidade.
+              </p>
+              <p className="score-mode">O pleno nunca vira sênior. Ele só desbloqueia outro board.</p>
+              <p className="promotion-countdown">High Scores em {promotionCountdown}</p>
+            </div>
+          </div>
+        )}
+        {finalScreen && (
+          <div className="frame-screen" role="dialog" aria-modal="true" aria-label="Ranking de maiores pontuações">
+            <div className="score-panel frame-panel">
+              <p className="score-kicker">{gameState === "won" ? "Missão completa" : "Produção caiu"}</p>
+              <h2>HIGH SCORES</h2>
+              <p className="score-mode">{scoreMessage}</p>
+              {!scoreSaved ? (
+                <form className="score-form" onSubmit={submitScore}>
+                  <label htmlFor="player-name">Digite seu nome</label>
+                  <div>
+                    <input
+                      id="player-name"
+                      maxLength={14}
+                      value={playerName}
+                      onChange={(event) => setPlayerName(event.target.value)}
+                      placeholder="DEV ANON"
+                      autoFocus
+                    />
+                    <button type="submit">Salvar</button>
+                  </div>
+                  <span>{score} pts · onda {wave} · resets {resetCount}</span>
+                </form>
+              ) : (
+                <div className="menu-actions two">
+                  <button type="button" onClick={startNewGame}>Jogar de novo</button>
+                  <button type="button" onClick={returnToTitle}>Voltar ao início</button>
+                </div>
+              )}
+
+              {!scoreSaved && (
+                <button className="play-again secondary-action" type="button" onClick={returnToTitle}>
+                  Voltar ao início
+                </button>
+              )}
+
+              <ol className="score-list">
+                {highScores.length ? (
+                  highScores.map((entry, index) => (
+                    <li key={`${entry.createdAt}-${entry.name}`}>
+                      <span>{String(index + 1).padStart(2, "0")}</span>
+                      <strong>{entry.name}</strong>
+                      <em>{entry.score}<small>Onda {entry.wave} · Resets {entry.resets ?? 0}</small></em>
+                    </li>
+                  ))
+                ) : (
+                  <li className="empty-score">
+                    <strong>NENHUM SCORE AINDA</strong>
+                    <em>{score}</em>
+                  </li>
+                )}
+              </ol>
+            </div>
+          </div>
+        )}
+        </div>
+      </section>
+
+      {showAdBanner && (
+        <section className="ad-banner-slot" aria-label="Publicidade">
+          <span className="ad-banner-label">Publicidade</span>
+          <ins
+            ref={adBannerRef}
+            className="adsbygoogle"
+            style={{ display: "block" }}
+            data-ad-client={adsenseClientId}
+            data-ad-slot={adsenseBannerSlotId}
+            data-ad-format="horizontal"
+            data-full-width-responsive="true"
+          />
+        </section>
+      )}
+
+      <footer className="study-panel study-footer" aria-label="Controles e alvo">
+        <div className="study-section study-section-movement">
+          <span className="study-section-label">Movimento</span>
+          <div className="study-dpad">
+            <span className={`study-dpad-key study-dpad-up${activeMove.up ? " active" : ""}`}>▲</span>
+            <span className={`study-dpad-key study-dpad-left${activeMove.left ? " active" : ""}`}>◀</span>
+            <span className={`study-dpad-key study-dpad-down${activeMove.down ? " active" : ""}`}>▼</span>
+            <span className={`study-dpad-key study-dpad-right${activeMove.right ? " active" : ""}`}>▶</span>
+          </div>
+        </div>
+
+        <div className="study-section study-section-key">
+          <span className="study-section-label">Rajada</span>
+          <span className={`study-keycap${activeMove.burst ? " active" : ""}`}>Espaço</span>
+        </div>
+
+        <div className="study-section study-section-boss">
+          <div className="boss-avatar" aria-hidden="true">
+            <span className="boss-hair" />
+            <span className="boss-body" />
+            <span className="boss-face-left" />
+            <span className="boss-face-right" />
+            <span className="boss-mouth" />
+          </div>
+          <div>
+            <span className="study-section-label">Chefe atual</span>
+            <strong>{boss}</strong>
+          </div>
+        </div>
+
+        <div className="study-section study-section-phase">
+          <span className="study-section-label">Fase</span>
+          <strong>{biome}</strong>
+        </div>
+
+        <div className="study-section study-section-progress">
+          <span className="study-section-label">Boss progress</span>
+          <strong>{bossProgress}</strong>
+        </div>
+      </footer>
+      </div>
+    </main>
+  );
 }

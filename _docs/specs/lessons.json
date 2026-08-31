@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 11,
+  "next_id": 14,
   "lessons": [
     {
       "id": "L-001",
@@ -184,6 +184,60 @@
       ],
       "created": "2026-08-28T16:44:59Z",
       "last_seen": "2026-08-28T16:44:59Z"
+    },
+    {
+      "id": "L-011",
+      "key": "spec_precision_gap::when a spec marks a state preservation path as unreachable via an edge case don t force a test for it cite the edge case as the reason the gap is non blocking instead of writing a synthetic test",
+      "text": "When a spec marks a state-preservation path as unreachable via an edge case, don't force a test for it — cite the edge case as the reason the gap is non-blocking instead of writing a synthetic test.",
+      "signal": "spec_precision_gap",
+      "scope": "testing",
+      "status": "candidate",
+      "features": [
+        "sistema-de-temas-hud"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "THEME-09 (testing)"
+      ],
+      "created": "2026-08-31T00:13:53Z",
+      "last_seen": "2026-08-31T00:13:53Z"
+    },
+    {
+      "id": "L-012",
+      "key": "spec_deviation::next script strategy beforeinteractive only works for scripts present in the very first render a component that mounts conditionally after a post mount effect e g reading a cookie must use afterinteractive instead",
+      "text": "next/script strategy=\"beforeInteractive\" only works for scripts present in the very first render; a component that mounts conditionally after a post-mount effect (e.g. reading a cookie) must use \"afterInteractive\" instead.",
+      "signal": "spec_deviation",
+      "scope": "app/_hud",
+      "status": "candidate",
+      "features": [
+        "sistema-de-temas-hud"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "T7 SPEC_DEVIATION (NeonHud.tsx Script strategy) (app/_hud)"
+      ],
+      "created": "2026-08-31T00:13:53Z",
+      "last_seen": "2026-08-31T00:13:53Z"
+    },
+    {
+      "id": "L-013",
+      "key": "spec_deviation::a menu index remap e g 4 5 items and the ui change that adds removes the item must land in the same commit remapping indices before the corresponding buttons exist breaks the live menu even though each half compiles cleanly",
+      "text": "A menu-index remap (e.g. 4→5 items) and the UI change that adds/removes the item must land in the same commit — remapping indices before the corresponding buttons exist breaks the live menu even though each half compiles cleanly.",
+      "signal": "spec_deviation",
+      "scope": "app/page.tsx",
+      "status": "candidate",
+      "features": [
+        "sistema-de-temas-hud"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "T6/T7 SPEC_DEVIATION (menu index remap) (app/page.tsx)"
+      ],
+      "created": "2026-08-31T00:13:53Z",
+      "last_seen": "2026-08-31T00:13:53Z"
     }
   ]
 }

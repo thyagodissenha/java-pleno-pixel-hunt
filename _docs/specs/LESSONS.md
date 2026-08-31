@@ -74,6 +74,24 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: P2 API AC1 (score-api)
 - last seen: 2026-08-28T16:44:59Z
 
+### L-011 — When a spec marks a state-preservation path as unreachable via an edge case, don't force a test for it — cite the edge case as the reason the gap is non-blocking instead of writing a synthetic test.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `testing` · harmful: 0
+- features: sistema-de-temas-hud
+- evidence: THEME-09 (testing)
+- last seen: 2026-08-31T00:13:53Z
+
+### L-012 — next/script strategy="beforeInteractive" only works for scripts present in the very first render; a component that mounts conditionally after a post-mount effect (e.g. reading a cookie) must use "afterInteractive" instead.
+- signal: `spec_deviation` · recurrence: 1 feature(s) · scope: `app/_hud` · harmful: 0
+- features: sistema-de-temas-hud
+- evidence: T7 SPEC_DEVIATION (NeonHud.tsx Script strategy) (app/_hud)
+- last seen: 2026-08-31T00:13:53Z
+
+### L-013 — A menu-index remap (e.g. 4→5 items) and the UI change that adds/removes the item must land in the same commit — remapping indices before the corresponding buttons exist breaks the live menu even though each half compiles cleanly.
+- signal: `spec_deviation` · recurrence: 1 feature(s) · scope: `app/page.tsx` · harmful: 0
+- features: sistema-de-temas-hud
+- evidence: T6/T7 SPEC_DEVIATION (menu index remap) (app/page.tsx)
+- last seen: 2026-08-31T00:13:53Z
+
 ## Quarantined (failed when applied — ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

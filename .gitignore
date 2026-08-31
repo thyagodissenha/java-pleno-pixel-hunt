@@ -50,3 +50,4 @@ site-build.tar.gz
 # SonarQube scanner/test artifacts
 .scannerwork/
 /test-results/
+tsconfig.tsbuildinfo
