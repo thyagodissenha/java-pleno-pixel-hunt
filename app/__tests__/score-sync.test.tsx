@@ -4,6 +4,9 @@ import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "@/app/page";
+import { skipOpeningCutsceneForTests } from "@/app/_hud/cutscene/OpeningCutscene";
+
+skipOpeningCutsceneForTests();
 
 const HIGH_SCORE_KEY = "java-pleno-pixel-hunt-high-scores";
 const PENDING_SCORE_KEY = "java-pleno-pixel-hunt-pending-scores";

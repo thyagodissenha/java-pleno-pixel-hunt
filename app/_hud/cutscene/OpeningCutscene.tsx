@@ -8,6 +8,22 @@ import { drawBossCharacter, pixelRect } from "@/lib/character-sprite";
 // clássico/neon) ou voltando ao menu depois de uma partida.
 let cutsceneAlreadyPlayed = false;
 
+// Usado pelo handler de teclado global do jogo (app/page.tsx) para não
+// tratar Espaço/Enter como "ativar item do menu" enquanto a cutscene ainda
+// está cobrindo o menu — do contrário os dois ouvintes de keydown em
+// `window` disparam juntos e o jogo começa por baixo da cutscene.
+export function isOpeningCutscenePlaying() {
+  return !cutsceneAlreadyPlayed;
+}
+
+// Só para testes: os specs de HUD interagem com o menu via teclado/clique
+// sem passar pela cutscene (ela não expõe nenhuma role/texto pesquisável
+// para "avançar 3x"), então marcam a abertura como já vista antes de
+// renderizar <Home />.
+export function skipOpeningCutsceneForTests() {
+  cutsceneAlreadyPlayed = true;
+}
+
 type SceneCharacter = "dev" | "boss";
 
 type Scene = {
@@ -72,7 +88,10 @@ function freshState(sceneIndex: number): CutsceneState {
   return {
     sceneIndex,
     fadeState: "in",
-    fadeAlpha: 0,
+    // "in" começa opaca (tela preta) e o alpha desce até 0, revelando a
+    // cena — não o contrário, que faria a cena aparecer de cara e só
+    // depois escurecer, lendo como um segundo fade indesejado.
+    fadeAlpha: 1,
     dialogText: "",
     dialogIndex: 0,
     typingTimer: 0,
@@ -394,8 +413,8 @@ export function OpeningCutscene() {
     function update(dt: number) {
       const state = sceneStateRef.current;
       if (state.fadeState === "in") {
-        state.fadeAlpha = Math.min(1, state.fadeAlpha + FADE_SPEED * dt);
-        if (state.fadeAlpha >= 1) {
+        state.fadeAlpha = Math.max(0, state.fadeAlpha - FADE_SPEED * dt);
+        if (state.fadeAlpha <= 0) {
           state.fadeState = "visible";
           state.fadeAlpha = 0;
         }

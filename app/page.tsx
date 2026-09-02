@@ -29,6 +29,7 @@ import { drawCharacterBody, pixelRect } from "@/lib/character-sprite";
 import type { GameState, HudProps, MenuPanel } from "@/app/_hud/hud-props";
 import { ClassicHud } from "@/app/_hud/classic/ClassicHud";
 import { NeonHud } from "@/app/_hud/neon/NeonHud";
+import { isOpeningCutscenePlaying } from "@/app/_hud/cutscene/OpeningCutscene";
 import {
   CHARACTERS,
   DEFAULT_CHARACTER_ID,
@@ -1144,7 +1145,7 @@ export default function Home() {
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "w", "a", "s", "d", "W", "A", "S", "D", "Enter", "Escape"].includes(event.key)) {
         event.preventDefault();
       }
-      if (stateRef.current === "menu" && menuPanelRef.current === "home") {
+      if (stateRef.current === "menu" && menuPanelRef.current === "home" && !isOpeningCutscenePlaying()) {
         if (event.key === "ArrowUp" || event.key === "w" || event.key === "W") {
           menuIndexRef.current = (menuIndexRef.current + 4) % 5;
           setMenuIndex(menuIndexRef.current);
