@@ -6,6 +6,7 @@ import { getAdsenseBannerSlotId, getPublicAdsenseClientId } from "@/lib/adsense"
 import { CHARACTERS, resolveCharacter } from "@/lib/characters";
 import type { HudProps, MenuPanel } from "@/app/_hud/hud-props";
 import { PixelTitlePanels } from "@/app/_hud/title-screen/PixelTitlePanels";
+import { OpeningCutscene } from "@/app/_hud/cutscene/OpeningCutscene";
 import "./neon.css";
 
 // WORLD/frameScreenLabel are declared locally in app/page.tsx today (it can't
@@ -258,6 +259,7 @@ export function NeonHud(props: HudProps) {
               <div className="retro-title-screen" aria-label="Tela inicial pixel art do Java Pleno Pixel Hunt">
               <div className="retro-title-stage">
                 <PixelTitlePanels />
+                <OpeningCutscene />
 
                 <div className="title-menu-actions" role="menu" aria-label="Opções do jogo (use as setas e Enter)">
                   <button

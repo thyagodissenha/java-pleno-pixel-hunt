@@ -56,6 +56,8 @@ const canvasContext = {
   scale: vi.fn(),
   stroke: vi.fn(),
   strokeText: vi.fn(),
+  // used by OpeningCutscene's word-wrapped dialog boxes
+  measureText: vi.fn(() => ({ width: 0 })),
 };
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));

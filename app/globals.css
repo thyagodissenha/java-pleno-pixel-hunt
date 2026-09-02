@@ -642,6 +642,23 @@ canvas {
   display: block;
 }
 
+/* Cutscene de abertura: cobre o mesmo palco (.retro-title-stage) por cima
+   do poster/menu até ser dispensada (clique, espaço ou Enter). */
+.cutscene-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  cursor: pointer;
+}
+
+.cutscene-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
 .title-menu-actions {
   position: absolute;
   left: 50%;
