@@ -1,4 +1,4 @@
-export const CHEAT_CODES = ["iddqd", "idkfa"] as const;
+export const CHEAT_CODES = ["iddqd", "idkfa", "idclip"] as const;
 
 export type CheatCode = (typeof CHEAT_CODES)[number];
 

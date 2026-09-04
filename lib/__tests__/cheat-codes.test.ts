@@ -30,10 +30,10 @@ describe("appendCheatBuffer", () => {
 
   it("truncates the buffer to the longest known cheat code length", () => {
     let buffer = "";
-    for (const key of ["x", "x", "x", "i", "d", "d", "q", "d"]) buffer = appendCheatBuffer(buffer, key);
+    for (const key of ["x", "x", "x", "i", "d", "c", "l", "i", "p"]) buffer = appendCheatBuffer(buffer, key);
 
-    expect(buffer).toBe("iddqd");
-    expect(buffer).toHaveLength(5);
+    expect(buffer).toBe("idclip");
+    expect(buffer).toHaveLength(6);
   });
 });
 
@@ -44,6 +44,10 @@ describe("matchCheatCode", () => {
 
   it("matches when the buffer ends with idkfa", () => {
     expect(matchCheatCode("idkfa")).toBe("idkfa");
+  });
+
+  it("matches when the buffer ends with idclip", () => {
+    expect(matchCheatCode("idclip")).toBe("idclip");
   });
 
   it("matches when the code is preceded by unrelated characters", () => {

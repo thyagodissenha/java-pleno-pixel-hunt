@@ -55,6 +55,9 @@ type Actor = {
   cooldown?: number;
   phase?: number;
   bossPhase?: number;
+  bossState?: "idle" | "tele" | "atk";
+  bossStateTimer?: number;
+  bossAtkPattern?: number;
 };
 
 type Shot = {
@@ -74,9 +77,26 @@ type Particle = {
   color: string;
 };
 
-type RunOrigin = "normal" | "debug";
-type EnemyKind = "user" | "boss" | "data" | "qa" | "vip" | "incident" | "legacy";
-type ObstacleKind = "desk" | "server" | "firewall" | "board";
+// Perigos da fase secreta ("O Mainframe") que não se encaixam no vocabulário
+// normal de Actor/Obstacle do motor: projéteis reais do chefe (não são
+// minions perseguidores), o "cobol snake" que atravessa a arena e as zonas
+// de "reunião" que reduzem a velocidade do jogador.
+type SecretBossShot = { x: number; y: number; vx: number; vy: number };
+type MeetingZone = { x: number; y: number; base: number; r: number; ph: number };
+type CobolSnake = {
+  active: boolean;
+  cd: number;
+  t: number;
+  dir: number;
+  y0: number;
+  x: number;
+  y: number;
+  hist: Array<{ x: number; y: number }>;
+};
+
+type RunOrigin = "normal" | "debug" | "secret";
+type EnemyKind = "user" | "boss" | "data" | "qa" | "vip" | "incident" | "legacy" | "secretBoss" | "daemon" | "cron";
+type ObstacleKind = "desk" | "server" | "firewall" | "board" | "rack" | "crt" | "chair" | "fern" | "shroom";
 type PowerUpKind =
   | "coffee"
   | "refactor"
@@ -114,7 +134,7 @@ const bossNames = [
   "Diretor do Go-Live",
 ];
 const cloudLabels = ["Azure", "SQL", "Blob", "CI/CD", "Kafka", "BI"];
-const enemyLabels: Record<Exclude<EnemyKind, "boss" | "data">, string> = {
+const enemyLabels: Record<Exclude<EnemyKind, "boss" | "data" | "secretBoss" | "daemon" | "cron">, string> = {
   user: "Usuário",
   qa: "QA nervoso",
   vip: "Usuário VIP",
@@ -207,6 +227,7 @@ export default function Home() {
   const characterPortraitRefs = useRef<Array<HTMLCanvasElement | null>>([]);
   const menuIndexRef = useRef(0);
   const startGameRef = useRef<() => void>(() => undefined);
+  const startSecretRunRef = useRef<() => void>(() => undefined);
   const audioRef = useRef<AudioContext | null>(null);
   const musicTimerRef = useRef<number | null>(null);
   const debugFirstActionRef = useRef<HTMLButtonElement | null>(null);
@@ -422,14 +443,22 @@ export default function Home() {
     const handler = (event: KeyboardEvent) => {
       if (stateRef.current !== "menu" || menuPanelRef.current !== "home") return;
       cheatBufferRef.current = appendCheatBuffer(cheatBufferRef.current, event.key);
-      if (matchCheatCode(cheatBufferRef.current)) {
-        cheatBufferRef.current = "";
+      const matched = matchCheatCode(cheatBufferRef.current);
+      if (!matched) return;
+      cheatBufferRef.current = "";
+      if (matched === "idclip") {
+        setScoreSaved(true);
+        setPlayerName("");
+        setSupportOpen(false);
+        playSound("start");
+        startSecretRunRef.current();
+      } else {
         setMenuPanel("skins");
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
+  }, [playSound]);
 
   useEffect(() => {
     if (debugOpen) debugFirstActionRef.current?.focus();
@@ -504,6 +533,7 @@ export default function Home() {
     playSound("start");
     startGameRef.current();
   }
+
 
   function returnToTitle() {
     setScoreSaved(true);
@@ -696,14 +726,24 @@ export default function Home() {
     const particles: Particle[] = [];
     const powerUps: PowerUp[] = [];
     const obstacles: Obstacle[] = [];
+    const secretBossShots: SecretBossShot[] = [];
+    const meetingZones: MeetingZone[] = [];
+    const cobolSnake: CobolSnake = { active: false, cd: 8, t: 0, dir: 1, y0: 300, x: 0, y: 0, hist: [] };
+    const datacenterMoss: Array<{ x: number; y: number; r: number }> = [];
+    const datacenterCracks: Array<Array<{ x: number; y: number }>> = [];
+    const datacenterPuddles = [
+      { x: 560, y: 200, rx: 60, ry: 20 },
+      { x: 520, y: 390, rx: 52, ry: 18 },
+      { x: 330, y: 440, rx: 44, ry: 16 },
+    ];
 
     function syncHud() {
       setScore(localScore);
       setWave(localWave);
       setResetCount(callLoops);
       setHp(Math.max(0, Math.round(player.hp)));
-      setBoss(finalChoicePending ? "Diretoria caída" : bossNames[bossIndex] ?? "Comitê Executivo");
-      setBiome(biomeNames[Math.min(bossIndex, biomeNames.length - 1)] ?? "War Room");
+      setBoss(runOriginRef.current === "secret" ? "O Mainframe" : finalChoicePending ? "Diretoria caída" : bossNames[bossIndex] ?? "Comitê Executivo");
+      setBiome(runOriginRef.current === "secret" ? "Datacenter Esquecido" : biomeNames[Math.min(bossIndex, biomeNames.length - 1)] ?? "War Room");
       setUpgrade(weaponLevel >= 3 ? "JDK 21" : weaponLevel === 2 ? "JDK 17" : "JDK 8");
       setBurstStaminaPct(Math.round(burstStamina));
       const power = activeCharacter.specialPower;
@@ -717,7 +757,9 @@ export default function Home() {
           : 100,
       );
       setBossProgress(
-        finalChoicePending
+        runOriginRef.current === "secret"
+          ? "Chefe secreto"
+          : finalChoicePending
           ? "Escolha final"
           : bossSpawned
           ? "Chefe em combate"
@@ -818,6 +860,30 @@ export default function Home() {
       }
     }
 
+    // Layout fixo do "datacenter esquecido" da fase secreta — mesmas
+    // posições da maquete original (racks, CRTs, cadeiras, samambaias e
+    // cogumelos), em vez do posicionamento aleatório das ondas normais.
+    function spawnDatacenterObstacles() {
+      obstacles.length = 0;
+      const props: Array<{ kind: ObstacleKind; x: number; y: number; width: number; height: number; label: string }> = [
+        { kind: "rack", x: 36, y: 118, width: 32, height: 48, label: "Rack" },
+        { kind: "rack", x: 120, y: 68, width: 32, height: 48, label: "Rack" },
+        { kind: "rack", x: 812, y: 62, width: 32, height: 48, label: "Rack" },
+        { kind: "rack", x: 872, y: 206, width: 32, height: 48, label: "Rack" },
+        { kind: "crt", x: 676, y: 68, width: 36, height: 30, label: "CRT" },
+        { kind: "crt", x: 56, y: 394, width: 36, height: 30, label: "CRT" },
+        { kind: "chair", x: 628, y: 418, width: 24, height: 30, label: "Cadeira" },
+        { kind: "chair", x: 752, y: 402, width: 24, height: 30, label: "Cadeira" },
+        { kind: "fern", x: 16, y: 484, width: 36, height: 24, label: "Samambaia" },
+        { kind: "fern", x: 300, y: 50, width: 36, height: 24, label: "Samambaia" },
+        { kind: "fern", x: 600, y: 50, width: 36, height: 24, label: "Samambaia" },
+        { kind: "fern", x: 906, y: 484, width: 36, height: 24, label: "Samambaia" },
+        { kind: "shroom", x: 300, y: 138, width: 16, height: 14, label: "Cogumelo" },
+        { kind: "shroom", x: 866, y: 174, width: 16, height: 14, label: "Cogumelo" },
+      ];
+      for (const prop of props) obstacles.push(prop);
+    }
+
     function resetWaveOne(keepScore = false) {
       if (!keepScore) {
         localScore = 0;
@@ -912,9 +978,10 @@ export default function Home() {
     function spawnEnemy(kind: EnemyKind) {
       const edge = Math.floor(Math.random() * 4);
       const margin = 36;
-      const x = edge === 0 ? -margin : edge === 1 ? WORLD.width + margin : Math.random() * WORLD.width;
-      const y = edge === 2 ? -margin : edge === 3 ? WORLD.height + margin : Math.random() * WORLD.height;
+      let x = edge === 0 ? -margin : edge === 1 ? WORLD.width + margin : Math.random() * WORLD.width;
+      let y = edge === 2 ? -margin : edge === 3 ? WORLD.height + margin : Math.random() * WORLD.height;
       const isBoss = kind === "boss";
+      const isSecretBoss = kind === "secretBoss";
       const isData = kind === "data";
       const finalBoss = isBoss && isFinalBoss();
       const wavePressure = Math.min(localWave - 1, 5);
@@ -928,7 +995,14 @@ export default function Home() {
         boss: finalBoss
           ? { hp: finalBossHp(1), speed: 44 + wavePressure, size: 62 }
           : { hp: 160 + localWave * 28, speed: 52 + wavePressure * 2, size: 38 },
+        secretBoss: { hp: 520, speed: 0, size: 64 },
+        daemon: { hp: 30, speed: 96, size: 22 },
+        cron: { hp: 50, speed: 42, size: 24 },
       };
+      if (isSecretBoss) {
+        x = WORLD.width / 2;
+        y = 150;
+      }
       const selected = stats[kind];
       const hp = scaledEnemyHp(selected.hp, callLoops);
       enemies.push({
@@ -941,16 +1015,25 @@ export default function Home() {
         speed: selected.speed,
         size: selected.size,
         kind,
-        label: isBoss
-          ? finalBoss ? "Diretoria" : bossNames[bossIndex]
-          : isData
-            ? cloudLabels[Math.floor(Math.random() * cloudLabels.length)]
-            : enemyLabels[kind],
-        cooldown: isBoss ? 118 : 90,
+        label: isSecretBoss
+          ? "O Mainframe"
+          : kind === "daemon"
+            ? "Daemon"
+            : kind === "cron"
+              ? "Cron Job"
+              : isBoss
+                ? finalBoss ? "Diretoria" : bossNames[bossIndex]
+                : isData
+                  ? cloudLabels[Math.floor(Math.random() * cloudLabels.length)]
+                  : enemyLabels[kind],
+        cooldown: isBoss ? 118 : kind === "daemon" ? 60 : 90,
         phase: Math.random() * Math.PI * 2,
         bossPhase: finalBoss ? 1 : undefined,
+        bossState: isSecretBoss ? "idle" : undefined,
+        bossStateTimer: isSecretBoss ? 0 : undefined,
+        bossAtkPattern: isSecretBoss ? -1 : undefined,
       });
-      if (isBoss) {
+      if (isBoss || isSecretBoss) {
         bossBanner = 120;
         if (stateRef.current === "playing") playSound("boss");
       }
@@ -979,7 +1062,11 @@ export default function Home() {
     }
 
     function clearNearbyEnemies(clearRadius: number) {
-      const removed = selectEnemiesToClear(player, enemies, clearRadius);
+      // "boss" já é protegido pela lib; "secretBoss" e um "cron" derrubado
+      // (hp <= 0, esperando ressuscitar) também não podem ser limpos assim.
+      const removed = selectEnemiesToClear(player, enemies, clearRadius).filter(
+        (enemy) => enemy.kind !== "secretBoss" && enemy.hp > 0,
+      );
       for (const enemy of removed) {
         const index = enemies.indexOf(enemy);
         if (index >= 0) enemies.splice(index, 1);
@@ -1063,6 +1150,64 @@ export default function Home() {
     }
     startGameRef.current = start;
 
+    // Fase secreta ("idclip" no menu inicial): reaproveita o motor real —
+    // mesmo player/física/colisão/inimigos/tiros/partículas/telas de fim de
+    // jogo — mas com o cenário, o elenco (daemon/cron/cobol snake/reuniões)
+    // e o chefe ("O Mainframe") fiéis à maquete original da fase secreta,
+    // em vez da progressão normal de ondas do jogo.
+    function startSecretRun() {
+      resetWaveOne(false);
+      // A maquete original começa com o jogador perto da borda de baixo e o
+      // chefe/elenco perto do topo — o reset padrão do motor usa o centro do
+      // mundo, o que colocaria o jogador em cima do cron logo de cara.
+      player.x = WORLD.width / 2;
+      player.y = WORLD.height - 90;
+      spawnDatacenterObstacles();
+      enemies.length = 0;
+      spawnEnemy("daemon");
+      enemies[enemies.length - 1].x = 200;
+      enemies[enemies.length - 1].y = 220;
+      spawnEnemy("daemon");
+      enemies[enemies.length - 1].x = 760;
+      enemies[enemies.length - 1].y = 220;
+      spawnEnemy("cron");
+      enemies[enemies.length - 1].x = WORLD.width / 2;
+      enemies[enemies.length - 1].y = 280;
+      secretBossShots.length = 0;
+      meetingZones.length = 0;
+      meetingZones.push({ x: 300, y: 330, base: 26, r: 26, ph: 0 }, { x: 660, y: 420, base: 30, r: 30, ph: 2 });
+      cobolSnake.active = false;
+      cobolSnake.cd = 8;
+      cobolSnake.hist = [];
+      datacenterMoss.length = 0;
+      for (let i = 0; i < 12; i += 1) {
+        datacenterMoss.push({ x: Math.random() * WORLD.width, y: Math.random() * WORLD.height, r: 14 + Math.random() * 26 });
+      }
+      datacenterCracks.length = 0;
+      for (let i = 0; i < 9; i += 1) {
+        let cx = Math.random() * WORLD.width;
+        let cy = 60 + Math.random() * (WORLD.height - 80);
+        const crack = [{ x: cx, y: cy }];
+        for (let s = 0; s < 5; s += 1) {
+          cx += (Math.random() - 0.5) * 90;
+          cy += (Math.random() - 0.3) * 50;
+          crack.push({ x: cx, y: cy });
+        }
+        datacenterCracks.push(crack);
+      }
+      bossKills = bossKillTarget(localWave, callLoops);
+      bossSpawned = true;
+      spawnEnemy("secretBoss");
+      setDebugBossHealth(null);
+      setDebugPowerUpCount(0);
+      runOriginRef.current = "secret";
+      stateRef.current = "playing";
+      setGameState("playing");
+      startMusic();
+      syncHud();
+    }
+    startSecretRunRef.current = startSecretRun;
+
     const onDebugAction = (event: Event) => {
       const action = (event as CustomEvent<unknown>).detail;
       if (!isDebugAllowed() || !isDebugAction(action)) return;
@@ -1115,7 +1260,10 @@ export default function Home() {
       if (abilityCooldownRemaining > 0) return;
 
       if (power.kind === "dash") {
-        const direction = resolveDashDirection({ x: lastMoveX, y: lastMoveY }, player, enemies);
+        // Ignora um "cron" derrubado (hp <= 0, esperando ressuscitar) — ele
+        // continua no array de enemies, mas não é um alvo válido.
+        const liveEnemies = enemies.filter((enemy) => enemy.hp > 0);
+        const direction = resolveDashDirection({ x: lastMoveX, y: lastMoveY }, player, liveEnemies);
         player.x = clamp(player.x + direction.x * power.dashDistance, 28, WORLD.width - 28);
         player.y = clamp(player.y + direction.y * power.dashDistance, 36, WORLD.height - 28);
         if (power.clearRadius) clearNearbyEnemies(power.clearRadius);
@@ -1217,8 +1365,12 @@ export default function Home() {
     window.addEventListener("pointercancel", onPointerUp);
 
     function shoot() {
-      let target = enemies[0];
+      // Um "cron" derrubado fica no array de enemies (esperando ressuscitar)
+      // em vez de ser removido — sem esse filtro, a mira automática podia
+      // travar nele e os tiros pareciam ir "para o vazio".
+      let target: Actor | undefined;
       for (const enemy of enemies) {
+        if (enemy.hp <= 0) continue;
         if (!target || distance(enemy, player) < distance(target, player)) target = enemy;
       }
       const aim = target
@@ -1281,7 +1433,8 @@ export default function Home() {
       lastMoveX = move.x;
       lastMoveY = move.y;
       if (moveX || moveY) {
-        const currentSpeed = player.speed * (player.haste > 0 ? 1.34 : 1);
+        const inMeetingZone = meetingZones.some((zone) => distance(player, zone) < zone.r);
+        const currentSpeed = player.speed * (player.haste > 0 ? 1.34 : 1) * (inMeetingZone ? 0.55 : 1);
         const nextX = clamp(player.x + move.x * currentSpeed * delta, 28, WORLD.width - 28);
         const nextY = clamp(player.y + move.y * currentSpeed * delta, 36, WORLD.height - 28);
         const radius = player.size * 0.48;
@@ -1322,6 +1475,10 @@ export default function Home() {
         shotTimer = player.fury > 0 || burstActive ? 0.11 : weaponLevel >= 3 ? 0.2 : 0.24;
       }
 
+      // A fase secreta ("O Mainframe") tem elenco fixo — daemons/cron/snake/
+      // zonas — e não deve ficar poluída pelos usuários/dados/power-ups da
+      // progressão normal de ondas.
+      const isSecretRun = runOriginRef.current === "secret";
       const usersAlive = enemies.filter((enemy) => enemy.kind === "user").length;
       const dataAlive = enemies.filter((enemy) => enemy.kind === "data").length;
       const specialAlive = enemies.filter((enemy) => ["qa", "vip", "incident", "legacy"].includes(enemy.kind)).length;
@@ -1329,7 +1486,7 @@ export default function Home() {
       const maxData = 3 + Math.ceil(localWave * 0.8);
       const maxSpecial = Math.min(2 + Math.floor(localWave / 2), 5);
 
-      if (!finalChoicePending && spawnTimer <= 0 && usersAlive < maxUsers) {
+      if (!isSecretRun && !finalChoicePending && spawnTimer <= 0 && usersAlive < maxUsers) {
         spawnTimer = Math.max(0.58, 1.45 - localWave * 0.08);
         const specialPool: EnemyKind[] = [
           ...(localWave >= 2 ? ["qa" as const] : []),
@@ -1343,11 +1500,11 @@ export default function Home() {
           spawnEnemy("user");
         }
       }
-      if (!finalChoicePending && dataTimer <= 0 && dataAlive < maxData) {
+      if (!isSecretRun && !finalChoicePending && dataTimer <= 0 && dataAlive < maxData) {
         dataTimer = Math.max(1.55, 4.1 - localWave * 0.18);
         spawnEnemy("data");
       }
-      if (!finalChoicePending && powerUpTimer <= 0 && powerUps.length < 2) {
+      if (!isSecretRun && !finalChoicePending && powerUpTimer <= 0 && powerUps.length < 2) {
         powerUpTimer = 11 + Math.random() * 8;
         spawnPowerUp();
       }
@@ -1371,6 +1528,40 @@ export default function Home() {
         } else if (enemy.kind === "legacy") {
           enemy.vx = toward.x * enemy.speed + Math.sin(frame / 42 + (enemy.phase ?? 0)) * 8;
           enemy.vy = toward.y * enemy.speed + Math.cos(frame / 48 + (enemy.phase ?? 0)) * 8;
+        } else if (enemy.kind === "secretBoss") {
+          // O Mainframe fica parado no lugar (como na maquete original) — só
+          // treme no impacto, quem se move é o jogador e os projéteis dele.
+          enemy.vx = 0;
+          enemy.vy = 0;
+        } else if (enemy.kind === "daemon") {
+          // Investidas curtas e rápidas, com atrito desacelerando entre elas —
+          // igual ao "daemon" da maquete original.
+          enemy.cooldown = (enemy.cooldown ?? 0) - delta * 60;
+          if (enemy.cooldown <= 0) {
+            enemy.cooldown = 96 + Math.random() * 84;
+            enemy.vx = toward.x * enemy.speed * 2.4;
+            enemy.vy = toward.y * enemy.speed * 2.4;
+          } else {
+            const decay = Math.exp(-3 * delta);
+            enemy.vx *= decay;
+            enemy.vy *= decay;
+          }
+        } else if (enemy.kind === "cron") {
+          // Perseguição direta e constante enquanto vivo; ao ser abatido ele
+          // não é removido — fica "derrubado" (hp 0) e ressurge sozinho depois
+          // de alguns segundos, igual à maquete original.
+          if (enemy.hp <= 0) {
+            enemy.vx = 0;
+            enemy.vy = 0;
+            enemy.cooldown = (enemy.cooldown ?? 0) - delta * 60;
+            if (enemy.cooldown <= 0) {
+              enemy.hp = enemy.maxHp;
+              burst(enemy.x, enemy.y, "#7dff6a", 14);
+            }
+          } else {
+            enemy.vx = toward.x * enemy.speed;
+            enemy.vy = toward.y * enemy.speed;
+          }
         } else {
           enemy.vx = toward.x * enemy.speed + Math.sin((frame + enemy.x) / 23) * 16;
           enemy.vy = toward.y * enemy.speed + Math.cos((frame + enemy.y) / 29) * 16;
@@ -1413,7 +1604,102 @@ export default function Home() {
             }
           }
         }
+        if (enemy.kind === "secretBoss") {
+          // Estados idle → tele (telegraph) → atk, igual à maquete: 3
+          // padrões (rajada radial, tiro mirado, chamar reforço) disparando
+          // projéteis reais (secretBossShots), não minions perseguidores.
+          enemy.bossStateTimer = (enemy.bossStateTimer ?? 0) + delta;
+          const bossFightState = enemy.bossState ?? "idle";
+          const slow = enemy.hp < enemy.maxHp * 0.35 ? 0.6 : 1;
+          if (bossFightState === "idle" && enemy.bossStateTimer > 2.2 * slow) {
+            enemy.bossState = "tele";
+            enemy.bossStateTimer = 0;
+            enemy.bossAtkPattern = ((enemy.bossAtkPattern ?? -1) + 1) % 3;
+          } else if (bossFightState === "tele" && enemy.bossStateTimer > 0.9) {
+            enemy.bossState = "atk";
+            enemy.bossStateTimer = 0;
+            const pattern = enemy.bossAtkPattern ?? 0;
+            if (pattern === 0) {
+              for (let i = 0; i < 14; i += 1) {
+                const a = (i / 14) * Math.PI * 2;
+                secretBossShots.push({ x: enemy.x, y: enemy.y, vx: Math.cos(a) * 120, vy: Math.sin(a) * 120 });
+              }
+            } else if (pattern === 1) {
+              const aimed = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+              for (let k = -1; k <= 1; k += 1) {
+                const a = aimed + k * 0.22;
+                secretBossShots.push({ x: enemy.x, y: enemy.y, vx: Math.cos(a) * 170, vy: Math.sin(a) * 170 });
+              }
+            } else {
+              if (enemies.filter((other) => other.kind === "cron" && other.hp > 0).length < 2) {
+                spawnEnemy("cron");
+                announceEffect("O MAINFRAME REINICIA UM CRON JOB");
+              }
+              burst(enemy.x, enemy.y + 20, "#7dff6a", 16);
+            }
+          } else if (bossFightState === "atk" && enemy.bossStateTimer > 0.5) {
+            enemy.bossState = "idle";
+            enemy.bossStateTimer = 0;
+          }
+        }
       }
+
+      for (let i = secretBossShots.length - 1; i >= 0; i -= 1) {
+        const shot = secretBossShots[i];
+        shot.x += shot.vx * delta;
+        shot.y += shot.vy * delta;
+        if (distance(shot, player) < player.size * 0.5 + 6) {
+          secretBossShots.splice(i, 1);
+          if (player.invincible <= 0) {
+            player.hp -= 10;
+            player.invincible = 0.92;
+            damageFlash = 16;
+            shake = 14;
+            playSound("hurt");
+            burst(player.x, player.y, "#ff5353", 12);
+          }
+          continue;
+        }
+        if (shot.x < -20 || shot.x > WORLD.width + 20 || shot.y < -20 || shot.y > WORLD.height + 20) {
+          secretBossShots.splice(i, 1);
+        }
+      }
+
+      if (cobolSnake.active) {
+        cobolSnake.t += delta;
+        cobolSnake.x = cobolSnake.dir > 0 ? -80 + cobolSnake.t * 150 : WORLD.width + 80 - cobolSnake.t * 150;
+        cobolSnake.y = cobolSnake.y0 + Math.sin(cobolSnake.t * 3) * 46;
+        cobolSnake.hist.unshift({ x: cobolSnake.x, y: cobolSnake.y });
+        if (cobolSnake.hist.length > 42) cobolSnake.hist.pop();
+        if (distance(cobolSnake, player) < 18 && player.invincible <= 0) {
+          player.hp -= 20;
+          player.invincible = 0.92;
+          damageFlash = 16;
+          shake = 14;
+          playSound("hurt");
+          burst(player.x, player.y, "#ff5353", 12);
+        }
+        if (cobolSnake.x < -120 || cobolSnake.x > WORLD.width + 120) {
+          cobolSnake.active = false;
+          cobolSnake.cd = 12 + Math.random() * 8;
+        }
+      } else if (runOriginRef.current === "secret") {
+        cobolSnake.cd -= delta;
+        if (cobolSnake.hist.length) {
+          cobolSnake.hist.pop();
+          cobolSnake.hist.pop();
+        }
+        if (cobolSnake.cd <= 0) {
+          cobolSnake.active = true;
+          cobolSnake.t = 0;
+          cobolSnake.dir = Math.random() < 0.5 ? 1 : -1;
+          cobolSnake.y0 = 140 + Math.random() * (WORLD.height - 280);
+        }
+      }
+
+      meetingZones.forEach((zone) => {
+        zone.r = zone.base + Math.sin(frame / 40 + zone.ph) * 6;
+      });
 
       for (let i = powerUps.length - 1; i >= 0; i -= 1) {
         const powerUp = powerUps[i];
@@ -1439,24 +1725,30 @@ export default function Home() {
 
       for (let i = enemies.length - 1; i >= 0; i -= 1) {
         const enemy = enemies[i];
-        if (distance(enemy, player) < enemy.size * 0.55 + player.size * 0.55) {
+        if (enemy.hp > 0 && distance(enemy, player) < enemy.size * 0.55 + player.size * 0.55) {
           if (player.invincible <= 0) {
-            const damage = enemy.kind === "boss"
-              ? 18
-              : enemy.kind === "data"
-                ? 13
-                : enemy.kind === "vip" || enemy.kind === "legacy"
-                  ? 12
-                  : enemy.kind === "incident"
-                    ? 15
-                    : 8;
+            const damage = enemy.kind === "secretBoss"
+              ? 20
+              : enemy.kind === "boss"
+                ? 18
+                : enemy.kind === "data"
+                  ? 13
+                  : enemy.kind === "vip" || enemy.kind === "legacy"
+                    ? 12
+                    : enemy.kind === "cron"
+                      ? 15
+                      : enemy.kind === "incident"
+                        ? 15
+                        : enemy.kind === "daemon"
+                          ? 10
+                          : 8;
             player.hp -= damage;
             player.invincible = 0.92;
             damageFlash = 16;
             shake = 14;
             playSound("hurt");
             burst(player.x, player.y, "#ff5353", 16);
-            if (enemy.kind !== "boss") enemies.splice(i, 1);
+            if (enemy.kind !== "boss" && enemy.kind !== "secretBoss" && enemy.kind !== "cron") enemies.splice(i, 1);
           }
         }
       }
@@ -1473,26 +1765,54 @@ export default function Home() {
         }
         for (let e = enemies.length - 1; e >= 0; e -= 1) {
           const enemy = enemies[e];
-          if (!enemy) continue;
+          if (!enemy || enemy.hp <= 0) continue;
           if (distance(shot, enemy) < enemy.size * 0.55 + 7) {
             const damage = player.fury > 0 ? 26 : player.focus > 0 ? 23 : 18;
             enemy.hp -= damage;
             shots.splice(s, 1);
             playSound("hit");
-            burst(shot.x, shot.y, enemy.kind === "boss" ? "#f9c74f" : "#65d6ad", 4);
+            burst(shot.x, shot.y, enemy.kind === "boss" || enemy.kind === "secretBoss" ? "#f9c74f" : "#65d6ad", 4);
             if (enemy.hp <= 0) {
-              localScore += enemy.kind === "boss"
+              localScore += enemy.kind === "secretBoss"
+                ? 900
+                : enemy.kind === "boss"
                 ? 500
                 : enemy.kind === "data"
                   ? 80
                   : enemy.kind === "vip" || enemy.kind === "legacy"
                     ? 95
-                    : enemy.kind === "incident"
-                      ? 70
-                      : enemy.kind === "qa"
-                        ? 60
-                        : 45;
-              if (enemy.kind === "boss") {
+                    : enemy.kind === "cron"
+                      ? 75
+                      : enemy.kind === "incident"
+                        ? 70
+                        : enemy.kind === "daemon"
+                          ? 65
+                          : enemy.kind === "qa"
+                            ? 60
+                            : 45;
+              if (enemy.kind === "cron") {
+                // Não remove: fica "derrubado" e o próprio loop de movimento
+                // (mais acima) o ressuscita depois de alguns segundos.
+                enemy.cooldown = 300;
+                burst(enemy.x, enemy.y, "#d4ff5e", 14);
+                syncHud();
+                break;
+              }
+              if (enemy.kind === "secretBoss") {
+                player.fury = 5;
+                player.hp = clamp(player.hp + 22, 0, player.maxHp);
+                burst(enemy.x, enemy.y, "#ffd166", 28);
+                burst(enemy.x, enemy.y, "#facc15", 24);
+                syncHud();
+                setScore(localScore);
+                setWave(localWave);
+                setLastOutcome("won");
+                setScoreSaved(false);
+                playSound("won");
+                stopMusic();
+                stateRef.current = "won";
+                setGameState("won");
+              } else if (enemy.kind === "boss") {
                 const finalBoss = isFinalBoss();
                 const currentBossPhase = enemy.bossPhase ?? 1;
                 player.fury = 5;
@@ -1566,6 +1886,77 @@ export default function Home() {
       if (frame % 18 === 0) syncHud();
     }
 
+    // "O Mainframe": máquina imóvel com grade de LEDs e núcleo que telegrafa
+    // o ataque (verde parado, amarelo/vermelho piscando ao mirar, branco no
+    // disparo) — porte fiel à maquete original da fase secreta.
+    function drawMainframeBoss(actor: Actor) {
+      const bx = actor.x;
+      const by = actor.y;
+      const half = actor.size / 2;
+      ctx.strokeStyle = "#20301f";
+      ctx.lineWidth = 5;
+      ctx.lineCap = "round";
+      for (let i = 0; i < 4; i += 1) {
+        const ox = (i - 1.5) * (half * 0.6);
+        ctx.beginPath();
+        ctx.moveTo(bx + ox, by + half * 0.9);
+        ctx.quadraticCurveTo(
+          bx + ox + Math.sin(visualFrame / 20 + i) * 8,
+          by + half * 1.6,
+          bx + ox * 1.6 + Math.sin(visualFrame / 14 + i * 2) * 6,
+          by + half * 2.1,
+        );
+        ctx.stroke();
+      }
+      pixelRect(ctx, bx - half - 4, by - half + 6, actor.size + 8, actor.size - 4, "#3a2a20");
+      pixelRect(ctx, bx - half, by - half + 10, actor.size, actor.size - 10, "#23282e");
+      ctx.strokeStyle = "#7a4526";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(bx - half - 4, by - half + 6, actor.size + 8, actor.size - 4);
+      for (let row = 0; row < 4; row += 1) {
+        for (let col = 0; col < 6; col += 1) {
+          const on = actor.hp > 0 && Math.sin(visualFrame / 10 + row * 2 + col * 1.3) > 0.2;
+          ctx.fillStyle = on ? (col % 2 ? "#7dff6a" : "#ff5a4d") : "#1a1f24";
+          ctx.fillRect(
+            Math.round(bx - half + 6 + (col * (actor.size - 12)) / 6),
+            Math.round(by - half + 16 + row * 6),
+            4,
+            3,
+          );
+        }
+      }
+      const bossFightState = actor.bossState ?? "idle";
+      const core = actor.hp <= 0
+        ? "#39444c"
+        : bossFightState === "tele"
+          ? Math.sin(visualFrame / 3) > 0 ? "#ffd94d" : "#ff5a4d"
+          : bossFightState === "atk"
+            ? "#ffffff"
+            : "#7dff6a";
+      const coreRadius = actor.hp > 0
+        ? 9 + (bossFightState === "tele" ? (actor.bossStateTimer ?? 0) * 8 : Math.sin(visualFrame / 20) * 2)
+        : 6;
+      ctx.save();
+      ctx.shadowColor = core;
+      ctx.shadowBlur = 16;
+      ctx.fillStyle = core;
+      ctx.beginPath();
+      ctx.arc(bx, by + 6, coreRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      if (actor.hp > 0 && bossFightState === "tele") {
+        ctx.save();
+        ctx.globalAlpha = 0.55;
+        ctx.strokeStyle = core;
+        ctx.setLineDash([6, 6]);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(bx, by + 6, 24 + (actor.bossStateTimer ?? 0) * 28, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
     function drawActor(actor: Actor) {
       const wobble = Math.sin(visualFrame / 7 + (actor.phase ?? 0)) * 2;
       const x = actor.x - actor.size / 2;
@@ -1606,13 +1997,36 @@ export default function Home() {
         pixelRect(ctx, x + 8, y + 17, 5, 5, "#22c55e");
         pixelRect(ctx, x + actor.size - 13, y + 17, 5, 5, "#22c55e");
         pixelRect(ctx, x + 7, y + actor.size - 9, actor.size - 14, 4, "#1c1917");
+      } else if (actor.kind === "daemon") {
+        pixelRect(ctx, x + 3, y + 2, actor.size - 6, actor.size - 6, "#413659");
+        pixelRect(ctx, x + 6, y + 8, 4, 4, "#ff5a4d");
+        pixelRect(ctx, x + actor.size - 10, y + 8, 4, 4, "#7dff6a");
+        pixelRect(ctx, x + 5, y + actor.size - 8, actor.size - 10, 3, "#2b2140");
+      } else if (actor.kind === "cron") {
+        if (actor.hp <= 0) {
+          ctx.save();
+          ctx.globalAlpha = 0.35;
+          ctx.strokeStyle = "#7dff6a";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(actor.x, actor.y, 10 * clamp(1 - (actor.cooldown ?? 0) / 300, 0, 1), 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        } else {
+          pixelRect(ctx, x + 2, y, actor.size - 4, actor.size - 4, "#b0aa97");
+          pixelRect(ctx, x + 4, y + 6, actor.size - 8, 8, "#101c14");
+          pixelRect(ctx, x + 7, y + 9, 3, 3, "#7dff6a");
+          pixelRect(ctx, x + actor.size - 10, y + 9, 3, 3, "#7dff6a");
+        }
+      } else if (actor.kind === "secretBoss") {
+        drawMainframeBoss(actor);
       } else {
         pixelRect(ctx, x + 6, y, actor.size - 12, 8, "#f9a8d4");
         pixelRect(ctx, x + 3, y + 8, actor.size - 6, actor.size - 8, "#ec4899");
         pixelRect(ctx, x + 7, y + 14, 4, 4, "#111827");
         pixelRect(ctx, x + actor.size - 11, y + 14, 4, 4, "#111827");
       }
-      if (actor.kind !== "user") {
+      if (actor.kind !== "user" && !(actor.kind === "cron" && actor.hp <= 0)) {
         pixelRect(ctx, actor.x - actor.label.length * 3.1, actor.y - actor.size / 2 - 19, actor.label.length * 6.2, 14, "rgba(2, 6, 23, 0.72)");
         ctx.fillStyle = "#f8fafc";
         ctx.font = "10px 'Courier New', monospace";
@@ -1620,7 +2034,9 @@ export default function Home() {
         ctx.fillText(actor.label, actor.x, actor.y - actor.size / 2 - 8);
       }
       const bar = actor.size;
-      if (actor.kind === "boss" && actor.bossPhase) {
+      if (actor.kind === "cron" && actor.hp <= 0) {
+        // Sem barra de vida enquanto está "derrubado" — só o anel fantasma.
+      } else if (actor.kind === "boss" && actor.bossPhase) {
         const phaseColors = ["#22c55e", "#facc15", "#ef4444"];
         for (let phase = 1; phase <= 3; phase += 1) {
           const yOffset = actor.y + actor.size / 2 + 5 + (3 - phase) * 6;
@@ -1648,6 +2064,11 @@ export default function Home() {
         server: { base: "#334155", edge: "#0f172a", accent: "#38bdf8", text: "#e2e8f0" },
         firewall: { base: "#7f1d1d", edge: "#450a0a", accent: "#f97316", text: "#fee2e2" },
         board: { base: "#164e63", edge: "#083344", accent: "#facc15", text: "#ecfeff" },
+        rack: { base: "#7a4526", edge: "#4b2a17", accent: "#4f9a3f", text: "#fef3c7" },
+        crt: { base: "#cfc9b4", edge: "#8a8474", accent: "#16282c", text: "#e2e8f0" },
+        chair: { base: "#22282c", edge: "#111827", accent: "#4f9a3f", text: "#e2e8f0" },
+        fern: { base: "#3f8a3a", edge: "#245420", accent: "#6abf5e", text: "#dcfce7" },
+        shroom: { base: "#c9563a", edge: "#7a2f1c", accent: "#e8dcc8", text: "#fde8dc" },
       };
       const colors = palette[obstacle.kind];
 
@@ -1672,6 +2093,33 @@ export default function Home() {
         for (let i = 0; i < 4; i += 1) {
           pixelRect(ctx, x + 12 + i * 14, y + 19 + (i % 2) * 10, 9, 8, notes[i]);
         }
+      } else if (obstacle.kind === "rack") {
+        for (let row = 0; row < 4; row += 1) {
+          pixelRect(ctx, x + 6, y + 16 + row * 8, width - 12, 4, "#23282e");
+          pixelRect(ctx, x + width - 14, y + 17 + row * 8, 4, 3, row % 2 ? "#ff5a4d" : "#7dff6a");
+        }
+      } else if (obstacle.kind === "crt") {
+        pixelRect(ctx, x + 6, y + 12, width - 12, height - 22, "#16282c");
+        pixelRect(ctx, x + 9, y + 15, width - 18, height - 28, "#bfe8f2");
+        pixelRect(ctx, x + width / 2 - 6, y + height - 10, 12, 6, "#8a8474");
+      } else if (obstacle.kind === "chair") {
+        pixelRect(ctx, x + 5, y + 6, width - 10, height * 0.42, "#39444c");
+        pixelRect(ctx, x + width / 2 - 3, y + height * 0.48, 6, height * 0.3, "#111827");
+        pixelRect(ctx, x + 4, y + height - 8, width - 8, 6, "#111827");
+      } else if (obstacle.kind === "fern") {
+        for (let i = -2; i <= 2; i += 1) {
+          ctx.strokeStyle = colors.accent;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x + width / 2, y + height - 4);
+          ctx.lineTo(x + width / 2 + i * (width / 6), y + 4 + Math.abs(i) * 3);
+          ctx.stroke();
+        }
+      } else if (obstacle.kind === "shroom") {
+        pixelRect(ctx, x + 3, y + 2, width - 6, height * 0.45, colors.base);
+        pixelRect(ctx, x + width / 2 - 3, y + height * 0.4, 6, height * 0.5, colors.accent);
+        pixelRect(ctx, x + 6, y + 5, 3, 3, "#fde8dc");
+        pixelRect(ctx, x + width - 12, y + 8, 3, 3, "#fde8dc");
       } else {
         pixelRect(ctx, x + 10, y + height - 12, 12, 8, "#451a03");
         pixelRect(ctx, x + width - 22, y + height - 12, 12, 8, "#451a03");
@@ -1808,7 +2256,49 @@ export default function Home() {
       }
     }
 
+    function drawDatacenterFloor() {
+      for (let x = 0; x < WORLD.width; x += 32) {
+        for (let y = 0; y < WORLD.height; y += 32) {
+          const h = ((x / 32) * 7 + (y / 32) * 13) % 5;
+          ctx.fillStyle = h < 2 ? "#5c6a72" : h < 4 ? "#52606a" : "#4d5a63";
+          ctx.fillRect(x, y, 32, 32);
+          ctx.strokeStyle = "#39444c";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x + 1, y + 1, 30, 30);
+        }
+      }
+      ctx.strokeStyle = "#2b3438";
+      ctx.lineWidth = 2;
+      for (const crack of datacenterCracks) {
+        ctx.beginPath();
+        ctx.moveTo(crack[0].x, crack[0].y);
+        for (const point of crack) ctx.lineTo(point.x, point.y);
+        ctx.stroke();
+      }
+      for (const moss of datacenterMoss) {
+        ctx.fillStyle = "#3f8a3a";
+        ctx.beginPath();
+        ctx.ellipse(moss.x, moss.y, moss.r, moss.r * 0.55, 0, 0, Math.PI * 2);
+        ctx.fill();
+        pixelRect(ctx, moss.x - moss.r * 0.4, moss.y - 3, 4, 3, "#6abf5e");
+      }
+      for (const puddle of datacenterPuddles) {
+        ctx.fillStyle = "#5aa8c0";
+        ctx.beginPath();
+        ctx.ellipse(puddle.x, puddle.y, puddle.rx, puddle.ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#9fd8e8";
+        ctx.beginPath();
+        ctx.ellipse(puddle.x, puddle.y - 2, puddle.rx * 0.85, puddle.ry * 0.75, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
     function drawGrid() {
+      if (runOriginRef.current === "secret") {
+        drawDatacenterFloor();
+        return;
+      }
       const theme = Math.min(bossIndex, biomeNames.length - 1);
       const floor = ["#101827", "#1b1620", "#071a2f", "#211414"][theme] ?? "#101827";
       const tile = ["#132033", "#261b2c", "#0d2745", "#321b1b"][theme] ?? "#132033";
@@ -1886,6 +2376,45 @@ export default function Home() {
       drawGrid();
       if (choosingFinalReward) drawFinalChoiceScene();
       if (!choosingFinalReward) obstacles.forEach(drawObstacle);
+      if (runOriginRef.current === "secret" && !choosingFinalReward) {
+        for (const zone of meetingZones) {
+          pixelRect(ctx, zone.x - zone.r, zone.y - zone.r * 0.6, zone.r * 2, zone.r * 1.2, "rgba(22,78,99,0.22)");
+          ctx.strokeStyle = "#7dff6a";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.ellipse(zone.x, zone.y, zone.r, zone.r * 0.6, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.fillStyle = "#f8fafc";
+          ctx.font = "9px 'Courier New', monospace";
+          ctx.textAlign = "center";
+          ctx.fillText("REUNIÃO", zone.x, zone.y - zone.r * 0.6 - 12);
+        }
+        for (let i = cobolSnake.hist.length - 1; i >= 0; i -= 3) {
+          const point = cobolSnake.hist[i];
+          const r = 10 - (i / cobolSnake.hist.length) * 7;
+          ctx.fillStyle = i % 6 < 3 ? "#3f8a3a" : "#2e6e2e";
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (cobolSnake.active) {
+          ctx.fillStyle = "#2e6e2e";
+          ctx.beginPath();
+          ctx.arc(cobolSnake.x, cobolSnake.y, 11, 0, Math.PI * 2);
+          ctx.fill();
+          pixelRect(ctx, cobolSnake.x + (cobolSnake.dir > 0 ? 3 : -6), cobolSnake.y - 4, 3, 3, "#ffd94d");
+          ctx.strokeStyle = "#ff5a4d";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(cobolSnake.x + cobolSnake.dir * 11, cobolSnake.y);
+          ctx.lineTo(cobolSnake.x + cobolSnake.dir * 17, cobolSnake.y);
+          ctx.stroke();
+          ctx.fillStyle = "#f8fafc";
+          ctx.font = "9px 'Courier New', monospace";
+          ctx.textAlign = "center";
+          ctx.fillText("COBOL SNAKE", cobolSnake.x, cobolSnake.y - 20);
+        }
+      }
       for (const particle of particles) {
         const size = Math.max(2, Math.min(8, particle.ttl / 6));
         pixelRect(ctx, particle.x, particle.y, size, size, particle.color);
@@ -1895,6 +2424,16 @@ export default function Home() {
           pixelRect(ctx, shot.x - shot.vx * 0.018 - 4, shot.y - shot.vy * 0.018 - 2, 8, 4, "#fde68a");
           pixelRect(ctx, shot.x - 5, shot.y - 3, 10, 6, "#facc15");
           pixelRect(ctx, shot.x + 3, shot.y - 1, 4, 2, "#fef9c3");
+        }
+        for (const shot of secretBossShots) {
+          ctx.save();
+          ctx.shadowColor = "#ff5a4d";
+          ctx.shadowBlur = 6;
+          ctx.fillStyle = "#ff5a4d";
+          ctx.beginPath();
+          ctx.arc(shot.x, shot.y, 4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
         }
       }
       powerUps.forEach(drawPowerUp);
