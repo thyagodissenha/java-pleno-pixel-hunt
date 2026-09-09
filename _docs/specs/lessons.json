@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 14,
+  "next_id": 15,
   "lessons": [
     {
       "id": "L-001",
@@ -238,6 +238,24 @@
       ],
       "created": "2026-08-31T00:13:53Z",
       "last_seen": "2026-08-31T00:13:53Z"
+    },
+    {
+      "id": "L-014",
+      "key": "spec_precision_gap::when an acceptance criterion s expected outcome is only measurable by an external tool e g sonarqube verify it with a structural proxy line count sub function count shape and record the tool confirmation as a separate open item instead of blocking the pass verdict on tool availability",
+      "text": "When an acceptance criterion's expected outcome is only measurable by an external tool (e.g. SonarQube), verify it with a structural proxy (line count, sub-function count/shape) and record the tool confirmation as a separate open item instead of blocking the PASS verdict on tool availability.",
+      "signal": "spec_precision_gap",
+      "scope": "engine",
+      "status": "candidate",
+      "features": [
+        "motor-de-jogo-modular-fix1"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "ENGINE-22 AC1/AC3, _docs/specs/features/motor-de-jogo-modular-fix1/validation.md (engine)"
+      ],
+      "created": "2026-09-09T01:22:53Z",
+      "last_seen": "2026-09-09T01:22:53Z"
     }
   ]
 }

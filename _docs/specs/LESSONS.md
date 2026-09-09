@@ -92,6 +92,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: T6/T7 SPEC_DEVIATION (menu index remap) (app/page.tsx)
 - last seen: 2026-08-31T00:13:53Z
 
+### L-014 — When an acceptance criterion's expected outcome is only measurable by an external tool (e.g. SonarQube), verify it with a structural proxy (line count, sub-function count/shape) and record the tool confirmation as a separate open item instead of blocking the PASS verdict on tool availability.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `engine` · harmful: 0
+- features: motor-de-jogo-modular-fix1
+- evidence: ENGINE-22 AC1/AC3, _docs/specs/features/motor-de-jogo-modular-fix1/validation.md (engine)
+- last seen: 2026-09-09T01:22:53Z
+
 ## Quarantined (failed when applied — ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
