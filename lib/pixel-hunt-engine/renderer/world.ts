@@ -8,7 +8,6 @@
 // interna confirmados pelo SonarQube no fix1.
 
 import { pixelRect } from "@/lib/character-sprite";
-import { readSecretPhaseState } from "@/lib/pixel-hunt-engine/renderer/phase-state";
 import type { ViewState } from "@/lib/pixel-hunt-engine/renderer";
 import type { EngineWorld, SecretMainframePhaseState } from "@/lib/pixel-hunt-engine/types";
 
@@ -87,12 +86,14 @@ export function drawDatacenterFloor(ctx: CanvasRenderingContext2D, phaseState: S
 }
 
 export function drawGrid(ctx: CanvasRenderingContext2D, world: EngineWorld, view: ViewState) {
-  if (view.runOrigin === "secret") {
-    const phaseState = readSecretPhaseState(world);
-    if (phaseState) {
-      drawDatacenterFloor(ctx, phaseState);
-      return;
-    }
+  // `view.drawFloor` (Fatia 2, T11, PHASEFLOW-03), quando presente,
+  // substitui o chão genérico abaixo — hoje, só `SecretMainframePhase`
+  // (`phases/secret-mainframe/index.ts`) o define, para desenhar o chão do
+  // datacenter em vez deste. `drawGrid` não sabe (nem precisa saber) o que
+  // o callback desenha.
+  if (view.drawFloor) {
+    view.drawFloor(ctx);
+    return;
   }
   const theme = Math.min(world.run.bossIndex, BIOME_COUNT - 1);
   const floor = ["#101827", "#1b1620", "#071a2f", "#211414"][theme] ?? "#101827";

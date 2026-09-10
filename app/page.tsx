@@ -31,6 +31,8 @@ import { NeonHud } from "@/app/_hud/neon/NeonHud";
 import { isOpeningCutscenePlaying } from "@/app/_hud/cutscene/OpeningCutscene";
 import { CHARACTERS, DEFAULT_CHARACTER_ID, resolveCharacter } from "@/lib/characters";
 import { createEngine, type Engine } from "@/lib/pixel-hunt-engine/orchestrator";
+import { normalRunGraph } from "@/lib/pixel-hunt-engine/phases/normal-run/graph";
+import { secretMainframeGraph } from "@/lib/pixel-hunt-engine/phases/secret-mainframe/graph";
 import type { EngineSnapshot } from "@/lib/pixel-hunt-engine/types";
 
 const adsenseClientId = getPublicAdsenseClientId();
@@ -111,15 +113,16 @@ export default function Home() {
   const { theme, setTheme } = useThemePreference();
 
   // Aplica um `EngineSnapshot` (de `engine.tick()`, `handleDebugAction()`,
-  // `activateSpecialPower()`, `start()`/`startSecretRun()`) aos `useState`
-  // que hoje o HUD lê — o único ponto de contato motor→React (ver
-  // design.md § Architecture Overview). Definido no nível do componente
-  // (não dentro do efeito do game loop) para que os outros pontos que
-  // chamam ações síncronas do motor (cheat `idclip`, `startNewGame`, clique
-  // no menu) também consigam refletir o resultado no MESMO evento, sem
-  // esperar o próximo `requestAnimationFrame` — igual ao original, onde
+  // `activateSpecialPower()`, `start(graph)`) aos `useState` que hoje o HUD
+  // lê — o único ponto de contato motor→React (ver design.md § Architecture
+  // Overview). Definido no nível do componente (não dentro do efeito do
+  // game loop) para que os outros pontos que chamam ações síncronas do
+  // motor (cheat `idclip`, `startNewGame`, clique no menu) também consigam
+  // refletir o resultado no MESMO evento, sem esperar o próximo
+  // `requestAnimationFrame` — igual ao original, onde
   // `start()`/`startSecretRun()`/`triggerActivePower()` chamavam
-  // `syncHud()` diretamente no fim de si mesmas.
+  // `syncHud()` diretamente no fim de si mesmas (T5/T6: unificados em
+  // `Engine.start(graph: PhaseGraph)`, ver orchestrator.ts).
   const applyGameState = useCallback((snapshot: EngineSnapshot) => {
     if (snapshot.gameState === "playing") promotionExpiredRef.current = false;
     const displayed = snapshot.gameState === "promotion" && promotionExpiredRef.current ? "over" : snapshot.gameState;
@@ -267,7 +270,7 @@ export default function Home() {
         setSupportOpen(false);
         promotionExpiredRef.current = false;
         engineRef.current?.playSound("start");
-        const snapshot = engineRef.current?.startSecretRun();
+        const snapshot = engineRef.current?.start(secretMainframeGraph);
         if (snapshot) applySnapshot(snapshot);
       } else {
         setMenuPanel("skins");
@@ -349,7 +352,7 @@ export default function Home() {
     setSupportOpen(false);
     promotionExpiredRef.current = false;
     engineRef.current?.playSound("start");
-    const snapshot = engineRef.current?.start();
+    const snapshot = engineRef.current?.start(normalRunGraph);
     if (snapshot) applySnapshot(snapshot);
   }
 
@@ -589,7 +592,7 @@ export default function Home() {
       }
       if (gameStateRef.current === "menu") {
         engine.playSound("start");
-        applySnapshot(engine.start());
+        applySnapshot(engine.start(normalRunGraph));
       }
       if (gameStateRef.current === "paused") {
         resumeGame();

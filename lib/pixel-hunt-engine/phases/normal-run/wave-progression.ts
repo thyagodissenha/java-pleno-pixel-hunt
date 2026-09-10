@@ -27,6 +27,13 @@ export const bossNames = [
   "Diretor do Go-Live",
 ];
 
+// Nomes dos "biomas" (temas visuais) por onda — mesmo índice de
+// `world.run.bossIndex` que `bossNames`. Movido de `orchestrator.ts` para
+// cá na Fatia 2 (T12, PHASEFLOW-02): `NormalRunPhase.hudLabels()` (abaixo)
+// precisa dele para computar o mesmo texto de HUD que `buildSnapshot()`
+// (orchestrator.ts) computava antes via `isSecret ? ... : ...`.
+export const biomeNames = ["Escritório", "Produção", "Cloud", "War Room"];
+
 /** Porta `bossKillTarget()` (`app/page.tsx:165-167`). */
 export function bossKillTarget(wave: number, resets = 0) {
   return 10 + wave * 4 + resets * 5;

@@ -12,17 +12,31 @@ import type { CharacterDefinition } from "@/lib/characters";
 import type { GameState, MenuPanel } from "@/app/_hud/hud-props";
 import { drawActor, drawObstacle, drawPlayer, drawPowerUp } from "@/lib/pixel-hunt-engine/renderer/actors";
 import { drawDim, drawOverlay, drawVictoryOverlay } from "@/lib/pixel-hunt-engine/renderer/overlays";
-import { readSecretPhaseState } from "@/lib/pixel-hunt-engine/renderer/phase-state";
-import { drawFinalChoiceScene, drawGrid, drawSecretRunOverlay } from "@/lib/pixel-hunt-engine/renderer/world";
-import type { EngineWorld, RunOrigin } from "@/lib/pixel-hunt-engine/types";
+import { drawFinalChoiceScene, drawGrid } from "@/lib/pixel-hunt-engine/renderer/world";
+import type { EngineWorld } from "@/lib/pixel-hunt-engine/types";
 
 const WORLD = { width: 960, height: 540 };
 
 export type ViewState = {
   character: CharacterDefinition;
   gameState: GameState;
-  runOrigin: RunOrigin;
   menuPanel: MenuPanel;
+  // Ganchos opcionais (Fatia 2, T11, PHASEFLOW-03) que substituem o antigo
+  // `ViewOrigin` (o rótulo de apresentação que decidia se `drawFrame`/
+  // `drawGrid` desenhavam o datacenter) — `drawFrame`/`drawGrid` chamam
+  // estes callbacks nos MESMOS pontos onde antes checavam esse rótulo, sem
+  // precisar saber o que desenham nem quem os forneceu. Só
+  // `SecretMainframePhase` (`phases/secret-mainframe/index.ts`) os define
+  // hoje; qualquer outra Phase pode reusar o mesmo mecanismo no futuro sem
+  // editar `renderer/`.
+  /** Substitui o chão genérico de `drawGrid` quando presente. */
+  drawFloor?: (ctx: CanvasRenderingContext2D) => void;
+  /** Chamado logo depois dos obstáculos (mesmo ponto onde a fase secreta
+   * desenhava zonas de reunião/cobol snake). */
+  drawGroundOverlay?: (ctx: CanvasRenderingContext2D) => void;
+  /** Chamado no mesmo ponto em que os tiros normais são desenhados —
+   * permite que uma Phase desenhe seus próprios projéteis. */
+  drawExtraShots?: (ctx: CanvasRenderingContext2D) => void;
 };
 
 export function drawFrame(ctx: CanvasRenderingContext2D, world: EngineWorld, view: ViewState): void {
@@ -35,11 +49,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, world: EngineWorld, vie
   drawGrid(ctx, world, view);
   if (choosingFinalReward) drawFinalChoiceScene(ctx, world);
   if (!choosingFinalReward) world.obstacles.forEach((obstacle) => drawObstacle(ctx, obstacle));
-
-  const secretPhaseState = view.runOrigin === "secret" ? readSecretPhaseState(world) : null;
-  if (secretPhaseState && !choosingFinalReward) {
-    drawSecretRunOverlay(ctx, secretPhaseState);
-  }
+  if (!choosingFinalReward) view.drawGroundOverlay?.(ctx);
 
   for (const particle of world.particles) {
     const size = Math.max(2, Math.min(8, particle.ttl / 6));
@@ -51,18 +61,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, world: EngineWorld, vie
       pixelRect(ctx, shot.x - 5, shot.y - 3, 10, 6, "#facc15");
       pixelRect(ctx, shot.x + 3, shot.y - 1, 4, 2, "#fef9c3");
     }
-    if (secretPhaseState) {
-      for (const shot of secretPhaseState.secretBossShots) {
-        ctx.save();
-        ctx.shadowColor = "#ff5a4d";
-        ctx.shadowBlur = 6;
-        ctx.fillStyle = "#ff5a4d";
-        ctx.beginPath();
-        ctx.arc(shot.x, shot.y, 4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
-    }
+    view.drawExtraShots?.(ctx);
   }
   world.powerUps.forEach((powerUp) => drawPowerUp(ctx, powerUp));
   if (!choosingFinalReward) {

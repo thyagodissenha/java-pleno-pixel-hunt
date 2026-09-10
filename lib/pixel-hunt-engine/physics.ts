@@ -102,10 +102,18 @@ export function shoot(world: EngineWorld, input: InputState, audio: AudioEngine)
   audio.playSound("shoot");
 }
 
-/** Remove inimigos próximos do jogador (poder "dash" com `clearRadius`, e o power-up "rollback"). Porta `clearNearbyEnemies()` (app/page.tsx:1064-1077). */
+/**
+ * Remove inimigos próximos do jogador (poder "dash" com `clearRadius`, e o
+ * power-up "rollback"). Porta `clearNearbyEnemies()` (app/page.tsx:1064-1077).
+ * De-hardcoded na Fatia 2 (T8, PHASEFLOW-01): `enemy.bossState === undefined`
+ * substitui a checagem antiga de `kind` do chefe secreto — `bossState` já é,
+ * hoje, um campo exclusivo dele (`phases/secret-mainframe/index.ts`'s
+ * `spawnSecretEnemy`), então o resultado é idêntico sem `physics.ts` precisar
+ * conhecer o `kind` literal.
+ */
 export function clearNearbyEnemies(world: EngineWorld, clearRadius: number) {
   const removed = selectEnemiesToClear(world.player, world.enemies, clearRadius).filter(
-    (enemy) => enemy.kind !== "secretBoss" && enemy.hp > 0,
+    (enemy) => enemy.bossState === undefined && enemy.hp > 0,
   );
   for (const enemy of removed) {
     const index = world.enemies.indexOf(enemy);
@@ -410,9 +418,12 @@ function updateBossVolley(world: EngineWorld, enemy: Actor, delta: number) {
 }
 
 /**
- * IA de movimento por `EnemyKind` (exceto `daemon`/`cron`/`secretBoss`, cuja
- * IA fica com a fase secreta) + posição resultante; dispara a rajada do
- * chefe via `updateBossVolley`. Fix1, T14 — extraído de `stepWorld`.
+ * IA de movimento por `EnemyKind` (exceto Actors com `customMovement: true`
+ * — hoje, `daemon`/`cron`/`secretBoss` da fase secreta, cuja IA fica com a
+ * Phase que os spawna) + posição resultante; dispara a rajada do chefe via
+ * `updateBossVolley`. Fix1, T14 — extraído de `stepWorld`; de-hardcoded na
+ * Fatia 2 (T8, PHASEFLOW-01) para ler `Actor.customMovement` em vez de
+ * checar `kind` diretamente.
  */
 function updateEnemyMovement(world: EngineWorld, delta: number) {
   const { player, run } = world;
@@ -438,11 +449,11 @@ function updateEnemyMovement(world: EngineWorld, delta: number) {
     } else if (enemy.kind === "boss") {
       enemy.vx = toward.x * enemy.speed;
       enemy.vy = toward.y * enemy.speed;
-    } else if (enemy.kind === "daemon" || enemy.kind === "cron" || enemy.kind === "secretBoss") {
-      // IA específica da fase secreta ("O Mainframe") — portada em
-      // phases/secret-mainframe/ (fora do escopo de T5). stepWorld não move
-      // esses inimigos; a Phase secreta assume o movimento antes/depois de
-      // chamar stepWorld.
+    } else if (enemy.customMovement) {
+      // IA específica de quem spawnou este Actor (ex.: fase secreta "O
+      // Mainframe", phases/secret-mainframe/). stepWorld não move esses
+      // inimigos; a Phase ativa assume o movimento antes/depois de chamar
+      // stepWorld.
     } else {
       enemy.vx = toward.x * enemy.speed + Math.sin((run.frame + enemy.x) / 23) * 16;
       enemy.vy = toward.y * enemy.speed + Math.cos((run.frame + enemy.y) / 29) * 16;
@@ -515,9 +526,11 @@ export function applyPlayerDamage(world: EngineWorld, audio: AudioEngine, events
 
 /**
  * Aplica dano de toque quando um inimigo vivo colide com o jogador
- * desprotegido, e remove o inimigo quando ele não é um "tanque" (boss/
- * secretBoss/cron sobrevivem ao toque). Fix1, T15 — extraído de
- * `stepWorld`.
+ * desprotegido, e remove o inimigo quando ele não é um "tanque" — `boss`
+ * (literal, chefe do `normal-run`) ou qualquer Actor com `onDeath` definido
+ * (hoje, `secretBoss`/`cron` da fase secreta, atribuído por quem os
+ * spawna) sobrevivem ao toque. Fix1, T15 — extraído de `stepWorld`;
+ * de-hardcoded na Fatia 2 (T8, PHASEFLOW-01).
  */
 function resolveEnemyPlayerCollisions(world: EngineWorld, audio: AudioEngine, events: FrameEvents) {
   const { player } = world;
@@ -526,7 +539,7 @@ function resolveEnemyPlayerCollisions(world: EngineWorld, audio: AudioEngine, ev
     if (enemy.hp > 0 && distance(enemy, player) < enemy.size * 0.55 + player.size * 0.55) {
       if (player.invincible <= 0) {
         applyPlayerDamage(world, audio, events, ENEMY_TOUCH_DAMAGE[enemy.kind], 16);
-        if (enemy.kind !== "boss" && enemy.kind !== "secretBoss" && enemy.kind !== "cron") world.enemies.splice(i, 1);
+        if (enemy.kind !== "boss" && !enemy.onDeath) world.enemies.splice(i, 1);
       }
     }
   }
@@ -538,26 +551,21 @@ function resolveEnemyPlayerCollisions(world: EngineWorld, audio: AudioEngine, ev
  * Fix1, T15 — extraída de dentro de `resolveShotEnemyCollisions` para manter
  * sua complexidade cognitiva sob controle (segunda extração interna,
  * documentada na task T15/T14).
+ *
+ * De-hardcoded na Fatia 2 (T8, PHASEFLOW-01): `Actor.onDeath?`, quando
+ * presente, roda ANTES de qualquer branch de `kind` — hoje, quem o
+ * spawnou (`phases/secret-mainframe/`) o usa para o efeito de `cron`
+ * ("cai" mas fica com cooldown de revive, sem ser removido — `onDeath`
+ * retorna `true`) e de `secretBoss` (cura/fúria/`events.gameWon`/áudio de
+ * vitória, seguido de remoção normal). `kind === "boss"` (chefe do
+ * `normal-run`) permanece hardcoded aqui — fora do escopo desta feature.
  */
 function resolveEnemyDeath(world: EngineWorld, audio: AudioEngine, events: FrameEvents, enemy: Actor, enemyIndex: number) {
   const { player, run } = world;
   run.score += ENEMY_DEATH_SCORE[enemy.kind];
-  if (enemy.kind === "cron") {
-    // Não remove: fica "derrubado" e a Phase secreta o ressuscita depois de
-    // alguns segundos (lógica portada em T12).
-    enemy.cooldown = 300;
-    burst(world, enemy.x, enemy.y, "#d4ff5e", 14);
-    return;
-  }
-  if (enemy.kind === "secretBoss") {
-    player.fury = 5;
-    player.hp = clamp(player.hp + 22, 0, player.maxHp);
-    burst(world, enemy.x, enemy.y, "#ffd166", 28);
-    burst(world, enemy.x, enemy.y, "#facc15", 24);
-    events.gameWon = true;
-    audio.playSound("won");
-    audio.stopMusic();
-  } else if (enemy.kind === "boss") {
+  const preventRemoval = enemy.onDeath?.(world, audio, events);
+  if (preventRemoval) return;
+  if (enemy.kind === "boss") {
     const currentBossPhase = enemy.bossPhase ?? 1;
     player.fury = 5;
     player.hp = clamp(player.hp + 22, 0, player.maxHp);
@@ -576,7 +584,7 @@ function resolveEnemyDeath(world: EngineWorld, audio: AudioEngine, events: Frame
     }
     burst(world, enemy.x, enemy.y, "#ffd166", 28);
     events.bossDefeated = true;
-  } else {
+  } else if (!enemy.onDeath) {
     if (!run.bossSpawned && !run.finalChoicePending) run.bossKills += 1;
     burst(world, enemy.x, enemy.y, enemy.kind === "data" ? "#7dd3fc" : "#a7f3d0", 12);
   }
@@ -622,7 +630,13 @@ function resolveShotHitOnEnemy(
       enemy.hp -= damage;
       world.shots.splice(shotIndex, 1);
       audio.playSound("hit");
-      burst(world, shot.x, shot.y, enemy.kind === "boss" || enemy.kind === "secretBoss" ? "#f9c74f" : "#65d6ad", 4);
+      // `kind === "boss"` (chefe do `normal-run`) permanece hardcoded aqui —
+      // fora do escopo desta feature. `Actor.deathBurstColor?` (opcional,
+      // atribuído por quem spawna o Actor) cobre o mesmo efeito visual para
+      // outros Actors "especiais" sem `physics.ts` precisar conhecer seu
+      // `kind` (hoje, só `secretBoss`, atribuído por `phases/secret-mainframe/`).
+      const hitSparkColor = enemy.kind === "boss" ? "#f9c74f" : (enemy.deathBurstColor ?? "#65d6ad");
+      burst(world, shot.x, shot.y, hitSparkColor, 4);
       if (enemy.hp <= 0) {
         resolveEnemyDeath(world, audio, events, enemy, e);
       }

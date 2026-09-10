@@ -5,7 +5,7 @@
 
 import type { CharacterDefinition } from "@/lib/characters";
 import type { AudioEngine } from "@/lib/pixel-hunt-engine/audio";
-import type { DebugAction, EngineWorld, FrameEvents, InputState } from "@/lib/pixel-hunt-engine/types";
+import type { DebugAction, EngineWorld, FrameEvents, InputState, PhaseId } from "@/lib/pixel-hunt-engine/types";
 
 export type PhaseContext = {
   audio: AudioEngine;
@@ -13,7 +13,12 @@ export type PhaseContext = {
 };
 
 export type EnginePhase = {
-  readonly id: "normal-run" | "secret-mainframe";
+  // PHASEFLOW-06: era a union fechada `"normal-run" | "secret-mainframe"` —
+  // `PhaseId` (tipo aberto, `types.ts`) permite que qualquer `PhaseGraph`
+  // futuro declare seus próprios nós sem editar este arquivo. Strings
+  // literais como `"normal-run"`/`"secret-mainframe"` continuam atribuíveis
+  // (literal de string é atribuível a `string`).
+  readonly id: PhaseId;
   enter(world: EngineWorld, ctx: PhaseContext): void;
   update(world: EngineWorld, ctx: PhaseContext, input: InputState, delta: number): FrameEvents;
   draw(ctx: CanvasRenderingContext2D, world: EngineWorld): void;
@@ -26,4 +31,10 @@ export type EnginePhase = {
   // fase secreta). Retorna `null` quando a fase não trata o ponto (fora do
   // raio, ou fora do estado em que a escolha final está ativa).
   resolveFinalChoiceClick?(world: EngineWorld, ctx: PhaseContext, x: number, y: number): FrameEvents | null;
+  // Textos de HUD (chefe atual/bioma/progresso do chefe) — Fatia 2 (T12,
+  // PHASEFLOW-02/04). `orchestrator.ts`'s `buildSnapshot()` chama isso em
+  // vez do antigo `isSecret ? ... : ...` (removido nesta task). Opcional:
+  // uma Phase de teste minimalista (sem `hudLabels`) faz `buildSnapshot()`
+  // cair no fallback genérico ("—").
+  hudLabels?(world: EngineWorld): { boss: string; biome: string; bossProgress: string };
 };

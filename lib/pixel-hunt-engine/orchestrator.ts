@@ -8,27 +8,22 @@ import { resolveCharacter, type CharacterDefinition } from "@/lib/characters";
 import { createAudioEngine } from "@/lib/pixel-hunt-engine/audio";
 import { triggerActivePower } from "@/lib/pixel-hunt-engine/physics";
 import type { EnginePhase, PhaseContext } from "@/lib/pixel-hunt-engine/phases/phase";
-import { createNormalRunPhase } from "@/lib/pixel-hunt-engine/phases/normal-run";
-import { bossKillTarget, bossNames } from "@/lib/pixel-hunt-engine/phases/normal-run/wave-progression";
-import { createSecretMainframePhase } from "@/lib/pixel-hunt-engine/phases/secret-mainframe";
+import { normalRunGraph } from "@/lib/pixel-hunt-engine/phases/normal-run/graph";
+import { bossKillTarget } from "@/lib/pixel-hunt-engine/phases/normal-run/wave-progression";
 import type {
   DebugAction,
   EngineSnapshot,
   EngineWorld,
+  FrameEvents,
   GameState,
   InputState,
+  PhaseGraph,
   RunOrigin,
   SoundName,
 } from "@/lib/pixel-hunt-engine/types";
 
 const WORLD = { width: 960, height: 540 };
 const BURST_STAMINA_MAX = 100;
-// Rótulos de "bioma" exibidos no HUD — puramente de apresentação (o motor
-// genérico não conhece esse conceito), duplicado aqui do array homônimo de
-// `app/page.tsx:154` pelo mesmo motivo documentado em outros módulos (ver
-// design.md § Tech Decisions): evita acoplar `orchestrator.ts` a um módulo
-// de `normal-run/` só para 4 strings de UI.
-const biomeNames = ["Escritório", "Produção", "Cloud", "War Room"];
 
 export type EngineOptions = {
   character: CharacterDefinition;
@@ -43,15 +38,17 @@ export type EngineOptions = {
 
 export type Engine = {
   tick(now: number, input: InputState, ctx: CanvasRenderingContext2D): EngineSnapshot;
-  // Devolvem o snapshot recém-criado (elaboração sobre o `void` do
-  // design.md § Components — `start()`/`startSecretRun()` substituem
-  // `start()`/`startSecretRun()` originais, que terminavam com
-  // `stateRef.current = "playing"; setGameState("playing"); ...
-  // syncHud();`, uma atualização SÍNCRONA do HUD, no mesmo evento que
-  // disparou o start — ex.: o cheat `idclip` precisa mostrar "Em combate"
-  // no mesmo tick de teste, sem esperar o próximo `requestAnimationFrame`).
-  start(): EngineSnapshot;
-  startSecretRun(): EngineSnapshot;
+  // Devolve o snapshot recém-criado (elaboração sobre o `void` do
+  // design.md § Components) — uma atualização SÍNCRONA do HUD, no mesmo
+  // evento que disparou o start — ex.: o cheat `idclip` precisa mostrar "Em
+  // combate" no mesmo tick de teste, sem esperar o próximo
+  // `requestAnimationFrame`.
+  //
+  // PHASEFLOW-08/09 (T5): substitui os antigos `start()`/`startSecretRun()`
+  // — um único ponto de entrada genérico, parametrizado pelo `PhaseGraph` a
+  // rodar (`normalRunGraph`/`secretMainframeGraph`, ou qualquer grafo
+  // futuro). O Orchestrator não conhece mais nomes de grafo específicos.
+  start(graph: PhaseGraph): EngineSnapshot;
   handleDebugAction(action: DebugAction): EngineSnapshot;
   setAudioPrefs(prefs: { muted: boolean; volume: number }): void;
   setCharacter(characterId: string): void;
@@ -102,7 +99,7 @@ export type Engine = {
   // Introspecção adicional (não faz parte do contrato mínimo do
   // design.md, mas é informação que o Orchestrator já guarda internamente
   // e que `app/page.tsx`/testes precisam sem violar ENGINE-01): qual Phase
-  // está ativa agora, e a origem da run atual (`normal`/`debug`/`secret`) —
+  // está ativa agora, e a origem da run atual (`"play"`/`"debug"`, T5) —
   // usada hoje por `submitScore()` (`app/page.tsx:616-620`) para não
   // enviar scores de runs de debug.
   getActivePhaseId(): EnginePhase["id"] | null;
@@ -177,11 +174,20 @@ export function createEngine(options: EngineOptions): Engine {
   const audio = createAudioEngine();
   let character = options.character;
   let world = createWorld(character);
-  let activePhase: EnginePhase | null = createNormalRunPhase();
+  // Fatia 3 (T16): `phases/normal-run/index.ts` (a `NormalRunPhase`
+  // monolítica) foi removido — o nó de entrada de `normalRunGraph`
+  // (`wave-1`, T13/T15) é o "mundo congelado" padrão antes do primeiro
+  // `start(graph)`, mesmo papel que `createNormalRunPhase()` tinha aqui.
+  let activePhase: EnginePhase | null = normalRunGraph.nodes[normalRunGraph.entry]();
+  // PHASEFLOW-08 (T5): grafo da run ativa — guardado só para que `tick()`
+  // saiba onde procurar a transição do nó ativo (`activeGraph.transitions`).
+  // `null` antes do primeiro `start(graph)` (o "mundo congelado" inicial não
+  // tem grafo nenhum rodando).
+  let activeGraph: PhaseGraph | null = null;
   let started = false;
   let paused = false;
   let forcedError = false;
-  let runOrigin: RunOrigin = "normal";
+  let runOrigin: RunOrigin = "play";
   let lastTickAt: number | null = null;
   let debugBossHealth: { hp: number; maxHp: number } | null = null;
   let debugPowerUpCount = 0;
@@ -216,31 +222,25 @@ export function createEngine(options: EngineOptions): Engine {
 
   function buildSnapshot(): EngineSnapshot {
     const { player, run } = world;
-    const isSecret = runOrigin === "secret";
     const power = character.specialPower;
     const target = bossKillTarget(run.wave, run.callLoops);
+    // Fatia 2 (T12, PHASEFLOW-02/04): antes um booleano ternário por campo
+    // (verdadeiro só com a fase secreta ativa) para cada um dos 3 campos
+    // abaixo — cada Phase agora fornece seus próprios textos via
+    // `hudLabels?()` (`phase.ts`), sem `orchestrator.ts` precisar saber que
+    // a fase secreta existe. Fallback genérico só é observável com uma
+    // Phase de teste minimalista sem `hudLabels`.
+    const labels = activePhase?.hudLabels?.(world) ?? { boss: "—", biome: "—", bossProgress: "—" };
     return {
       gameState: currentGameState(),
       score: run.score,
       wave: run.wave,
       resetCount: run.callLoops,
       hp: Math.max(0, Math.round(player.hp)),
-      boss: isSecret
-        ? "O Mainframe"
-        : run.finalChoicePending
-          ? "Diretoria caída"
-          : bossNames[run.bossIndex] ?? "Comitê Executivo",
-      biome: isSecret
-        ? "Datacenter Esquecido"
-        : biomeNames[Math.min(run.bossIndex, biomeNames.length - 1)] ?? "War Room",
+      boss: labels.boss,
+      biome: labels.biome,
       upgrade: run.weaponLevel >= 3 ? "JDK 21" : run.weaponLevel === 2 ? "JDK 17" : "JDK 8",
-      bossProgress: isSecret
-        ? "Chefe secreto"
-        : run.finalChoicePending
-          ? "Escolha final"
-          : run.bossSpawned
-            ? "Chefe em combate"
-            : `${Math.min(run.bossKills, target)}/${target} mobs`,
+      bossProgress: labels.bossProgress,
       burstStaminaPct: Math.round(run.burstStamina),
       abilityCooldownPct: power
         ? Math.round(
@@ -281,12 +281,13 @@ export function createEngine(options: EngineOptions): Engine {
     return buildSnapshot();
   }
 
-  function start(): EngineSnapshot {
-    return beginRun(createNormalRunPhase(), "normal");
-  }
-
-  function startSecretRun(): EngineSnapshot {
-    return beginRun(createSecretMainframePhase(), "secret");
+  // PHASEFLOW-08/09 (T5): único ponto de entrada — substitui `start()`/
+  // `startSecretRun()`. Qualquer grafo iniciado por aqui é `"play"`; o
+  // Orchestrator não sabe (nem precisa saber) se é `normalRunGraph`,
+  // `secretMainframeGraph`, ou um grafo futuro qualquer.
+  function start(graph: PhaseGraph): EngineSnapshot {
+    activeGraph = graph;
+    return beginRun(graph.nodes[graph.entry](), "play");
   }
 
   function pause() {
@@ -321,7 +322,9 @@ export function createEngine(options: EngineOptions): Engine {
     // atual de `activePhase` (só recria quando ele está de fato ausente).
     if (activePhase === null) {
       world = createWorld(character);
-      activePhase = createNormalRunPhase();
+      // Fatia 3 (T16): mesma substituição que o "mundo congelado" inicial
+      // (acima) — `phases/normal-run/index.ts` não existe mais.
+      activePhase = normalRunGraph.nodes[normalRunGraph.entry]();
       activePhase.enter(world, phaseContext());
     }
     started = false;
@@ -371,10 +374,34 @@ export function createEngine(options: EngineOptions): Engine {
     pendingHudSync = true;
   }
 
+  // PHASEFLOW-13/14 (fix cycle-1, bug 1): pergunta o grafo ativo se o nó
+  // corrente deve transicionar, dado os `FrameEvents` de um frame/ação.
+  // Extraído de `tick()` para ser reusado por `resolveFinalChoiceClick()`
+  // também — antes, só `tick()` rodava essa checagem, então um clique
+  // direto no power-up "novo chamado" (que produz `FrameEvents` fora de
+  // `tick()`, via `resolveFinalChoiceClick`) nunca disparava a transição de
+  // volta para `wave-1`, travando o jogo permanentemente na tela de escolha
+  // final. Ausência de entrada em `transitions` para o nó ativo (ex.: nó
+  // terminal como `secret-mainframe`) é tratada como "nunca transiciona"
+  // (`?.()` devolve `undefined`, igual a `null`).
+  function applyGraphTransition(events: FrameEvents): void {
+    const graph = activeGraph;
+    const nextId = graph?.transitions[activePhase!.id]?.(world, events);
+    if (graph && nextId) {
+      activePhase = graph.nodes[nextId]();
+      activePhase.enter(world, phaseContext());
+    }
+  }
+
   function resolveFinalChoiceClick(x: number, y: number): EngineSnapshot | null {
     try {
       const result = activePhase?.resolveFinalChoiceClick?.(world, phaseContext(), x, y);
       if (!result) return null;
+      // PHASEFLOW-13/14 (fix cycle-1, bug 1): mesma transição de grafo que
+      // `tick()` já rodava após `update()` — sem isto, `newCallRequested`
+      // (clique direto no power-up "novo chamado") nunca levava de volta a
+      // `wave-1`.
+      if (activePhase) applyGraphTransition(result);
       pendingHudSync = true;
       return buildSnapshot();
     } catch (error) {
@@ -400,6 +427,12 @@ export function createEngine(options: EngineOptions): Engine {
       if (started && !paused && activePhase) {
         const events = activePhase.update(world, phaseContext(), input, delta);
         pendingHudSync = Object.values(events).some(Boolean);
+
+        // PHASEFLOW-08/09 (T5): logo após `update()`, ANTES de `draw()`,
+        // para que o frame já desenhe a fase nova (mesma semântica de
+        // "transição imediata, mesmo frame" que a `NormalRunPhase`
+        // monolítica já tem hoje internamente).
+        applyGraphTransition(events);
       }
       activePhase?.draw(ctx, world);
     } catch (error) {
@@ -424,7 +457,10 @@ export function createEngine(options: EngineOptions): Engine {
 
     const startsRun =
       action === "reset" || ((action === "spawn_boss" || action === "add_powerup") && currentGameState() !== "playing");
-    if (startsRun) start();
+    // Painel de debug sempre opera sobre o fluxo normal (F1/F2/F3 nunca
+    // disparam a fase secreta) — mesmo comportamento de hoje, agora via
+    // `normalRunGraph` (T5).
+    if (startsRun) start(normalRunGraph);
 
     // Fora de "reset" (que sempre inicia uma run normal nova, logo sempre
     // tem efeito), uma ação de debug só tem efeito real quando a Phase
@@ -493,7 +529,6 @@ export function createEngine(options: EngineOptions): Engine {
   return {
     tick,
     start,
-    startSecretRun,
     handleDebugAction,
     setAudioPrefs,
     setCharacter,

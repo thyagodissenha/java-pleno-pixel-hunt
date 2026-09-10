@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CHARACTER_ID, resolveCharacter } from "@/lib/characters";
 import { createEngine } from "@/lib/pixel-hunt-engine/orchestrator";
+import { normalRunGraph } from "@/lib/pixel-hunt-engine/phases/normal-run/graph";
+import { secretMainframeGraph } from "@/lib/pixel-hunt-engine/phases/secret-mainframe/graph";
 import type { InputState } from "@/lib/pixel-hunt-engine/types";
 
 function fakeCtx(): CanvasRenderingContext2D {
@@ -54,7 +56,7 @@ describe("Engine — start → tick × N → snapshot", () => {
   it("produces a 'playing' snapshot with sane score/wave after several ticks", () => {
     const engine = makeEngine();
     const ctx = fakeCtx();
-    engine.start();
+    engine.start(normalRunGraph);
 
     let now = 1000;
     let snapshot = engine.tick(now, idleInput(), ctx);
@@ -74,15 +76,17 @@ describe("Engine — start → tick × N → snapshot", () => {
   });
 });
 
-describe("Engine — start()/startSecretRun() never leave two Phases active", () => {
+describe("Engine — start(graph) never leaves two Phases active", () => {
   it("only the last call's Phase is active", () => {
     const engine = makeEngine();
     const ctx = fakeCtx();
 
-    engine.start();
-    expect(engine.getActivePhaseId()).toBe("normal-run");
+    engine.start(normalRunGraph);
+    // Fatia 3 (T15): `normalRunGraph.entry` é `"wave-1"` (grafo real de 5
+    // nós) — não mais o `"normal-run"` monolítico da Fatia 1.
+    expect(engine.getActivePhaseId()).toBe("wave-1");
 
-    engine.startSecretRun();
+    engine.start(secretMainframeGraph);
     expect(engine.getActivePhaseId()).toBe("secret-mainframe");
 
     const snapshot = engine.tick(1000, idleInput(), ctx);
@@ -95,7 +99,7 @@ describe("Engine — pause()/resume()", () => {
   it("stops the world from advancing while paused, resumes on resume()", () => {
     const engine = makeEngine();
     const ctx = fakeCtx();
-    engine.start();
+    engine.start(normalRunGraph);
     engine.tick(1000, idleInput(), ctx);
 
     engine.pause();
@@ -138,7 +142,7 @@ describe("Engine.handleDebugAction", () => {
   it("max_stamina fills burst stamina to 100%", () => {
     const engine = makeEngine();
     const ctx = fakeCtx();
-    engine.start();
+    engine.start(normalRunGraph);
     // Drena um pouco a estamina simulando burst ativo.
     for (let i = 0; i < 5; i += 1) {
       engine.tick(1000 + i * 16, { keys: new Set([" "]), pointer: { active: false, x: 480, y: 270 } }, ctx);
@@ -151,7 +155,7 @@ describe("Engine.handleDebugAction", () => {
 
   it("win_game marks the run as won", () => {
     const engine = makeEngine();
-    engine.start();
+    engine.start(normalRunGraph);
 
     const snapshot = engine.handleDebugAction("win_game");
 
@@ -164,28 +168,31 @@ describe("Engine.handleDebugAction", () => {
     const snapshot = engine.handleDebugAction("toggle_menu");
 
     expect(snapshot.gameState).toBe("menu");
-    expect(engine.getActivePhaseId()).toBe("normal-run");
+    // Fatia 3 (T16): o "mundo congelado" padrão (antes de qualquer
+    // `start()`) é o nó de entrada de `normalRunGraph` (`wave-1`) — não mais
+    // o `"normal-run"` monolítico, removido junto com `phases/normal-run/index.ts`.
+    expect(engine.getActivePhaseId()).toBe("wave-1");
   });
 
   it("win_game/max_stamina during an active secret run is a no-op — does not corrupt runOrigin or the secret run's state", () => {
     const engine = makeEngine();
     const ctx = fakeCtx();
-    engine.startSecretRun();
+    engine.start(secretMainframeGraph);
     engine.tick(1000, idleInput(), ctx);
     expect(engine.getActivePhaseId()).toBe("secret-mainframe");
-    expect(engine.getRunOrigin()).toBe("secret");
+    expect(engine.getRunOrigin()).toBe("play");
 
     const snapshot = engine.handleDebugAction("win_game");
 
     // SecretMainframePhase não implementa handleDebugAction — a ação não
-    // teve nenhum efeito real, então runOrigin deve permanecer "secret"
-    // (não "debug"), e a run secreta continua ativa e rodando (não "won").
+    // teve nenhum efeito real, então runOrigin deve permanecer "play" (não
+    // "debug"), e a run secreta continua ativa e rodando (não "won").
     expect(engine.getActivePhaseId()).toBe("secret-mainframe");
-    expect(engine.getRunOrigin()).toBe("secret");
+    expect(engine.getRunOrigin()).toBe("play");
     expect(snapshot.gameState).not.toBe("won");
 
     const afterMaxStamina = engine.handleDebugAction("max_stamina");
-    expect(engine.getRunOrigin()).toBe("secret");
+    expect(engine.getRunOrigin()).toBe("play");
     expect(afterMaxStamina.gameState).not.toBe("won");
   });
 });

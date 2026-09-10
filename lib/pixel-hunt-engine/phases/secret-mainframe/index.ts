@@ -12,6 +12,7 @@
 import { DEFAULT_CHARACTER_ID, resolveCharacter, type CharacterDefinition } from "@/lib/characters";
 import { applyPlayerDamage, stepWorld } from "@/lib/pixel-hunt-engine/physics";
 import { drawFrame, type ViewState } from "@/lib/pixel-hunt-engine/renderer";
+import { drawDatacenterFloor, drawSecretRunOverlay } from "@/lib/pixel-hunt-engine/renderer/world";
 import type { EnginePhase, PhaseContext } from "@/lib/pixel-hunt-engine/phases/phase";
 import {
   spawnDatacenterCracks,
@@ -19,8 +20,9 @@ import {
   spawnDatacenterObstacles,
 } from "@/lib/pixel-hunt-engine/phases/secret-mainframe/datacenter";
 import { createCobolSnake, stepCobolSnake } from "@/lib/pixel-hunt-engine/phases/secret-mainframe/cobol-snake";
+import { drawCronBody, drawMainframeBoss } from "@/lib/pixel-hunt-engine/phases/secret-mainframe/rendering";
 import { bossKillTarget, resetWaveOne, scaledEnemyHp } from "@/lib/pixel-hunt-engine/phases/normal-run/wave-progression";
-import { burst, distance, normalize } from "@/lib/pixel-hunt-engine/geometry";
+import { burst, clamp, distance, normalize } from "@/lib/pixel-hunt-engine/geometry";
 import { emptyFrameEvents } from "@/lib/pixel-hunt-engine/types";
 import type {
   Actor,
@@ -30,6 +32,7 @@ import type {
   MeetingZone,
   SecretMainframePhaseState,
 } from "@/lib/pixel-hunt-engine/types";
+import type { AudioEngine } from "@/lib/pixel-hunt-engine/audio";
 
 const WORLD = { width: 960, height: 540 };
 
@@ -63,9 +66,21 @@ const SECRET_ENEMY_STATS: Record<SecretEnemyKind, { hp: number; speed: number; s
  * `boss`/`secretBoss` o fazem). Por isso esta função nunca chama
  * `audio.playSound("boss")` — fielmente reproduz esse caminho, sempre
  * inatingível no código original.
+ *
+ * Fatia 2 (T9, PHASEFLOW-01/02): também atribui os hooks genéricos de
+ * `Actor` (T7) que tornam `physics.ts`/`renderer/actors.ts` data-driven —
+ * `customMovement: true` para os 3 kinds (`stepSecretEnemyAi`, abaixo, já
+ * move os 3 por conta própria); `onDeath`/`render`/`deathBurstColor` só
+ * para `cron`/`secretBoss`, cujo desenho migrou para `rendering.ts`
+ * (`drawCronBody`/`drawMainframeBoss`) e cuja morte tem efeito especial
+ * (`cron` "cai" com cooldown de revive; `secretBoss` dispara a vitória).
+ * `daemon` não precisa de `onDeath`/`render` — morre normal (score + burst
+ * genéricos de `physics.ts`) e é desenhado pelo branch hardcoded que
+ * `renderer/actors.ts` mantém para ele (fora do escopo desta feature).
  */
 function spawnSecretEnemy(world: EngineWorld, kind: SecretEnemyKind): Actor {
   const isSecretBoss = kind === "secretBoss";
+  const isCron = kind === "cron";
   const edge = Math.floor(Math.random() * 4);
   const margin = 36;
   const x = isSecretBoss
@@ -92,7 +107,30 @@ function spawnSecretEnemy(world: EngineWorld, kind: SecretEnemyKind): Actor {
     bossState: isSecretBoss ? "idle" : undefined,
     bossStateTimer: isSecretBoss ? 0 : undefined,
     bossAtkPattern: isSecretBoss ? -1 : undefined,
+    customMovement: true,
   };
+  if (isCron) {
+    actor.render = drawCronBody;
+    actor.onDeath = (deathWorld: EngineWorld) => {
+      // Não remove: fica "derrubado" e `stepSecretEnemyAi` o ressuscita
+      // depois de alguns segundos (cooldown abaixo).
+      actor.cooldown = 300;
+      burst(deathWorld, actor.x, actor.y, "#d4ff5e", 14);
+      return true;
+    };
+  } else if (isSecretBoss) {
+    actor.render = drawMainframeBoss;
+    actor.deathBurstColor = "#f9c74f";
+    actor.onDeath = (deathWorld: EngineWorld, audio: AudioEngine, events: FrameEvents) => {
+      deathWorld.player.fury = 5;
+      deathWorld.player.hp = clamp(deathWorld.player.hp + 22, 0, deathWorld.player.maxHp);
+      burst(deathWorld, actor.x, actor.y, "#ffd166", 28);
+      burst(deathWorld, actor.x, actor.y, "#facc15", 24);
+      events.gameWon = true;
+      audio.playSound("won");
+      audio.stopMusic();
+    };
+  }
   world.enemies.push(actor);
   if (isSecretBoss) world.run.bossBanner = 120;
   return actor;
@@ -304,11 +342,29 @@ export function createSecretMainframePhase(): EnginePhase {
 
     draw(ctx: CanvasRenderingContext2D, world: EngineWorld) {
       const state = readState(world);
+      // Fatia 2 (T11, PHASEFLOW-03): `renderer/` não conhece mais o
+      // datacenter/zonas de reunião/cobol snake/tiros do chefe secreto —
+      // esta Phase fornece os 3 ganchos genéricos de `ViewState` para
+      // desenhar seus próprios extras nos mesmos pontos onde
+      // `view.runOrigin === "secret"` fazia isso antes.
       const view: ViewState = {
         character,
         gameState: state.localGameState,
-        runOrigin: "secret",
         menuPanel: "home",
+        drawFloor: (floorCtx) => drawDatacenterFloor(floorCtx, state),
+        drawGroundOverlay: (overlayCtx) => drawSecretRunOverlay(overlayCtx, state),
+        drawExtraShots: (shotsCtx) => {
+          for (const shot of state.secretBossShots) {
+            shotsCtx.save();
+            shotsCtx.shadowColor = "#ff5a4d";
+            shotsCtx.shadowBlur = 6;
+            shotsCtx.fillStyle = "#ff5a4d";
+            shotsCtx.beginPath();
+            shotsCtx.arc(shot.x, shot.y, 4, 0, Math.PI * 2);
+            shotsCtx.fill();
+            shotsCtx.restore();
+          }
+        },
       };
       drawFrame(ctx, world, view);
     },
@@ -322,5 +378,12 @@ export function createSecretMainframePhase(): EnginePhase {
     // `NormalRunPhase` — `onDebugAction` original força `runOriginRef.current
     // = "debug"` e chama `start()` quando necessário, nunca `startSecretRun()`).
     // `handleDebugAction` é opcional em `EnginePhase` — omitido de propósito.
+
+    // Fatia 2 (T12, PHASEFLOW-02): réplica exata do ramo `isSecret` que
+    // `orchestrator.ts`'s `buildSnapshot()` calculava antes desta task —
+    // textos estáticos, sem depender de `world`.
+    hudLabels() {
+      return { boss: "O Mainframe", biome: "Datacenter Esquecido", bossProgress: "Chefe secreto" };
+    },
   };
 }

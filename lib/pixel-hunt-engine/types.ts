@@ -7,6 +7,8 @@
 
 import type { CharacterDefinition } from "@/lib/characters";
 import type { GameState } from "@/app/_hud/hud-props";
+import type { EnginePhase } from "@/lib/pixel-hunt-engine/phases/phase";
+import type { AudioEngine } from "@/lib/pixel-hunt-engine/audio";
 
 export type EnemyKind =
   | "user"
@@ -53,6 +55,28 @@ export type Actor = {
   bossState?: "idle" | "tele" | "atk";
   bossStateTimer?: number;
   bossAtkPattern?: number;
+  // Hooks genéricos opcionais (design.md § Components → types.ts's Actor,
+  // Fatia 2) — tornam `physics.ts`/`renderer/actors.ts` data-driven em vez
+  // de checar `Actor.kind` diretamente. Setados pela Phase que spawna o
+  // Actor (ex.: `phases/secret-mainframe/`); Actors que não os definem
+  // mantêm o comportamento genérico de hoje.
+  //
+  // Chamado pelo death-handling genérico de `stepWorld` (physics.ts), ANTES
+  // de remover o Actor de `world.enemies`. Retornar `true` impede a
+  // remoção (ex.: `cron` "cai" mas fica com cooldown de revive).
+  onDeath?: (world: EngineWorld, audio: AudioEngine, events: FrameEvents) => boolean | void;
+  // Quando presente, `drawActor` (renderer/actors.ts) chama isso em vez do
+  // corpo de desenho genérico.
+  render?: (ctx: CanvasRenderingContext2D, actor: Actor, visualFrame: number) => void;
+  // Quando `true`, o switch de IA genérico de `physics.ts` pula este Actor
+  // inteiramente — a Phase ativa já o move por conta própria.
+  customMovement?: boolean;
+  // Cor do burst de partícula ao ser atingido por um tiro (physics.ts's
+  // `resolveShotHitOnEnemy`) — mesmo padrão dos outros hooks: só usada por
+  // Actors "especiais" que não são o `kind === "boss"` do `normal-run`
+  // (esse permanece com cor própria hardcoded). Sem este campo, o Actor usa
+  // a cor genérica de hoje.
+  deathBurstColor?: string;
 };
 
 export type Shot = {
@@ -108,7 +132,39 @@ export type CobolSnake = {
   hist: Array<{ x: number; y: number }>;
 };
 
-export type RunOrigin = "normal" | "debug" | "secret";
+// PHASEFLOW-08/09 (design.md § Tech Decisions): união fechada de 2 valores
+// de propósito — gateia submissão de score (`!== "debug"`) — é uma
+// pergunta genuinamente binária, não uma enumeração de grafos por nome.
+// "secret" (rótulo antigo do fluxo da fase secreta) some daqui: qualquer
+// grafo iniciado via `Engine.start(graph)` normalmente é `"play"`,
+// independente de qual grafo seja; só ações de debug produzem `"debug"`. O
+// rótulo de apresentação "secret" vs "normal" (usado hoje por
+// `renderer/`'s `ViewState.runOrigin`, um campo DIFERENTE, só de desenho)
+// não depende deste tipo.
+export type RunOrigin = "play" | "debug";
+
+// --- Grafo genérico de fases (design.md § Components → types.ts) --------
+
+/** Identificador de nó dentro de um `PhaseGraph` — tipo aberto (não mais uma
+ * union fechada enumerando fases conhecidas), permitindo que qualquer
+ * feature futura declare seus próprios nós sem editar este arquivo. */
+export type PhaseId = string;
+
+export type PhaseGraph = {
+  /** Nó por onde `Engine.start(graph)` sempre começa. */
+  readonly entry: PhaseId;
+  /** Fábrica de cada nó — chamada uma vez quando o nó se torna ativo. */
+  readonly nodes: Readonly<Record<PhaseId, () => EnginePhase>>;
+  /**
+   * Para cada nó, decide o próximo nó (ou `null` para permanecer). Chamada
+   * pelo orquestrador logo após `activePhase.update()`, com o `world`
+   * (já mutado por `update()`) e os `FrameEvents` que `update()` retornou.
+   * Só nós com transições de saída precisam de uma entrada aqui — um nó
+   * terminal (ex.: `secret-mainframe`) simplesmente não tem entrada, e o
+   * orquestrador trata ausência de entrada como "nunca transiciona".
+   */
+  readonly transitions: Readonly<Record<PhaseId, (world: EngineWorld, events: FrameEvents) => PhaseId | null>>;
+};
 
 // --- Novos tipos do motor (design.md § Data Models) ---------------------
 
@@ -157,11 +213,6 @@ export type RunCounters = {
 // `phases/phase.ts`) — fix2, T4 (ENGINE-28): antes `unknown`, com cada
 // Phase (e `renderer.ts`/`orchestrator.ts`) fazendo cast + duck-typing
 // (checagem de campo em runtime) para ler o próprio formato.
-export type NormalRunPhaseState = {
-  phase: "normal-run";
-  localGameState: "playing" | "choice" | "over" | "won" | "promotion";
-};
-
 export type SecretMainframePhaseState = {
   phase: "secret-mainframe";
   localGameState: "playing" | "over" | "won";
@@ -172,7 +223,25 @@ export type SecretMainframePhaseState = {
   datacenterCracks: Array<Array<{ x: number; y: number }>>;
 };
 
-export type PhaseState = NormalRunPhaseState | SecretMainframePhaseState;
+// Fatia 3 (T13, PHASEFLOW-10): `createWavePhase(waveNumber)` produz nós
+// `wave-1`..`wave-N` (`EnginePhase.id`, um por número de onda) que
+// compartilham o MESMO membro do union — o `waveNumber` em si não afeta o
+// formato do estado local (só "playing"/"over"/"won", igual ao que
+// `NormalRunPhase` monolítica guardava para o fluxo de ondas), então usar um
+// discriminante fixo (`"wave"`, não `` `wave-${waveNumber}` ``) evita
+// enumerar um membro por onda sem perder precisão nenhuma.
+export type WavePhaseState = {
+  phase: "wave";
+  localGameState: "playing" | "over" | "won";
+};
+
+// Fatia 3 (T14, PHASEFLOW-10/12): estado local de `createFinalChoicePhase()`.
+export type FinalChoicePhaseState = {
+  phase: "final-choice";
+  localGameState: "choice" | "promotion" | "over" | "won";
+};
+
+export type PhaseState = SecretMainframePhaseState | WavePhaseState | FinalChoicePhaseState;
 
 export type EngineWorld = {
   player: Player;

@@ -3,7 +3,6 @@
 // — extraído de `renderer.ts`, sem mudar nenhuma lógica de desenho.
 
 import { drawCharacterBody, pixelRect } from "@/lib/character-sprite";
-import { clamp } from "@/lib/pixel-hunt-engine/geometry";
 import { FINAL_CHOICE_PICKUP_RADIUS, isFinalChoicePowerUp } from "@/lib/pixel-hunt-engine/phases/normal-run/final-choice";
 import type { ViewState } from "@/lib/pixel-hunt-engine/renderer";
 import type { Actor, EngineWorld, Obstacle, ObstacleKind, PowerUp, PowerUpKind } from "@/lib/pixel-hunt-engine/types";
@@ -19,83 +18,21 @@ const powerUpLabels: Record<PowerUpKind, string> = {
   call: "Chamado",
 };
 
-// "O Mainframe": máquina imóvel com grade de LEDs e núcleo que telegrafa
-// o ataque (verde parado, amarelo/vermelho piscando ao mirar, branco no
-// disparo) — porte fiel à maquete original da fase secreta.
-export function drawMainframeBoss(ctx: CanvasRenderingContext2D, actor: Actor, visualFrame: number) {
-  const bx = actor.x;
-  const by = actor.y;
-  const half = actor.size / 2;
-  ctx.strokeStyle = "#20301f";
-  ctx.lineWidth = 5;
-  ctx.lineCap = "round";
-  for (let i = 0; i < 4; i += 1) {
-    const ox = (i - 1.5) * (half * 0.6);
-    ctx.beginPath();
-    ctx.moveTo(bx + ox, by + half * 0.9);
-    ctx.quadraticCurveTo(
-      bx + ox + Math.sin(visualFrame / 20 + i) * 8,
-      by + half * 1.6,
-      bx + ox * 1.6 + Math.sin(visualFrame / 14 + i * 2) * 6,
-      by + half * 2.1,
-    );
-    ctx.stroke();
-  }
-  pixelRect(ctx, bx - half - 4, by - half + 6, actor.size + 8, actor.size - 4, "#3a2a20");
-  pixelRect(ctx, bx - half, by - half + 10, actor.size, actor.size - 10, "#23282e");
-  ctx.strokeStyle = "#7a4526";
-  ctx.lineWidth = 3;
-  ctx.strokeRect(bx - half - 4, by - half + 6, actor.size + 8, actor.size - 4);
-  for (let row = 0; row < 4; row += 1) {
-    for (let col = 0; col < 6; col += 1) {
-      const on = actor.hp > 0 && Math.sin(visualFrame / 10 + row * 2 + col * 1.3) > 0.2;
-      ctx.fillStyle = on ? (col % 2 ? "#7dff6a" : "#ff5a4d") : "#1a1f24";
-      ctx.fillRect(
-        Math.round(bx - half + 6 + (col * (actor.size - 12)) / 6),
-        Math.round(by - half + 16 + row * 6),
-        4,
-        3,
-      );
-    }
-  }
-  const bossFightState = actor.bossState ?? "idle";
-  const core = actor.hp <= 0
-    ? "#39444c"
-    : bossFightState === "tele"
-      ? Math.sin(visualFrame / 3) > 0 ? "#ffd94d" : "#ff5a4d"
-      : bossFightState === "atk"
-        ? "#ffffff"
-        : "#7dff6a";
-  const coreRadius = actor.hp > 0
-    ? 9 + (bossFightState === "tele" ? (actor.bossStateTimer ?? 0) * 8 : Math.sin(visualFrame / 20) * 2)
-    : 6;
-  ctx.save();
-  ctx.shadowColor = core;
-  ctx.shadowBlur = 16;
-  ctx.fillStyle = core;
-  ctx.beginPath();
-  ctx.arc(bx, by + 6, coreRadius, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-  if (actor.hp > 0 && bossFightState === "tele") {
-    ctx.save();
-    ctx.globalAlpha = 0.55;
-    ctx.strokeStyle = core;
-    ctx.setLineDash([6, 6]);
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(bx, by + 6, 24 + (actor.bossStateTimer ?? 0) * 28, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-  }
-}
-
 export function drawActor(ctx: CanvasRenderingContext2D, actor: Actor, visualFrame: number) {
   const wobble = Math.sin(visualFrame / 7 + (actor.phase ?? 0)) * 2;
   const x = actor.x - actor.size / 2;
   const y = actor.y - actor.size / 2 + wobble;
   pixelRect(ctx, actor.x - actor.size * 0.42, actor.y + actor.size * 0.36, actor.size * 0.84, 5, "rgba(0, 0, 0, 0.34)");
-  if (actor.kind === "boss") {
+  // `Actor.render` (T7/T9), quando presente, substitui o corpo genérico
+  // abaixo — hoje, `secret-mainframe` o atribui a `cron`/`secretBoss`
+  // (`phases/secret-mainframe/rendering.ts`). Label/barra de vida (mais
+  // abaixo) continuam genéricos para esses Actors também — só ficam
+  // ocultos enquanto `hp <= 0` (ver os 2 usos de `actor.render && actor.hp
+  // <= 0`), mesmo comportamento que o branch hardcoded de `cron` "derrubado"
+  // tinha antes desta task (Fatia 2, T10, PHASEFLOW-03).
+  if (actor.render) {
+    actor.render(ctx, actor, visualFrame);
+  } else if (actor.kind === "boss") {
     pixelRect(ctx, x - 4, y + 12, actor.size + 8, actor.size - 8, "#450a0a");
     pixelRect(ctx, x, y + 8, actor.size, actor.size - 8, "#7f1d1d");
     pixelRect(ctx, x + 6, y, actor.size - 12, 10, "#f97316");
@@ -135,31 +72,20 @@ export function drawActor(ctx: CanvasRenderingContext2D, actor: Actor, visualFra
     pixelRect(ctx, x + 6, y + 8, 4, 4, "#ff5a4d");
     pixelRect(ctx, x + actor.size - 10, y + 8, 4, 4, "#7dff6a");
     pixelRect(ctx, x + 5, y + actor.size - 8, actor.size - 10, 3, "#2b2140");
-  } else if (actor.kind === "cron") {
-    if (actor.hp <= 0) {
-      ctx.save();
-      ctx.globalAlpha = 0.35;
-      ctx.strokeStyle = "#7dff6a";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(actor.x, actor.y, 10 * clamp(1 - (actor.cooldown ?? 0) / 300, 0, 1), 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    } else {
-      pixelRect(ctx, x + 2, y, actor.size - 4, actor.size - 4, "#b0aa97");
-      pixelRect(ctx, x + 4, y + 6, actor.size - 8, 8, "#101c14");
-      pixelRect(ctx, x + 7, y + 9, 3, 3, "#7dff6a");
-      pixelRect(ctx, x + actor.size - 10, y + 9, 3, 3, "#7dff6a");
-    }
-  } else if (actor.kind === "secretBoss") {
-    drawMainframeBoss(ctx, actor, visualFrame);
   } else {
     pixelRect(ctx, x + 6, y, actor.size - 12, 8, "#f9a8d4");
     pixelRect(ctx, x + 3, y + 8, actor.size - 6, actor.size - 8, "#ec4899");
     pixelRect(ctx, x + 7, y + 14, 4, 4, "#111827");
     pixelRect(ctx, x + actor.size - 11, y + 14, 4, 4, "#111827");
   }
-  if (actor.kind !== "user" && !(actor.kind === "cron" && actor.hp <= 0)) {
+  // Um Actor com `render` próprio "some" (sem label/barra) enquanto
+  // `hp <= 0` — mesmo comportamento que o branch hardcoded de `cron`
+  // "derrubado" tinha (só o anel fantasma, sem label/barra); nenhum outro
+  // Actor com `render` hoje é desenhado com `hp <= 0` por mais de 1 frame
+  // (`secretBoss` é removido no mesmo tick em que morre), então isso não
+  // muda nada para eles.
+  const isHiddenWhileDead = actor.render && actor.hp <= 0;
+  if (actor.kind !== "user" && !isHiddenWhileDead) {
     pixelRect(ctx, actor.x - actor.label.length * 3.1, actor.y - actor.size / 2 - 19, actor.label.length * 6.2, 14, "rgba(2, 6, 23, 0.72)");
     ctx.fillStyle = "#f8fafc";
     ctx.font = "10px 'Courier New', monospace";
@@ -167,7 +93,7 @@ export function drawActor(ctx: CanvasRenderingContext2D, actor: Actor, visualFra
     ctx.fillText(actor.label, actor.x, actor.y - actor.size / 2 - 8);
   }
   const bar = actor.size;
-  if (actor.kind === "cron" && actor.hp <= 0) {
+  if (isHiddenWhileDead) {
     // Sem barra de vida enquanto está "derrubado" — só o anel fantasma.
   } else if (actor.kind === "boss" && actor.bossPhase) {
     const phaseColors = ["#22c55e", "#facc15", "#ef4444"];
