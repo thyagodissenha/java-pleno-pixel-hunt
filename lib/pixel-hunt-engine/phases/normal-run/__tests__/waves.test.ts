@@ -3,7 +3,7 @@ import { DEFAULT_CHARACTER_ID, resolveCharacter } from "@/lib/characters";
 import type { AudioEngine } from "@/lib/pixel-hunt-engine/audio";
 import type { PhaseContext } from "@/lib/pixel-hunt-engine/phases/phase";
 import { createWavePhase } from "@/lib/pixel-hunt-engine/phases/normal-run/waves";
-import { bossNames } from "@/lib/pixel-hunt-engine/phases/normal-run/wave-progression";
+import { biomeNames, bossNames } from "@/lib/pixel-hunt-engine/phases/normal-run/wave-progression";
 import type { EngineWorld, InputState } from "@/lib/pixel-hunt-engine/types";
 
 function makeAudio(): AudioEngine {
@@ -202,6 +202,19 @@ describe("createWavePhase — hudLabels (parity with the old NormalRunPhase.hudL
 
     expect(labels?.boss).toBe(bossNames[1]);
     expect(labels?.bossProgress).toMatch(/\/\d+ mobs$/);
+  });
+
+  it("reflects boss/biome for wave 5 (Comitê Executivo / Sala do Conselho)", () => {
+    const phase = createWavePhase(5);
+    const world = emptyWorld();
+    phase.enter(world, makeContext());
+
+    const labels = phase.hudLabels?.(world);
+
+    expect(labels?.boss).toBe(bossNames[4]);
+    expect(labels?.boss).toBe("Comitê Executivo");
+    expect(labels?.biome).toBe(biomeNames[4]);
+    expect(labels?.biome).toBe("Sala do Conselho");
   });
 });
 

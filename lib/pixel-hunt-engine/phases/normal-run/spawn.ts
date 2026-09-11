@@ -13,7 +13,7 @@ const WORLD = { width: 960, height: 540 };
 const OBSTACLE_MARGIN = 48;
 // Mesma contagem de biomas que `bossNames`/`renderer.ts` (`BIOME_COUNT`) —
 // só usada aqui para escolher o tema visual dos obstáculos por onda.
-const BIOME_COUNT = 4;
+const BIOME_COUNT = 5;
 
 const cloudLabels = ["Azure", "SQL", "Blob", "CI/CD", "Kafka", "BI"];
 
@@ -66,6 +66,11 @@ export function obstacleTemplates(world: EngineWorld): Array<Omit<Obstacle, "x" 
       { kind: "board", label: "Post-its", width: 86, height: 50 },
       { kind: "desk", label: "Mesa call", width: 118, height: 36 },
       { kind: "server", label: "Telão", width: 92, height: 56 },
+    ],
+    [
+      { kind: "board", label: "Pauta", width: 80, height: 46 },
+      { kind: "chair", label: "Cadeira de couro", width: 40, height: 44 },
+      { kind: "rack", label: "Servidor de backup", width: 58, height: 70 },
     ],
   ];
 

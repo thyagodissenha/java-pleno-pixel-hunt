@@ -25,6 +25,7 @@ export const bossNames = [
   "Dono do Roadmap",
   "Arquiteto das Reuniões",
   "Diretor do Go-Live",
+  "Comitê Executivo",
 ];
 
 // Nomes dos "biomas" (temas visuais) por onda — mesmo índice de
@@ -32,7 +33,7 @@ export const bossNames = [
 // cá na Fatia 2 (T12, PHASEFLOW-02): `NormalRunPhase.hudLabels()` (abaixo)
 // precisa dele para computar o mesmo texto de HUD que `buildSnapshot()`
 // (orchestrator.ts) computava antes via `isSecret ? ... : ...`.
-export const biomeNames = ["Escritório", "Produção", "Cloud", "War Room"];
+export const biomeNames = ["Escritório", "Produção", "Cloud", "War Room", "Sala do Conselho"];
 
 /** Porta `bossKillTarget()` (`app/page.tsx:165-167`). */
 export function bossKillTarget(wave: number, resets = 0) {

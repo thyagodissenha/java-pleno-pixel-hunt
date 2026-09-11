@@ -3,6 +3,7 @@ import { CHARACTERS, resolveCharacter } from "@/lib/characters";
 import type { AudioEngine } from "@/lib/pixel-hunt-engine/audio";
 import {
   clearNearbyEnemies,
+  computeBossVolleyPlan,
   finalBossHp,
   resolveFinalChoiceClickPowerUp,
   scaledEnemyHp,
@@ -348,5 +349,27 @@ describe("triggerActivePower", () => {
     world.run.abilityCooldownRemaining = 5;
     triggerActivePower(world, character);
     expect(world.player.haste).toBe(0);
+  });
+});
+
+describe("computeBossVolleyPlan (GOLIVESPLIT-04 — wave-4 non-final boss volley pattern)", () => {
+  it("returns pattern=3 (bossIndex % 4) and volleySize=5 for the wave-4 boss (bossIndex:3, no bossPhase)", () => {
+    const world = makeWorld({ run: { ...makeWorld().run, bossIndex: 3, wave: 4 } });
+    const boss = makeEnemy({ kind: "boss", label: "Chefe", cooldown: 0 });
+    const plan = computeBossVolleyPlan(boss, world.run);
+    expect(plan).not.toBeNull();
+    expect(plan!.pattern).toBe(3);
+    expect(plan!.volleySize).toBe(5);
+  });
+
+  it("stepWorld spawns 'incident' (P1) shots for the wave-4 boss volley", () => {
+    const world = makeWorld({
+      run: { ...makeWorld().run, bossIndex: 3, wave: 4 },
+      enemies: [makeEnemy({ kind: "boss", label: "Chefe", cooldown: 0, x: 480, y: 100 })],
+    });
+    stepWorld(world, makeInput(), 0.016, makeAudio());
+    const spawnedIncidents = world.enemies.filter((e) => e.kind === "incident");
+    expect(spawnedIncidents.length).toBeGreaterThan(0);
+    expect(spawnedIncidents.every((e) => e.label === "P1")).toBe(true);
   });
 });

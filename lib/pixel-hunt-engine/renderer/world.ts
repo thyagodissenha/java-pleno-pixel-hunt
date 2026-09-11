@@ -12,7 +12,7 @@ import type { ViewState } from "@/lib/pixel-hunt-engine/renderer";
 import type { EngineWorld, SecretMainframePhaseState } from "@/lib/pixel-hunt-engine/types";
 
 const WORLD = { width: 960, height: 540 };
-const BIOME_COUNT = 4;
+const BIOME_COUNT = 5;
 
 const DATACENTER_PUDDLES = [
   { x: 560, y: 200, rx: 60, ry: 20 },
@@ -96,8 +96,8 @@ export function drawGrid(ctx: CanvasRenderingContext2D, world: EngineWorld, view
     return;
   }
   const theme = Math.min(world.run.bossIndex, BIOME_COUNT - 1);
-  const floor = ["#101827", "#1b1620", "#071a2f", "#211414"][theme] ?? "#101827";
-  const tile = ["#132033", "#261b2c", "#0d2745", "#321b1b"][theme] ?? "#132033";
+  const floor = ["#101827", "#1b1620", "#071a2f", "#211414", "#1a1408"][theme] ?? "#101827";
+  const tile = ["#132033", "#261b2c", "#0d2745", "#321b1b", "#2b2210"][theme] ?? "#132033";
   ctx.fillStyle = floor;
   ctx.fillRect(0, 0, WORLD.width, WORLD.height);
   for (let x = 0; x < WORLD.width; x += 32) {

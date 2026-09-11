@@ -3,6 +3,7 @@ import { DEFAULT_CHARACTER_ID, resolveCharacter } from "@/lib/characters";
 import type { AudioEngine } from "@/lib/pixel-hunt-engine/audio";
 import type { EnginePhase, PhaseContext } from "@/lib/pixel-hunt-engine/phases/phase";
 import { normalRunGraph } from "@/lib/pixel-hunt-engine/phases/normal-run/graph";
+import { finalBossHp } from "@/lib/pixel-hunt-engine/physics";
 import { bossNames } from "@/lib/pixel-hunt-engine/phases/normal-run/wave-progression";
 import type { EngineWorld, InputState } from "@/lib/pixel-hunt-engine/types";
 
@@ -193,5 +194,42 @@ describe("normalRunGraph — full run simulation (PHASEFLOW-13)", () => {
     // roda pela transição do grafo.
     expect(world.run.effectMessage).toBe("NOVO CHAMADO: pontuação mantida");
     expect(world.run.effectBanner).toBe(100);
+  });
+});
+
+describe("normalRunGraph — final wave boss requires all 3 sub-phases before bossDefeated (GOLIVESPLIT-06/07/08)", () => {
+  it("heals and advances through phases 1 and 2 (no bossDefeated, stays on the final wave node), then dies for real at phase 3 and transitions to final-choice", () => {
+    const world = emptyWorld();
+    const ctx = makeContext();
+    const finalWaveId = `wave-${bossNames.length}`;
+    const state = { phase: normalRunGraph.nodes[finalWaveId]() };
+    state.phase.enter(world, ctx);
+    expect(state.phase.id).toBe(finalWaveId);
+
+    killCurrentBoss(world, 1);
+    const phase1Events = step(state, world, ctx, makeInput(), 0.016);
+    expect(phase1Events.bossDefeated).toBe(false);
+    expect(phase1Events.bossPhaseAdvanced).toBe(true);
+    expect(state.phase.id).toBe(finalWaveId);
+    // GOLIVESPLIT-06: valores numéricos exatos pós-cura (1->2), não só o
+    // mecanismo de avanço de fase.
+    const bossAfterPhase1 = world.enemies.find((e) => e.kind === "boss")!;
+    expect(bossAfterPhase1.maxHp).toBe(finalBossHp(2, 5));
+    expect(bossAfterPhase1.size).toBe(62 + 2 * 6);
+
+    killCurrentBoss(world, 2);
+    const phase2Events = step(state, world, ctx, makeInput(), 0.016);
+    expect(phase2Events.bossDefeated).toBe(false);
+    expect(phase2Events.bossPhaseAdvanced).toBe(true);
+    expect(state.phase.id).toBe(finalWaveId);
+    // GOLIVESPLIT-06: valores numéricos exatos pós-cura (2->3).
+    const bossAfterPhase2 = world.enemies.find((e) => e.kind === "boss")!;
+    expect(bossAfterPhase2.maxHp).toBe(finalBossHp(3, 5));
+    expect(bossAfterPhase2.size).toBe(62 + 3 * 6);
+
+    killCurrentBoss(world, 3);
+    const phase3Events = step(state, world, ctx, makeInput(), 0.016);
+    expect(phase3Events.bossDefeated).toBe(true);
+    expect(state.phase.id).toBe("final-choice");
   });
 });

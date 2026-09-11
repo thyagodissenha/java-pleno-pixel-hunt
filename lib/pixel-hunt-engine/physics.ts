@@ -355,7 +355,7 @@ function resolveFinalChoicePickups(world: EngineWorld, audio: AudioEngine, event
  * zerou — nesse caso `updateBossVolley` não deve disparar neste frame.
  * Fix1 ciclo 2, T18 — extraído de `updateBossVolley`.
  */
-function computeBossVolleyPlan(
+export function computeBossVolleyPlan(
   enemy: Actor,
   run: EngineWorld["run"],
 ): { pattern: number; volleySize: number } | null {

@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AudioEngine } from "@/lib/pixel-hunt-engine/audio";
 import { obstacleCount } from "@/lib/obstacles";
-import { spawnEnemy, spawnObstacles, spawnPowerUp } from "@/lib/pixel-hunt-engine/phases/normal-run/spawn";
+import { finalBossHp } from "@/lib/pixel-hunt-engine/physics";
+import { obstacleTemplates, spawnEnemy, spawnObstacles, spawnPowerUp } from "@/lib/pixel-hunt-engine/phases/normal-run/spawn";
+import { bossNames } from "@/lib/pixel-hunt-engine/phases/normal-run/wave-progression";
 import type { EngineWorld } from "@/lib/pixel-hunt-engine/types";
 
 function makeAudio(): AudioEngine {
@@ -81,10 +83,20 @@ describe("spawnEnemy", () => {
     expect(world.run.bossBanner).toBe(120);
   });
 
-  it("spawns the final boss (last bossIndex) with finalBossHp(1, wave) and bossPhase 1", () => {
-    // bossNames tem 4 entradas — bossIndex 3 é o último (chefe final).
-    const world = makeWorld({ run: { ...makeWorld().run, wave: 5, bossIndex: 3 } });
+  it("spawns the wave-4 boss (bossNames.length - 2, no longer final) without bossPhase, using the non-final hp/speed/size formula (GOLIVESPLIT-01/04)", () => {
+    const world = makeWorld({ run: { ...makeWorld().run, wave: 4, bossIndex: bossNames.length - 2 } });
     const actor = spawnEnemy(world, "boss", makeAudio());
+    expect(actor.hp).toBe(160 + 4 * 28);
+    expect(actor.speed).toBe(52 + Math.min(4 - 1, 5) * 2);
+    expect(actor.size).toBe(38);
+    expect(actor.bossPhase).toBeUndefined();
+    expect(actor.label).toBe(bossNames[bossNames.length - 2]);
+  });
+
+  it("spawns the final boss (bossNames.length - 1, now wave 5) with finalBossHp(1, wave) and bossPhase 1 (GOLIVESPLIT-05/06)", () => {
+    const world = makeWorld({ run: { ...makeWorld().run, wave: 5, bossIndex: bossNames.length - 1 } });
+    const actor = spawnEnemy(world, "boss", makeAudio());
+    expect(actor.hp).toBe(finalBossHp(1, 5));
     expect(actor.hp).toBe(210 + 1 * 48 + 5 * 22);
     expect(actor.bossPhase).toBe(1);
     expect(actor.label).toBe("Diretoria");
@@ -115,6 +127,20 @@ describe("spawnObstacles", () => {
         expect(overlaps).toBe(false);
       }
     }
+  });
+});
+
+describe("obstacleTemplates (GOLIVESPLIT-10 — wave-5 obstacle theme, Sala do Conselho)", () => {
+  it("returns the 5th theme's obstacles when bossIndex is 4", () => {
+    const world = makeWorld({ run: { ...makeWorld().run, bossIndex: 4 } });
+
+    const templates = obstacleTemplates(world);
+
+    expect(templates).toEqual([
+      { kind: "board", label: "Pauta", width: 80, height: 46 },
+      { kind: "chair", label: "Cadeira de couro", width: 40, height: 44 },
+      { kind: "rack", label: "Servidor de backup", width: 58, height: 70 },
+    ]);
   });
 });
 

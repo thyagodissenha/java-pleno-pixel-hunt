@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AudioEngine } from "@/lib/pixel-hunt-engine/audio";
-import { bossKillTarget } from "@/lib/pixel-hunt-engine/phases/normal-run/wave-progression";
+import { bossKillTarget, bossNames } from "@/lib/pixel-hunt-engine/phases/normal-run/wave-progression";
 import { countBossProgress, finalBossHp, isFinalBoss } from "@/lib/pixel-hunt-engine/phases/normal-run/boss";
 import type { EngineWorld } from "@/lib/pixel-hunt-engine/types";
 
@@ -68,8 +68,12 @@ describe("isFinalBoss", () => {
     expect(isFinalBoss(2)).toBe(false);
   });
 
-  it("is true at the last boss index (bossNames.length - 1)", () => {
-    expect(isFinalBoss(3)).toBe(true);
+  it("is false for the wave-4 boss (bossNames.length - 2) — split from the final boss (GOLIVESPLIT-01)", () => {
+    expect(isFinalBoss(bossNames.length - 2)).toBe(false);
+  });
+
+  it("is true at the last boss index (bossNames.length - 1) — wave-5 is now the final boss (GOLIVESPLIT-05)", () => {
+    expect(isFinalBoss(bossNames.length - 1)).toBe(true);
   });
 });
 
