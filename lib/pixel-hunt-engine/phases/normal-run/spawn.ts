@@ -20,7 +20,7 @@ const cloudLabels = ["Azure", "SQL", "Blob", "CI/CD", "Kafka", "BI"];
 // Subconjunto de `EnemyKind` que este módulo sabe spawnar — os inimigos da
 // fase secreta ("O Mainframe": `secretBoss`/`daemon`/`cron`) ficam com
 // `phases/secret-mainframe/` (fora do escopo de `normal-run`).
-export type NormalEnemyKind = Exclude<EnemyKind, "secretBoss" | "daemon" | "cron">;
+export type NormalEnemyKind = Exclude<EnemyKind, "secretBoss" | "daemon" | "cron" | "cobolSnake">;
 
 const enemyLabels: Record<Exclude<NormalEnemyKind, "boss" | "data">, string> = {
   user: "Usuário",

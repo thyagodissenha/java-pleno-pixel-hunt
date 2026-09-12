@@ -37,6 +37,11 @@ export type ViewState = {
   /** Chamado no mesmo ponto em que os tiros normais são desenhados —
    * permite que uma Phase desenhe seus próprios projéteis. */
   drawExtraShots?: (ctx: CanvasRenderingContext2D) => void;
+  // NOVO (feature fase-secreta-datacenter, T10): HUD persistente em
+  // espaço de tela (pips das 4 barras, `FIREWALL x/100`/`CORE EXPOSTO!`) —
+  // mesmo padrão dos 3 hooks acima, chamado incondicionalmente por
+  // `drawFrame` (T11 usa isto para `drawSecretPhaseHud`).
+  drawHudOverlay?: (ctx: CanvasRenderingContext2D) => void;
 };
 
 export function drawFrame(ctx: CanvasRenderingContext2D, world: EngineWorld, view: ViewState): void {
@@ -48,7 +53,19 @@ export function drawFrame(ctx: CanvasRenderingContext2D, world: EngineWorld, vie
   ctx.translate(shakeX, shakeY);
   drawGrid(ctx, world, view);
   if (choosingFinalReward) drawFinalChoiceScene(ctx, world);
-  if (!choosingFinalReward) world.obstacles.forEach((obstacle) => drawObstacle(ctx, obstacle));
+  // SPEC_DEVIATION (T10): tasks.md/design.md descrevem este loop como vivendo
+  // em `renderer/world.ts` ("1 linha no loop de obstáculos de
+  // renderer/world.ts"), mas o loop de obstáculos sempre viveu aqui em
+  // `drawFrame` (renderer/index.ts) — `drawObstacle` (o desenho genérico) é
+  // que fica em `renderer/actors.ts`. `Obstacle.render?` (types.ts, T1),
+  // quando presente, substitui `drawObstacle` no mesmo ponto — mesmo padrão
+  // de `Actor.render?` em `renderer/actors.ts`'s `drawActor`.
+  if (!choosingFinalReward) {
+    world.obstacles.forEach((obstacle) => {
+      if (obstacle.render) obstacle.render(ctx, obstacle, run.visualFrame);
+      else drawObstacle(ctx, obstacle);
+    });
+  }
   if (!choosingFinalReward) view.drawGroundOverlay?.(ctx);
 
   for (const particle of world.particles) {
@@ -92,6 +109,11 @@ export function drawFrame(ctx: CanvasRenderingContext2D, world: EngineWorld, vie
     ctx.textAlign = "center";
     ctx.fillText(run.effectMessage, WORLD.width / 2, WORLD.height - 50);
   }
+
+  // NOVO (T10): chamado incondicionalmente, mesmo padrão dos hooks acima —
+  // hoje só `SecretMainframePhase` o define (T13, `drawSecretPhaseHud`,
+  // hud.ts, T11); nenhuma outra Phase é afetada.
+  view.drawHudOverlay?.(ctx);
 
   if (view.gameState === "menu" && view.menuPanel !== "home") {
     drawDim(ctx);

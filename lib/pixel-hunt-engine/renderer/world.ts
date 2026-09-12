@@ -1,11 +1,6 @@
-// Desenho do "mundo" (piso, grid, datacenter, cena de escolha final,
-// overlay de reunião/cobol-snake da fase secreta). Fix2, T12 (ENGINE-29) —
-// extraído de `renderer.ts`, sem mudar nenhuma lógica de desenho.
-// `drawSecretRunOverlay` é uma extração nova (não existia como função
-// nomeada em `renderer.ts`): era um bloco de ~40 linhas inline dentro de
-// `drawFrame`, mesmo padrão de `pixelRect`/`ctx.arc`/`ctx.fillText` de
-// `drawDatacenterFloor` — provável origem real dos 35.7% de duplicação
-// interna confirmados pelo SonarQube no fix1.
+// Desenho do "mundo" (piso, grid, datacenter, cena de escolha final).
+// Fix2, T12 (ENGINE-29) — extraído de `renderer.ts`, sem mudar nenhuma
+// lógica de desenho.
 
 import { pixelRect } from "@/lib/character-sprite";
 import type { ViewState } from "@/lib/pixel-hunt-engine/renderer";
@@ -116,49 +111,10 @@ export function drawGrid(ctx: CanvasRenderingContext2D, world: EngineWorld, view
   }
 }
 
-/**
- * Desenha as zonas de "reunião" e o rastro/corpo do "cobol snake" da fase
- * secreta. Fix2, T12 — antes um bloco inline de ~40 linhas dentro de
- * `drawFrame` (`renderer.ts`); nomeado aqui sem mudar nenhum valor
- * desenhado.
- */
-export function drawSecretRunOverlay(ctx: CanvasRenderingContext2D, phaseState: SecretMainframePhaseState) {
-  for (const zone of phaseState.meetingZones) {
-    pixelRect(ctx, zone.x - zone.r, zone.y - zone.r * 0.6, zone.r * 2, zone.r * 1.2, "rgba(22,78,99,0.22)");
-    ctx.strokeStyle = "#7dff6a";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.ellipse(zone.x, zone.y, zone.r, zone.r * 0.6, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.fillStyle = "#f8fafc";
-    ctx.font = "9px 'Courier New', monospace";
-    ctx.textAlign = "center";
-    ctx.fillText("REUNIÃO", zone.x, zone.y - zone.r * 0.6 - 12);
-  }
-  const cobolSnake = phaseState.cobolSnake;
-  for (let i = cobolSnake.hist.length - 1; i >= 0; i -= 3) {
-    const point = cobolSnake.hist[i];
-    const r = 10 - (i / cobolSnake.hist.length) * 7;
-    ctx.fillStyle = i % 6 < 3 ? "#3f8a3a" : "#2e6e2e";
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, r, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  if (cobolSnake.active) {
-    ctx.fillStyle = "#2e6e2e";
-    ctx.beginPath();
-    ctx.arc(cobolSnake.x, cobolSnake.y, 11, 0, Math.PI * 2);
-    ctx.fill();
-    pixelRect(ctx, cobolSnake.x + (cobolSnake.dir > 0 ? 3 : -6), cobolSnake.y - 4, 3, 3, "#ffd94d");
-    ctx.strokeStyle = "#ff5a4d";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(cobolSnake.x + cobolSnake.dir * 11, cobolSnake.y);
-    ctx.lineTo(cobolSnake.x + cobolSnake.dir * 17, cobolSnake.y);
-    ctx.stroke();
-    ctx.fillStyle = "#f8fafc";
-    ctx.font = "9px 'Courier New', monospace";
-    ctx.textAlign = "center";
-    ctx.fillText("COBOL SNAKE", cobolSnake.x, cobolSnake.y - 20);
-  }
-}
+// O antigo `drawSecretRunOverlay` (zonas de "reunião" + rastro/corpo do
+// hazard "cobol snake") viveu brevemente em
+// `phases/secret-mainframe/rendering.ts` até ser removido por completo na
+// T18 (feature fase-secreta-datacenter): o hazard `cobol-snake.ts` foi
+// aposentado — a Cobra COBOL virou um `Actor` completo (T7, desenhada por
+// `drawCobolSnakeBody`) e as zonas de reunião foram substituídas pelas
+// poças de vazamento de memória (`hazards/puddles.ts`, T4/T15).

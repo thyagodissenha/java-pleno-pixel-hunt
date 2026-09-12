@@ -20,3 +20,11 @@ export function circleIntersectsRect(
 export function pointInRect(point: { x: number; y: number }, rect: { x: number; y: number; width: number; height: number }) {
   return point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
 }
+
+/** AABB overlap entre dois retângulos (x/y = canto superior-esquerdo). */
+export function rectsOverlap(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+) {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}

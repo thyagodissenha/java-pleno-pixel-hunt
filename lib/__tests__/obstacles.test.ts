@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_OBSTACLES, circleIntersectsRect, obstacleCount, pointInRect } from "@/lib/obstacles";
+import { MAX_OBSTACLES, circleIntersectsRect, obstacleCount, pointInRect, rectsOverlap } from "@/lib/obstacles";
 
 describe("obstacleCount", () => {
   it("grows linearly with resets below the cap", () => {
@@ -51,6 +51,27 @@ describe("circleIntersectsRect", () => {
 
   it("returns false when there is no overlap", () => {
     expect(circleIntersectsRect({ x: 0, y: 0, radius: 5 }, rect)).toBe(false);
+  });
+});
+
+describe("rectsOverlap", () => {
+  const rect = { x: 100, y: 100, width: 50, height: 50 };
+
+  it("returns true when two rectangles clearly overlap", () => {
+    expect(rectsOverlap(rect, { x: 125, y: 125, width: 50, height: 50 })).toBe(true);
+  });
+
+  it("returns false when two rectangles are clearly separated", () => {
+    expect(rectsOverlap(rect, { x: 300, y: 300, width: 50, height: 50 })).toBe(false);
+  });
+
+  it("returns false when two rectangles only touch at the border (strict inequality, no overlap)", () => {
+    // rect's right edge (150) meets the other rect's left edge (150) exactly.
+    expect(rectsOverlap(rect, { x: 150, y: 100, width: 50, height: 50 })).toBe(false);
+  });
+
+  it("returns true when rectangles overlap by a fraction of a pixel past the border", () => {
+    expect(rectsOverlap(rect, { x: 149.999, y: 100, width: 50, height: 50 })).toBe(true);
   });
 });
 

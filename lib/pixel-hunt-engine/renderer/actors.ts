@@ -16,6 +16,8 @@ const powerUpLabels: Record<PowerUpKind, string> = {
   stamina: "Sprint",
   promotion: "Promoção",
   call: "Chamado",
+  // NOVO (feature fase-secreta-datacenter, T1/SECBOSS-27).
+  cafeZip: "café.zip",
 };
 
 export function drawActor(ctx: CanvasRenderingContext2D, actor: Actor, visualFrame: number) {
@@ -93,8 +95,11 @@ export function drawActor(ctx: CanvasRenderingContext2D, actor: Actor, visualFra
     ctx.fillText(actor.label, actor.x, actor.y - actor.size / 2 - 8);
   }
   const bar = actor.size;
-  if (isHiddenWhileDead) {
-    // Sem barra de vida enquanto está "derrubado" — só o anel fantasma.
+  if (isHiddenWhileDead || actor.hideHealthBar) {
+    // Sem barra de vida enquanto está "derrubado" (só o anel fantasma) OU
+    // quando `Actor.hideHealthBar` está setado (fix cycle 2, SECBOSS-01) —
+    // hoje só o `secretBoss`, cujo hp/maxHp "sentinela" tornaria esta barra
+    // genérica sempre ~100% cheia, contradizendo o HUD dedicado da fase.
   } else if (actor.kind === "boss" && actor.bossPhase) {
     const phaseColors = ["#22c55e", "#facc15", "#ef4444"];
     for (let phase = 1; phase <= 3; phase += 1) {
@@ -206,6 +211,8 @@ export function drawPowerUp(ctx: CanvasRenderingContext2D, powerUp: PowerUp) {
     stamina: "#22c55e",
     promotion: "#facc15",
     call: "#38bdf8",
+    // NOVO (feature fase-secreta-datacenter, T1/SECBOSS-27).
+    cafeZip: "#eab308",
   };
   ctx.strokeStyle = color[powerUp.kind];
   ctx.lineWidth = finalChoice ? 3 : 2;

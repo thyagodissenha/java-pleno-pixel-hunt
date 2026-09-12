@@ -20,7 +20,11 @@ export type EnemyKind =
   | "legacy"
   | "secretBoss"
   | "daemon"
-  | "cron";
+  | "cron"
+  // NOVO (feature fase-secreta-datacenter, T1/SECBOSS-13..16): Cobra COBOL
+  // como `Actor` completo (HP/contato/score), substituindo o hazard sem HP
+  // que `cobol-snake.ts` representava.
+  | "cobolSnake";
 
 export type ObstacleKind = "desk" | "server" | "firewall" | "board" | "rack" | "crt" | "chair" | "fern" | "shroom";
 
@@ -32,7 +36,10 @@ export type PowerUpKind =
   | "review"
   | "stamina"
   | "promotion"
-  | "call";
+  | "call"
+  // NOVO (feature fase-secreta-datacenter, T1/T8, SECBOSS-27): drop de
+  // "cafe.zip" da fase secreta — liga `haste`+`fury` (ambos já existentes).
+  | "cafeZip";
 
 export type SoundName = "shoot" | "hit" | "hurt" | "boss" | "over" | "save" | "start" | "won";
 
@@ -54,7 +61,11 @@ export type Actor = {
   bossPhase?: number;
   bossState?: "idle" | "tele" | "atk";
   bossStateTimer?: number;
-  bossAtkPattern?: number;
+  // NOVO (feature fase-secreta-datacenter, T15): passou de `number` (índice
+  // único, ciclando 0→1→2→0) para `number[]` — a fase 4 (`CONFIG.PHASES[3]`,
+  // `power: "random"`) sorteia entre 0 e 2 padrões por ciclo de ataque do
+  // `secretBoss` (spec.md SECBOSS-33), então um único índice não basta mais.
+  bossAtkPattern?: number[];
   // Hooks genéricos opcionais (design.md § Components → types.ts's Actor,
   // Fatia 2) — tornam `physics.ts`/`renderer/actors.ts` data-driven em vez
   // de checar `Actor.kind` diretamente. Setados pela Phase que spawna o
@@ -77,6 +88,29 @@ export type Actor = {
   // (esse permanece com cor própria hardcoded). Sem este campo, o Actor usa
   // a cor genérica de hoje.
   deathBurstColor?: string;
+  // NOVO (feature fase-secreta-datacenter, T13/SECBOSS-04): marca um `cron`
+  // que já "caiu" e foi revivido pelo cooldown de respawn
+  // (`stepSecretEnemyAi`, `phases/secret-mainframe/index.ts`) — usado só
+  // para decidir o peso de firewall (`CONFIG.W_PTS.respawned`, 0.5) na
+  // PRÓXIMA morte desse mesmo Actor, distinguindo-a de uma morte "normal"
+  // (peso 1). Sem efeito para qualquer outro `EnemyKind`.
+  respawnedFromFallen?: boolean;
+  // NOVO (fix cycle 2, SECBOSS-01/22-24): quando `true`, `drawActor`
+  // (renderer/actors.ts) suprime a barra de vida genérica deste Actor —
+  // aditivo, `undefined`/`false` preserva o comportamento de hoje para
+  // qualquer outro `Actor`. Usado só pelo `secretBoss`
+  // (`phases/secret-mainframe/index.ts`'s `spawnSecretEnemy`), cujo
+  // `hp`/`maxHp` são forçados a um valor "sentinela" a cada frame
+  // (`syncBossHpSentinel`) — sem isto, a barra genérica sempre aparecia
+  // ~100% cheia/verde, contradizendo o progresso real mostrado pelo HUD
+  // dedicado (`drawSecretPhaseHud`, hud.ts).
+  hideHealthBar?: boolean;
+  // NOVO (quick fix pós-feature, feedback do usuário): quando `true`,
+  // `drawMainframeBoss` (rendering.ts) desenha um anel de escudo ao redor
+  // do boss. Setado a cada frame pelo `update()` de `secret-mainframe`
+  // conforme `state.firewall.mode === "SHIELD"` — aditivo, sem efeito para
+  // qualquer outro `Actor` que não o define.
+  shieldVisible?: boolean;
 };
 
 export type Shot = {
@@ -111,26 +145,44 @@ export type Obstacle = {
   height: number;
   kind: ObstacleKind;
   label: string;
+  // NOVO (feature fase-secreta-datacenter, T1/T5/T12): hook opcional de
+  // desenho, espelhando `Actor.render?` — quando presente, o loop de
+  // obstáculos de `renderer/world.ts` (T10) chama isto em vez do desenho
+  // genérico atual. Usado pelas barreiras-firewall da fase secreta
+  // (`drawFirewallBarrier`, `rendering.ts`).
+  render?: (ctx: CanvasRenderingContext2D, obstacle: Obstacle, visualFrame: number) => void;
 };
 
 // Perigos da fase secreta ("O Mainframe") que não se encaixam no vocabulário
 // normal de Actor/Obstacle do motor: projéteis reais do chefe (não são
-// minions perseguidores), o "cobol snake" que atravessa a arena e as zonas
-// de "reunião" que reduzem a velocidade do jogador.
+// minions perseguidores).
 export type SecretBossShot = { x: number; y: number; vx: number; vy: number };
 
-export type MeetingZone = { x: number; y: number; base: number; r: number; ph: number };
+// --- Fase secreta "O Datacenter Esquecido" (design.md § Data Models) ---
+//
+// SPEC_DEVIATION (T1): o design.md descreve `FirewallState`/`FirewallMode`
+// como tipos "privados" de `firewall.ts` (não exportados daqui) e `Puddle`
+// como privado de `hazards/puddles.ts`. Isso não é possível respeitando a
+// ordem de tasks do tasks.md (T1 precisa do formato final de
+// `SecretMainframePhaseState` — que embute os dois — ANTES de `firewall.ts`
+// (T3) e `hazards/puddles.ts` (T4) existirem). Resolução: os tipos vivem
+// aqui (mesmo padrão já usado no arquivo para `SecretBossShot`, e antes
+// para `MeetingZone`/`CobolSnake`), e `firewall.ts`/`hazards/puddles.ts`
+// importam-nos daqui em vez de redefini-los. Comportamento idêntico ao
+// design; só a localização do `type` muda.
+export type FirewallMode = "SHIELD" | "BREAK_FX" | "DPS";
 
-export type CobolSnake = {
-  active: boolean;
-  cd: number;
-  t: number;
-  dir: number;
-  y0: number;
-  x: number;
-  y: number;
-  hist: Array<{ x: number; y: number }>;
+export type FirewallState = {
+  mode: FirewallMode;
+  phaseIndex: 1 | 2 | 3 | 4;
+  counter: number;
+  barHp: number;
+  barMaxHp: number;
+  breakFxTimer: number;
+  won: boolean;
 };
+
+export type Puddle = { x: number; y: number; baseRadius: number; radius: number };
 
 // PHASEFLOW-08/09 (design.md § Tech Decisions): união fechada de 2 valores
 // de propósito — gateia submissão de score (`!== "debug"`) — é uma
@@ -217,10 +269,18 @@ export type SecretMainframePhaseState = {
   phase: "secret-mainframe";
   localGameState: "playing" | "over" | "won";
   secretBossShots: SecretBossShot[];
-  meetingZones: MeetingZone[];
-  cobolSnake: CobolSnake;
   datacenterMoss: Array<{ x: number; y: number; r: number }>;
   datacenterCracks: Array<Array<{ x: number; y: number }>>;
+  // NOVO (feature fase-secreta-datacenter, T1) — substitui
+  // `meetingZones`/`cobolSnake` (spec.md assumptions A7/A8, confirmadas em
+  // design.md). Integração completa do ciclo (T13+) fica fora deste batch;
+  // até lá, `index.ts` popula estes campos com um estado inicial válido
+  // (fase 1, `SHIELD`) sem ainda reagir a eles frame a frame.
+  firewall: FirewallState;
+  puddles: Puddle[];
+  memorySurgeUntil: number;
+  slowMoUntil: number;
+  stunUntil: number;
 };
 
 // Fatia 3 (T13, PHASEFLOW-10): `createWavePhase(waveNumber)` produz nós

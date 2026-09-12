@@ -47,6 +47,21 @@ function announceEffect(world: EngineWorld, message: string) {
   world.run.effectBanner = 100;
 }
 
+/**
+ * Multiplicador de score de morte de inimigo por fase — 2 na fase 4 do
+ * Mainframe (spec.md SECBOSS-30..35), 1 em qualquer outro caso (nenhuma
+ * regressão no `normal-run/` ou nas fases 1-3 da fase secreta). Type guard
+ * estreito em `world.phaseState` (design.md § Risks & Concerns — única
+ * exceção documentada ao "zero acoplamento" desta feature: uma LEITURA, não
+ * escrita, do formato de `SecretMainframePhaseState`, com fallback seguro
+ * `1` para qualquer outra Phase).
+ */
+export function secretPhaseScoreMultiplier(world: EngineWorld): number {
+  const phaseState = world.phaseState;
+  if (phaseState?.phase === "secret-mainframe" && phaseState.firewall.phaseIndex === 4) return 2;
+  return 1;
+}
+
 function obstacleBlocksCircle(world: EngineWorld, x: number, y: number, radius: number) {
   return world.obstacles.some((obstacle) => circleIntersectsRect({ x, y, radius }, obstacle));
 }
@@ -62,6 +77,9 @@ const ENEMY_DEATH_SCORE: Record<EnemyKind, number> = {
   daemon: 65,
   qa: 60,
   user: 45,
+  // NOVO (feature fase-secreta-datacenter, T1/SECBOSS-15): 30 base (60 na
+  // fase 4, via multiplicador de score — T8), conforme spec.md.
+  cobolSnake: 30,
 };
 
 const ENEMY_TOUCH_DAMAGE: Record<EnemyKind, number> = {
@@ -75,6 +93,9 @@ const ENEMY_TOUCH_DAMAGE: Record<EnemyKind, number> = {
   daemon: 10,
   user: 8,
   qa: 8,
+  // NOVO (feature fase-secreta-datacenter, T1/SECBOSS-14): 20 base (40 na
+  // fase 4), conforme spec.md.
+  cobolSnake: 20,
 };
 
 /** Dispara um tiro do jogador em direção ao inimigo vivo mais próximo (ou ao ponteiro, se não houver alvo). Porta `shoot()` (app/page.tsx:1367-1391). */
@@ -187,6 +208,14 @@ function collectPowerUp(world: EngineWorld, audio: AudioEngine, powerUp: PowerUp
   } else if (powerUp.kind === "hotfix") {
     world.player.hp = clamp(world.player.hp + 32, 0, world.player.maxHp);
     announceEffect(world, "HOTFIX: vida recuperada");
+  } else if (powerUp.kind === "cafeZip") {
+    // NOVO (feature fase-secreta-datacenter, T8/SECBOSS-27): drop da fase
+    // secreta — liga `haste`+`fury` juntos (ambos já existentes: `haste>0`
+    // dá speed×1.34, `fury>0` acelera o fire-rate), 8s cada. Zero mecânica
+    // nova de player.
+    world.player.haste = 8;
+    world.player.fury = 8;
+    announceEffect(world, "CAFE.ZIP: velocidade e tiro turbinados");
   } else if (powerUp.kind === "review") {
     world.player.focus = 7;
     world.player.invincible = Math.max(world.player.invincible, 2.4);
@@ -562,7 +591,7 @@ function resolveEnemyPlayerCollisions(world: EngineWorld, audio: AudioEngine, ev
  */
 function resolveEnemyDeath(world: EngineWorld, audio: AudioEngine, events: FrameEvents, enemy: Actor, enemyIndex: number) {
   const { player, run } = world;
-  run.score += ENEMY_DEATH_SCORE[enemy.kind];
+  run.score += ENEMY_DEATH_SCORE[enemy.kind] * secretPhaseScoreMultiplier(world);
   const preventRemoval = enemy.onDeath?.(world, audio, events);
   if (preventRemoval) return;
   if (enemy.kind === "boss") {

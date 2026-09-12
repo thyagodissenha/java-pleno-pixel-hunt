@@ -7,12 +7,35 @@ import {
   finalBossHp,
   resolveFinalChoiceClickPowerUp,
   scaledEnemyHp,
+  secretPhaseScoreMultiplier,
   shoot,
   stepWorld,
   triggerActivePower,
 } from "@/lib/pixel-hunt-engine/physics";
 import { FINAL_CHOICE_CLICK_RADIUS } from "@/lib/pixel-hunt-engine/phases/normal-run/final-choice";
-import type { Actor, EngineWorld, InputState, Obstacle, PowerUpKind } from "@/lib/pixel-hunt-engine/types";
+import type {
+  Actor,
+  EngineWorld,
+  InputState,
+  Obstacle,
+  PowerUpKind,
+  SecretMainframePhaseState,
+} from "@/lib/pixel-hunt-engine/types";
+
+function makeSecretPhaseState(phaseIndex: 1 | 2 | 3 | 4): SecretMainframePhaseState {
+  return {
+    phase: "secret-mainframe",
+    localGameState: "playing",
+    secretBossShots: [],
+    datacenterMoss: [],
+    datacenterCracks: [],
+    firewall: { mode: "DPS", phaseIndex, counter: 0, barHp: 100, barMaxHp: 100, breakFxTimer: 0, won: false },
+    puddles: [],
+    memorySurgeUntil: 0,
+    slowMoUntil: 0,
+    stunUntil: 0,
+  };
+}
 
 function makeAudio(): AudioEngine {
   return {
@@ -268,6 +291,7 @@ describe("collectPowerUp via stepWorld (fix1, ENGINE-18 — FrameEvents.powerUpC
     "stamina",
     "promotion",
     "call",
+    "cafeZip",
   ];
 
   it.each(allPowerUpKinds)("sets events.powerUpCollected = true when a '%s' power-up is collected", (kind) => {
@@ -371,5 +395,60 @@ describe("computeBossVolleyPlan (GOLIVESPLIT-04 — wave-4 non-final boss volley
     const spawnedIncidents = world.enemies.filter((e) => e.kind === "incident");
     expect(spawnedIncidents.length).toBeGreaterThan(0);
     expect(spawnedIncidents.every((e) => e.label === "P1")).toBe(true);
+  });
+});
+
+describe("cafeZip power-up (T8, SECBOSS-27)", () => {
+  it("grants 8s of haste and fury simultaneously (speed×1.34 + fire-rate acelerado)", () => {
+    const world = makeWorld({
+      powerUps: [{ x: 480, y: 270, kind: "cafeZip", ttl: 999, pulse: 0 }],
+    });
+    stepWorld(world, makeInput(), 0.016, makeAudio());
+    expect(world.player.haste).toBe(8);
+    expect(world.player.fury).toBe(8);
+  });
+});
+
+describe("secretPhaseScoreMultiplier (T8, SECBOSS-30..35)", () => {
+  it("returns 1 when world.phaseState is null (regressão: normal-run nunca teve phaseState)", () => {
+    const world = makeWorld({ phaseState: null });
+    expect(secretPhaseScoreMultiplier(world)).toBe(1);
+  });
+
+  it("returns 1 for the 'wave' phaseState (regressão: outra Phase nunca é afetada)", () => {
+    const world = makeWorld({ phaseState: { phase: "wave", localGameState: "playing" } });
+    expect(secretPhaseScoreMultiplier(world)).toBe(1);
+  });
+
+  it("returns 1 for secret-mainframe phases 1-3", () => {
+    for (const phaseIndex of [1, 2, 3] as const) {
+      const world = makeWorld({ phaseState: makeSecretPhaseState(phaseIndex) });
+      expect(secretPhaseScoreMultiplier(world)).toBe(1);
+    }
+  });
+
+  it("returns 2 for secret-mainframe phase 4", () => {
+    const world = makeWorld({ phaseState: makeSecretPhaseState(4) });
+    expect(secretPhaseScoreMultiplier(world)).toBe(2);
+  });
+
+  it("doubles the score credited by resolveEnemyDeath (via stepWorld) on secret-mainframe phase 4", () => {
+    const world = makeWorld({
+      phaseState: makeSecretPhaseState(4),
+      enemies: [makeEnemy({ hp: 1, kind: "user", x: 800, y: 270 })],
+      shots: [{ x: 800, y: 270, vx: 0, vy: 0, ttl: 10 }],
+    });
+    stepWorld(world, makeInput(), 0.016, makeAudio());
+    expect(world.run.score).toBe(45 * 2); // ENEMY_DEATH_SCORE.user = 45, dobrado na fase 4
+  });
+
+  it("does not double the score credited on secret-mainframe phase 3 (regressão de fase)", () => {
+    const world = makeWorld({
+      phaseState: makeSecretPhaseState(3),
+      enemies: [makeEnemy({ hp: 1, kind: "user", x: 800, y: 270 })],
+      shots: [{ x: 800, y: 270, vx: 0, vy: 0, ttl: 10 }],
+    });
+    stepWorld(world, makeInput(), 0.016, makeAudio());
+    expect(world.run.score).toBe(45);
   });
 });
