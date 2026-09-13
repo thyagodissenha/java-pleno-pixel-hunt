@@ -5,7 +5,18 @@ import type { ThemeId } from "@/lib/theme/theme-cookie";
 // app/page.tsx can't export extra names (AD-008 — it's a route file), so
 // GameState/MenuPanel live here and app/page.tsx imports them from here.
 export type GameState = "menu" | "playing" | "paused" | "over" | "won" | "promotion" | "choice";
-export type MenuPanel = "home" | "scores" | "help" | "skins";
+export type MenuPanel = "home" | "scores" | "help" | "skins" | "secret";
+
+export type SecretPhaseCard = {
+  id: string;
+  name: string;
+  subtitle: string;
+  tags: readonly string[];
+  estimatedTime: string;
+  difficulty: number;
+  locked: boolean;
+  lockedHint: string;
+};
 
 export interface HudProps {
   // leitura
@@ -35,6 +46,9 @@ export interface HudProps {
   scoreSaved: boolean;
   scoreMessage: string;
   promotionCountdown: number;
+  secretPhases: SecretPhaseCard[];
+  secretPhaseToast: string | null;
+  secretPhaseLoading: SecretPhaseCard | null;
   // neon-only (canvas header/footer parity — wired to the engine in T6)
   bossKillsCount: number;
   bossKillTargetCount: number;
@@ -52,8 +66,10 @@ export interface HudProps {
   setMuted: (value: boolean | ((current: boolean) => boolean)) => void;
   setVolume: (value: number) => void;
   setMenuIndex: (index: number) => void;
+  setSecretPhaseIndex: (index: number) => void;
   activateMenuOption: (index: number) => void;
   setMenuPanel: (panel: MenuPanel) => void;
+  confirmSecretPhaseSelection: (index: number) => void;
   setSelectedCharacterId: (id: string) => void;
   openSettingsPanel: () => void;
   closeSettingsPanel: () => void;

@@ -791,6 +791,411 @@ canvas {
   image-rendering: pixelated;
 }
 
+/* Viewport rolável (IDCLIPV14-01) — envolve `.secret-phase-list`. 8 fases não
+   cabem mais como os 2 cards originais, então a lista ganha altura fixa +
+   scroll (nativo — Opção C do design.md: no neon, só a APARÊNCIA da
+   scrollbar nativa é escondida — wheel/teclado/touch continuam 100%
+   funcionais — e o thumb decorativo (T11, neon-only) reflete essa mesma
+   posição; fix-cycle-1/AC20: no clássico a scrollbar nativa continua
+   visível, é a única pista de que a lista rola, regra de esconder agora
+   escopada a `.study-outer-frame` em `neon.css`). Compartilhado pelos dois
+   temas (fora de qualquer `richLayout &&`), mesmo padrão de
+   `overflow-y: auto` já usado por `.frame-screen` (acima). `max-height` em
+   `min(...)` (não um px fixo) pra continuar funcional em viewports estreitas
+   (edge case do spec.md). */
+/* fix-cycle-1 (IDCLIPV14-01/02/03/04/06): wrapper comum que envolve o
+   `.secret-phase-viewport` (que rola) e a track/thumb decorativos +
+   fade de borda (que NÃO devem rolar) — ver comentário em
+   `secret-phase-panel.tsx`. Sem `overflow` própria, só `position:relative`
+   pra servir de containing block pros irmãos `position:absolute`
+   (track/thumb em neon.css, fade abaixo). Compartilhado pelos dois temas
+   (o clássico não tem track/thumb/fade no DOM, então isto é inócuo lá). */
+.secret-phase-scroll-area {
+  position: relative;
+}
+
+/* fix-cycle-1 (IDCLIPV14-01/03, achado (a) do code-review, regressão de
+   IDCLIPMENU-18): as setas `.secret-phase-arrow` (`left:-22px`/`right:-22px`,
+   abaixo) e o hint `.secret-phase-enter-hint` (`bottom` negativo) extrapolam
+   a caixa do card de propósito (design aprovado no mockup). Enquanto viviam
+   fora de um elemento com overflow isso não importava; agora que os cards
+   vivem dentro do `.secret-phase-viewport` (`overflow-y:auto`), o browser
+   clipa qualquer coisa fora do padding-box do viewport (CSS: se um eixo é
+   `auto` e o outro NÃO é `visible`, ok — mas se o outro fosse `visible` a
+   spec manda computá-lo como `auto` também, então `overflow-x:visible`
+   sozinho não bastaria). Correção escolhida: padding horizontal no viewport
+   do tamanho do espaço que as setas precisam (22px + folga) — SEM margem
+   negativa compensando na lista interna (`.character-card`/`.secret-phase-card`
+   tem `width:100%`, então card = borda do content-box da lista; compensar
+   o padding com margem negativa igual devolveria o card exatamente pra
+   borda do viewport e recriaria o clipping). O trade-off aceito: os cards
+   ficam ~28px mais estreitos de cada lado (mesmo respiro que as setas já
+   tinham fora da caixa do card antes desta feature envolver a lista num
+   elemento com overflow). */
+.secret-phase-viewport {
+  position: relative;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  padding-left: 28px;
+  padding-right: 28px;
+}
+
+/* Cabeçalho e rodapé próprios do painel secreto (IDCLIPV14-16/17,
+   richLayout-only — o clássico mantém o `<h2>Fases Secretas</h2>`
+   compartilhado de sempre, sem rodapé novo). Cor/glow do título em
+   neon.css. */
+.secret-phase-title {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+.secret-phase-subtitle-header {
+  margin: 4px 0 0;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.secret-phase-footer-hint {
+  margin: 10px 0 0;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.secret-phase-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+  position: relative;
+  z-index: 1;
+}
+
+.secret-phase-card {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  text-align: left;
+}
+
+/* Layout lado-a-lado (IDCLIPMENU-17/18/19, fix1, neon-only via `richLayout`)
+   — esqueleto sem cor aqui; cor/glow/blink em neon.css. O clássico nunca
+   tem `.secret-phase-info` no DOM (não passa `richLayout`), então essas
+   regras nunca se aplicam lá. */
+.secret-phase-card:has(.secret-phase-info) {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: relative;
+}
+
+.secret-phase-info {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  text-align: left;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Prévia animada (`SecretPhasePreview`, canvas 96x56) — sem isto, a regra
+   genérica `canvas { width:100%; height:100%; border:4px...; box-shadow:...
+   }` (pensada pro canvas grande da arena) estica o bitmap minúsculo pra
+   preencher todo o slot flex do card e aplica moldura pesada demais pra uma
+   prévia pequena — visualmente vira um bloco escuro sem preview reconhecível.
+   Seletor com 3 classes (`.secret-phase-list .secret-phase-card
+   .secret-phase-preview`) de propósito: `neon.css` também tem
+   `.study-outer-frame .study-arena-frame canvas` (2 classes + 1 elemento) —
+   sem essa especificidade extra aqui, o card neon volta a herdar
+   `background:#000`/`border:0` daquela regra por ter mais peso no
+   desempate. Achado durante teste manual (QA visual), fora do que os
+   testes de integração conseguem pegar (JSDOM não faz layout real).
+   `visibility: visible` é necessário pelo MESMO motivo: `.frame-screen-active
+   canvas { visibility: hidden; }` (globals.css, esconde o canvas da arena
+   principal atrás do overlay de menu) também casa com QUALQUER canvas
+   descendente de `.frame-screen-active` — inclusive este preview, que vive
+   dentro do mesmo `.canvas-frame.frame-screen-active` (ver `page.tsx`/
+   `NeonHud.tsx`, o painel "secret" é renderizado sobre o `frame-screen`).
+   Sem este override o canvas nunca aparece na tela real (achado: `toDataURL()`
+   no bitmap continua retornando o desenho correto mesmo com
+   `visibility:hidden`, então essa lacuna não aparece numa checagem de
+   pixels — só é visível inspecionando `getComputedStyle` ou o
+   screenshot real). */
+.secret-phase-list .secret-phase-card .secret-phase-preview {
+  width: 96px;
+  height: 56px;
+  flex-shrink: 0;
+  border: 2px solid #334155;
+  background: #0f172a;
+  box-shadow: none;
+  visibility: visible;
+}
+
+/* Canto direito do card: número grande + tempo estimado empilhados abaixo
+   dele (IDCLIPMENU-19, fix cycle 1 — spec.md exige "com o tempo estimado
+   abaixo dele", mesma posição relativa do protótipo). Item flex normal (não
+   `position:absolute`) — absoluto no canto do CARD sobrepunha o fim da
+   coluna de info (dificuldade/status), que também termina perto do canto
+   inferior direito; achado durante teste manual (QA visual).*/
+.secret-phase-corner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.secret-phase-number {
+  font-size: 32px;
+  font-weight: 700;
+  opacity: 0.25;
+  line-height: 1;
+}
+
+.secret-phase-corner-time {
+  margin: 0;
+  color: #facc15;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.secret-phase-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 18px;
+  animation: secret-phase-arrow-blink 0.9s steps(1) infinite;
+}
+
+.secret-phase-arrow-left { left: -22px; }
+.secret-phase-arrow-right { right: -22px; }
+
+/* Hint "ENTER PARA ENTRAR" abaixo do card selecionado (IDCLIPV14-15,
+   richLayout-only) — mesmo posicionamento absoluto relativo ao card já
+   usado pelas setas (`.secret-phase-arrow`). Cor por fase em neon.css. */
+.secret-phase-enter-hint {
+  position: absolute;
+  bottom: -18px;
+  left: 0;
+  right: 0;
+  margin: 0;
+  text-align: center;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@keyframes secret-phase-arrow-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+/* Palavras flutuantes decorativas (IDCLIPMENU-20, fix1, neon-only) —
+   esqueleto sem cor; cor/opacidade final em neon.css. Nunca captura
+   cliques (puramente decorativo, atrás dos cards). `.frame-panel` em si não
+   tem `position` própria (compartilhado por todos os painéis de menu) —
+   escopar o `position: relative` só quando a camada flutuante existe evita
+   que o `inset: 0` do filho escape pro `.frame-screen` (ancestral
+   posicionado mais próximo) e vaze pra fora da caixa do painel. */
+.frame-panel:has(.secret-phase-float-layer),
+.frame-panel:has(.secret-phase-atmosphere-overlay) {
+  position: relative;
+}
+
+.secret-phase-float-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.secret-phase-float-layer span {
+  position: absolute;
+  white-space: nowrap;
+  font-size: 11px;
+  text-transform: uppercase;
+  animation: secret-phase-float 6s ease-in infinite;
+}
+
+@keyframes secret-phase-float {
+  0% { transform: translateY(0); opacity: 0; }
+  10% { opacity: 0.35; }
+  90% { opacity: 0.35; }
+  100% { transform: translateY(-40px); opacity: 0; }
+}
+
+/* prefers-reduced-motion (IDCLIPMENU-25, fix1) — neutraliza as animações
+   puramente decorativas (setas piscando, palavras flutuantes). A barra de
+   loading (`secret-phase-loading-bar-fill`) fica de fora de propósito: é
+   informação de progresso real, não decoração. */
+@media (prefers-reduced-motion: reduce) {
+  .secret-phase-arrow {
+    animation: none;
+  }
+
+  .secret-phase-float-layer span {
+    animation: none;
+  }
+}
+
+/* Overlay de scanline + vinheta (IDCLIPMENU-21, fix1, neon-only) — esqueleto
+   sem efeito visual aqui (os pseudo-elementos ::before/::after com o
+   gradiente de fato ficam em neon.css); `pointer-events: none` já na
+   classe base garante que nunca captura clique, independente do tema. */
+.secret-phase-atmosphere-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Label "FASE 0N" acima do nome (IDCLIPV14-13, richLayout-only — vive
+   dentro do próprio branch condicional de `.secret-phase-info`, sem
+   precisar de `richLayout &&` extra). Cor por fase em neon.css. */
+.secret-phase-index-label {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.secret-phase-card h3 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 15px;
+}
+
+.secret-phase-subtitle {
+  margin: 0;
+  color: #7dd3fc;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.secret-phase-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.secret-phase-tags li {
+  border: 2px solid #475569;
+  padding: 2px 6px;
+  font-size: 9px;
+  text-transform: uppercase;
+  color: #bfdbfe;
+}
+
+.secret-phase-meta {
+  margin: 4px 0 0;
+  color: #facc15;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.secret-phase-difficulty {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.secret-phase-pip {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #475569;
+  background: transparent;
+}
+
+.secret-phase-pip-filled {
+  background: #facc15;
+  border-color: #facc15;
+}
+
+.secret-phase-status {
+  margin: 4px 0 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #4ade80;
+}
+
+.secret-phase-locked .secret-phase-status {
+  color: #f87171;
+}
+
+.secret-phase-toast {
+  margin: 14px 0 0;
+  border: 3px solid #f87171;
+  background: rgba(127, 29, 29, 0.35);
+  color: #fef2f2;
+  padding: 10px 14px;
+  font-size: 12px;
+  text-align: center;
+  text-transform: uppercase;
+  /* "Buzz" (IDCLIPMENU-12) — dispara sempre que o elemento monta, ou seja, no
+     momento exato em que secretPhaseToast sai de null pra um texto
+     (`menu.buzz` do protótipo Menu_IDCLIP.html como referência de timing). */
+  animation: secret-phase-toast-buzz 0.4s ease-in-out;
+}
+
+@keyframes secret-phase-toast-buzz {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(3px); }
+}
+
+/* Transição de carregamento ao confirmar "O Mainframe" (IDCLIPMENU-22/23) —
+   compartilhada pelos dois temas; só a cor da barra (neon.css) muda por
+   tema. Enquanto visível, é o único conteúdo do painel "secret" (sem
+   cards/toast/botão "Voltar" — reforça que nenhuma entrada tem efeito). */
+.secret-phase-loading {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  margin-top: 24px;
+  text-align: center;
+}
+
+.secret-phase-loading-text {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.secret-phase-loading-bar {
+  width: 100%;
+  max-width: 260px;
+  height: 12px;
+  border: 2px solid #475569;
+  background: rgba(15, 23, 42, 0.6);
+  overflow: hidden;
+}
+
+.secret-phase-loading-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: #4ade80;
+  animation: secret-phase-loading-fill 1.4s linear forwards;
+}
+
+@keyframes secret-phase-loading-fill {
+  0% { width: 0%; }
+  100% { width: 100%; }
+}
+
 .menu-score-list {
   margin-top: 18px;
 }

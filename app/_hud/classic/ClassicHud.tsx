@@ -6,6 +6,7 @@ import { CHARACTERS, resolveCharacter } from "@/lib/characters";
 import type { HudProps, MenuPanel } from "@/app/_hud/hud-props";
 import { PixelTitlePanels } from "@/app/_hud/title-screen/PixelTitlePanels";
 import { OpeningCutscene } from "@/app/_hud/cutscene/OpeningCutscene";
+import { SecretPhasePanel } from "@/app/_hud/secret-phase-panel";
 
 // WORLD/frameScreenLabel are declared locally in app/page.tsx today (it can't
 // export extra names — AD-008). Duplicated here as the shared shape used only
@@ -17,6 +18,7 @@ const adsenseBannerSlotId = getAdsenseBannerSlotId();
 function frameScreenLabel(panel: MenuPanel) {
   if (panel === "scores") return "High Scores";
   if (panel === "skins") return "Personagens e Skins";
+  if (panel === "secret") return "Fases Secretas";
   return "Como jogar";
 }
 
@@ -48,6 +50,8 @@ export function ClassicHud(props: HudProps) {
     scoreSaved,
     scoreMessage,
     promotionCountdown,
+    secretPhases,
+    secretPhaseToast,
     debugBossHealth,
     debugPowerUpCount,
     debugAbilityCooldown,
@@ -56,8 +60,10 @@ export function ClassicHud(props: HudProps) {
     setMuted,
     setVolume,
     setMenuIndex,
+    setSecretPhaseIndex,
     activateMenuOption,
     setMenuPanel,
+    confirmSecretPhaseSelection,
     setSelectedCharacterId,
     setSupportOpen,
     setTheme,
@@ -351,6 +357,17 @@ export function ClassicHud(props: HudProps) {
                     <button type="button" onClick={() => setMenuPanel("home")}>Voltar ao início</button>
                   </div>
                 </>
+              )}
+
+              {menuPanel === "secret" && (
+                <SecretPhasePanel
+                  secretPhases={secretPhases}
+                  menuIndex={menuIndex}
+                  secretPhaseToast={secretPhaseToast}
+                  setSecretPhaseIndex={setSecretPhaseIndex}
+                  confirmSecretPhaseSelection={confirmSecretPhaseSelection}
+                  setMenuPanel={setMenuPanel}
+                />
               )}
             </div>
           </dialog>

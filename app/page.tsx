@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createDebugKeyHandler,
   DEBUG_ACTION_EVENT,
@@ -25,14 +25,14 @@ import {
 import { appendCheatBuffer, matchCheatCode } from "@/lib/cheat-codes";
 import { useThemePreference } from "@/lib/theme/use-theme-preference";
 import { drawCharacterBody } from "@/lib/character-sprite";
-import type { GameState, HudProps, MenuPanel } from "@/app/_hud/hud-props";
+import type { GameState, HudProps, MenuPanel, SecretPhaseCard } from "@/app/_hud/hud-props";
 import { ClassicHud } from "@/app/_hud/classic/ClassicHud";
 import { NeonHud } from "@/app/_hud/neon/NeonHud";
 import { isOpeningCutscenePlaying } from "@/app/_hud/cutscene/OpeningCutscene";
 import { CHARACTERS, DEFAULT_CHARACTER_ID, resolveCharacter } from "@/lib/characters";
 import { createEngine, type Engine } from "@/lib/pixel-hunt-engine/orchestrator";
 import { normalRunGraph } from "@/lib/pixel-hunt-engine/phases/normal-run/graph";
-import { secretMainframeGraph } from "@/lib/pixel-hunt-engine/phases/secret-mainframe/graph";
+import { SECRET_PHASES } from "@/lib/pixel-hunt-engine/phases/secret-phases";
 import type { EngineSnapshot } from "@/lib/pixel-hunt-engine/types";
 
 const adsenseClientId = getPublicAdsenseClientId();
@@ -88,6 +88,7 @@ export default function Home() {
   const [menuPanel, setMenuPanel] = useState<MenuPanel>("home");
   const [selectedCharacterId, setSelectedCharacterId] = useState(DEFAULT_CHARACTER_ID);
   const [menuIndex, setMenuIndex] = useState(0);
+  const [secretPhaseToast, setSecretPhaseToast] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(0.35);
   const [supportOpen, setSupportOpen] = useState(false);
@@ -265,13 +266,10 @@ export default function Home() {
       if (!matched) return;
       cheatBufferRef.current = "";
       if (matched === "idclip") {
-        setScoreSaved(true);
-        setPlayerName("");
-        setSupportOpen(false);
-        promotionExpiredRef.current = false;
-        engineRef.current?.playSound("start");
-        const snapshot = engineRef.current?.start(secretMainframeGraph);
-        if (snapshot) applySnapshot(snapshot);
+        menuIndexRef.current = 0;
+        setMenuIndex(0);
+        setSecretPhaseToast(null);
+        setMenuPanel("secret");
       } else {
         setMenuPanel("skins");
       }
@@ -435,6 +433,52 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const secretPhases = useMemo<SecretPhaseCard[]>(
+    () =>
+      SECRET_PHASES.map((phase) => ({
+        id: phase.id,
+        name: phase.name,
+        subtitle: phase.subtitle,
+        tags: phase.tags,
+        estimatedTime: phase.estimatedTime,
+        difficulty: phase.difficulty,
+        locked: phase.graph === null,
+        lockedHint: phase.lockedHint,
+      })),
+    [],
+  );
+
+  const setSecretPhaseIndex = useCallback((index: number) => {
+    setMenuIndex(index);
+    setSecretPhaseToast(null);
+  }, []);
+
+  // REACTOFICIAL-03: a transição de carregamento de ~1.4s (IDCLIPMENU-22)
+  // deixou de existir — confirmar "O Mainframe" chama `engine.start`
+  // sincronamente, sem etapa intermediária. No neon, a experiência de
+  // loading passa a ser só a do próprio `PhaseSelectMenu` (componente,
+  // intocado); no clássico não há loading nenhuma. Guard de double-trigger:
+  // `applyGameState` (dentro de `applySnapshot`) atualiza `gameStateRef`
+  // sincronamente pra "playing" — uma segunda chamada no mesmo tick vê
+  // `gameStateRef.current !== "menu"` e vira noop.
+  const confirmSecretPhaseSelection = useCallback((index: number) => {
+    if (gameStateRef.current !== "menu") return;
+    const phase = SECRET_PHASES[index];
+    if (!phase) return;
+    if (!phase.graph) {
+      engineRef.current?.playSound("hit");
+      setSecretPhaseToast(phase.lockedHint);
+      return;
+    }
+    setScoreSaved(true);
+    setPlayerName("");
+    setSupportOpen(false);
+    promotionExpiredRef.current = false;
+    engineRef.current?.playSound("start");
+    const snapshot = engineRef.current?.start(phase.graph);
+    if (snapshot) applySnapshot(snapshot);
+  }, [applySnapshot]);
+
   async function submitScore(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (engineRef.current?.getRunOrigin() === "debug") {
@@ -554,6 +598,31 @@ export default function Home() {
         } else if (event.key === "Enter" || event.key === " ") {
           activateMenuOption(menuIndexRef.current);
         }
+      } else if (gameStateRef.current === "menu" && menuPanelRef.current === "secret" && event.key !== "Escape") {
+        // REACTOFICIAL-05: a navegação por seta/Enter só roda de fato no
+        // clássico — no neon, `PhaseSelectMenu` tem seu próprio
+        // `window.addEventListener("keydown")` e já cuida disso sozinho
+        // (ver app/_hud/neon/PhaseSelectMenu.tsx). Mesmo assim esta branch
+        // continua "reivindicando" o evento nos dois temas (a condição
+        // acima não checa `theme`) — sem isso, Enter no neon cairia na
+        // branch genérica de baixo (`activateMenuOption(0)`, "Jogar") por
+        // fall-through, iniciando uma partida NORMAL por engano assim que o
+        // painel secreto está aberto. Escape continua fora desta guarda
+        // (não entra aqui, `event.key !== "Escape"` acima), fecha o painel
+        // nos dois temas sem mudança.
+        if (theme === "classico") {
+          if (event.key === "ArrowUp" || event.key === "w" || event.key === "W") {
+            menuIndexRef.current = (menuIndexRef.current + SECRET_PHASES.length - 1) % SECRET_PHASES.length;
+            setSecretPhaseIndex(menuIndexRef.current);
+            engine.playSound("hit");
+          } else if (event.key === "ArrowDown" || event.key === "s" || event.key === "S") {
+            menuIndexRef.current = (menuIndexRef.current + 1) % SECRET_PHASES.length;
+            setSecretPhaseIndex(menuIndexRef.current);
+            engine.playSound("hit");
+          } else if (event.key === "Enter" || event.key === " ") {
+            confirmSecretPhaseSelection(menuIndexRef.current);
+          }
+        }
       } else if (event.key === "Enter" && gameStateRef.current === "menu") {
         activateMenuOption(0);
       } else if (event.key === "Escape" && gameStateRef.current === "menu" && menuPanelRef.current !== "home") {
@@ -659,7 +728,29 @@ export default function Home() {
     // binding, matching the pre-migration behavior where the entire effect
     // (including the game world's local state) reran on theme change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activateMenuOption, applySnapshot, resumeGame, theme]);
+  }, [activateMenuOption, applySnapshot, confirmSecretPhaseSelection, resumeGame, setSecretPhaseIndex, theme]);
+
+  // MFLAUNCH-02/03: `?autostart=mainframe` na URL replica o cheat `idclip`
+  // seguido de confirmação imediata do índice 0, pra que as rotas de estudo
+  // (`estudo-menu-idclip-v14`, `estudo-menu-idclip-react`) consigam lançar o
+  // Mainframe de verdade sem duplicar o motor (`createEngine`) — só existe
+  // aqui em `app/page.tsx`. Declarado DEPOIS do efeito que cria o motor
+  // (acima) — `confirmSecretPhaseSelection` agora chama `engineRef.current`
+  // sincronamente (REACTOFICIAL-03, sem a etapa de loading que antes dava
+  // tempo do motor já existir); se este efeito rodasse antes, no mesmo
+  // mount, `engineRef.current` ainda seria `null`. Roda uma única vez no
+  // mount (deps vazias); mesma guarda do cheat (menu + home) evita
+  // interromper uma partida em andamento.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("autostart") !== "mainframe") return;
+    if (gameStateRef.current !== "menu" || menuPanelRef.current !== "home") return;
+    menuIndexRef.current = 0;
+    setMenuIndex(0);
+    setSecretPhaseToast(null);
+    setMenuPanel("secret");
+    confirmSecretPhaseSelection(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const status = gameState === "playing" ? "Em combate" : gameState === "choice" ? "Escolha final" : gameState === "paused" ? "Pausado" : gameState === "promotion" ? "Promoção?" : gameState === "won" ? "Vitória" : gameState === "over" ? "Fim de jogo" : "Pronto";
   const showAdBanner = gameState === "playing" && Boolean(adsenseClientId && adsenseBannerSlotId);
@@ -707,6 +798,9 @@ export default function Home() {
     scoreSaved,
     scoreMessage,
     promotionCountdown,
+    secretPhases,
+    secretPhaseToast,
+    secretPhaseLoading: null,
     bossKillsCount,
     bossKillTargetCount,
     bossEncountered,
@@ -721,8 +815,10 @@ export default function Home() {
     setMuted,
     setVolume,
     setMenuIndex,
+    setSecretPhaseIndex,
     activateMenuOption,
     setMenuPanel,
+    confirmSecretPhaseSelection,
     setSelectedCharacterId,
     openSettingsPanel,
     closeSettingsPanel,

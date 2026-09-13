@@ -7,6 +7,8 @@ import { CHARACTERS, resolveCharacter } from "@/lib/characters";
 import type { HudProps, MenuPanel } from "@/app/_hud/hud-props";
 import { PixelTitlePanels } from "@/app/_hud/title-screen/PixelTitlePanels";
 import { OpeningCutscene } from "@/app/_hud/cutscene/OpeningCutscene";
+import PhaseSelectMenu from "@/app/_hud/neon/PhaseSelectMenu";
+import { toMenuPhases } from "@/app/_hud/neon/secret-phase-menu-adapter";
 import "./neon.css";
 
 // WORLD/frameScreenLabel are declared locally in app/page.tsx today (it can't
@@ -19,6 +21,7 @@ const adsenseBannerSlotId = getAdsenseBannerSlotId();
 function frameScreenLabel(panel: MenuPanel) {
   if (panel === "scores") return "High Scores";
   if (panel === "skins") return "Personagens e Skins";
+  if (panel === "secret") return "Fases Secretas";
   return "Como jogar";
 }
 
@@ -70,6 +73,8 @@ export function NeonHud(props: HudProps) {
     scoreSaved,
     scoreMessage,
     promotionCountdown,
+    secretPhases,
+    secretPhaseToast,
     bossKillsCount,
     bossKillTargetCount,
     bossEncountered,
@@ -86,6 +91,7 @@ export function NeonHud(props: HudProps) {
     setMenuIndex,
     activateMenuOption,
     setMenuPanel,
+    confirmSecretPhaseSelection,
     setSelectedCharacterId,
     setSupportOpen,
     setTheme,
@@ -419,6 +425,44 @@ export function NeonHud(props: HudProps) {
                   </ul>
                   <div className="menu-actions two">
                     <button type="button" onClick={startNewGame}>Jogar</button>
+                    <button type="button" onClick={() => setMenuPanel("home")}>Voltar ao início</button>
+                  </div>
+                </>
+              )}
+
+              {menuPanel === "secret" && (
+                <>
+                  {/* REACTOFICIAL-06: PhaseSelectMenu é dono da própria
+                      navegação por seta/Enter (window.addEventListener
+                      interno) e da própria loading (~1.4s) ao confirmar uma
+                      fase "desbloqueada" (real ou cosmética via cheat) — ver
+                      design.md § Mudança 2/3. `onSelect` sempre devolve
+                      `true`: confirmSecretPhaseSelection já trata os dois
+                      casos reais (Mainframe entra em combate na hora, resto
+                      mostra o toast de lockedHint), suprimindo o toast de
+                      fallback do próprio componente, que ficaria redundante. */}
+                  <PhaseSelectMenu
+                    phases={toMenuPhases(secretPhases)}
+                    unlocked={secretPhases.map((phase) => !phase.locked)}
+                    onSelect={(index) => {
+                      confirmSecretPhaseSelection(index);
+                      return true;
+                    }}
+                  />
+                  {/* Cobre o caso de uma fase desbloqueada só cosmeticamente
+                      (cheat/Konami/easter egg do PhaseSelectMenu, sem
+                      PhaseGraph real por trás): a loading própria do menu
+                      roda normalmente e, ao terminar, `onSelect` chama
+                      `confirmSecretPhaseSelection`, que rejeita e escreve
+                      aqui — não no toast interno do componente (que nem
+                      chega a rodar, já que `onSelect` sempre devolve
+                      `true`). Fases genuinamente bloqueadas (sem cheat)
+                      nunca chegam a `onSelect` — o próprio componente já
+                      barra e mostra seu toast interno antes disso. */}
+                  {secretPhaseToast && (
+                    <p role="status" className="secret-phase-toast">{secretPhaseToast}</p>
+                  )}
+                  <div className="menu-actions">
                     <button type="button" onClick={() => setMenuPanel("home")}>Voltar ao início</button>
                   </div>
                 </>

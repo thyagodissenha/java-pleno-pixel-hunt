@@ -238,6 +238,40 @@
   position: relative;
 }
 
+/* REACTOFICIAL: `PhaseSelectMenu` (.psm-wrap) tem layout de largura fixa
+   (960px, herdado do mockup standalone) — bem maior que o teto genérico de
+   500px acima (dimensionado pros outros painéis, com texto empilhado). Sem
+   isso, .psm-wrap descentraliza e vaza pra fora da caixa (cards cortados,
+   scrollbar nativa). Escopado só ao painel secreto via :has — os demais
+   diálogos (scores/skins/help/pause) continuam com a caixa de 500px. O
+   kicker genérico "Java Pleno Pixel Hunt" também some aqui — o
+   PhaseSelectMenu já mostra seu próprio título, igual ao mockup. */
+.study-outer-frame .frame-panel:has(.psm-wrap) {
+  max-width: 1040px;
+  width: 99%;
+  padding: 10px;
+  /* Em janelas baixas, `.psm-wrap` (altura fixa, ~505px) pode passar da
+     altura visível. Rolagem própria AQUI (dentro do próprio painel, ainda
+     centralizado como bloco em `.frame-screen`) em vez de deixar o
+     `.frame-screen` centralizar o excesso — isso deixaria a METADE DE
+     CIMA inacessível em scrollTop:0 (não dá pra rolar "pra cima" o
+     suficiente pra alcançar o que ficou acima da área visível). */
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.study-outer-frame .frame-screen:has(.psm-wrap) {
+  /* A borda branca (4px solid #e2e8f0) vem do `.frame-screen` base
+     (globals.css, compartilhado por todos os diálogos de menu) — pedido
+     explícito pra sumir só aqui, no painel secreto; os demais diálogos
+     (scores/skins/help/pause) mantêm a borda como está. */
+  border: none;
+}
+
+.study-outer-frame .frame-panel:has(.psm-wrap) > .menu-kicker {
+  display: none;
+}
+
 /* Efeito CRT nos painéis de menu */
 .study-outer-frame .frame-panel::before, .study-outer-frame .score-panel::before {
   content: "";
@@ -321,6 +355,284 @@
 }
 .study-outer-frame .score-list li strong { color: var(--text-main); }
 .study-outer-frame .score-list li em { font-style: normal; color: var(--neon-green); font-size: 12px; }
+
+/* Painel de fases secretas (idclip) — paleta por fase inspirada no
+   protótipo _docs/game-design/Menu_IDCLIP.html (IDCLIPMENU-08). */
+.study-outer-frame .secret-phase-card {
+  background: var(--bg-panel);
+  border: 2px solid var(--border-primary);
+  border-radius: 4px;
+}
+
+/* Borda dupla (IDCLIPV14-14, CSS puro) — segunda borda com inset de 5px via
+   `::after`, por cima da borda externa acima. `position:relative` já vem de
+   `.secret-phase-card:has(.secret-phase-info)` (globals.css), presente em
+   todo card richLayout (o único caso em que este seletor `.study-outer-frame`
+   se aplica). `pointer-events: none` garante que nunca intercepta clique no
+   card por baixo. Sem asserção automatizada (efeito puramente visual, mesma
+   convenção já usada pra scanline/vinheta/glow). */
+.study-outer-frame .secret-phase-card::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border: 1px solid var(--border-primary);
+  pointer-events: none;
+}
+
+.study-outer-frame .secret-phase-card:nth-of-type(1)::after {
+  border-color: var(--neon-green);
+}
+
+.study-outer-frame .secret-phase-card:nth-of-type(2)::after {
+  border-color: var(--neon-red);
+}
+
+/* Label "FASE 0N" (IDCLIPV14-13) — cor secundária da fase, mesma paleta por
+   `:nth-of-type` já usada pro glow/número/setas (não introduz uma segunda
+   fonte de verdade de cor por fase). Fallback ciano (`--neon-cyan`) pras 6
+   fases que ainda não têm cor própria definida — mesma cor da borda padrão
+   do card (`.study-outer-frame .secret-phase-card` acima). */
+.study-outer-frame .secret-phase-index-label {
+  color: var(--neon-cyan);
+}
+
+.study-outer-frame .secret-phase-card:nth-of-type(1) {
+  border-color: var(--neon-green);
+}
+
+.study-outer-frame .secret-phase-card:nth-of-type(1) .secret-phase-status {
+  color: var(--neon-green);
+}
+
+.study-outer-frame .secret-phase-card:nth-of-type(1) .secret-phase-index-label {
+  color: var(--neon-green);
+}
+
+.study-outer-frame .secret-phase-card:nth-of-type(2) {
+  border-color: var(--neon-red);
+}
+
+.study-outer-frame .secret-phase-card:nth-of-type(2) .secret-phase-index-label {
+  color: var(--neon-red);
+}
+
+/* Glow pulsante + setas na cor da fase enquanto o card está destacado
+   (IDCLIPMENU-18/19, fix1). Reaproveita a mesma paleta por `:nth-of-type`
+   já usada acima pra borda — não introduz uma segunda fonte de verdade de
+   cor por fase. */
+.study-outer-frame .secret-phase-card.character-card-selected:nth-of-type(1) {
+  animation: secret-phase-glow-pulse-green 1.6s ease-in-out infinite;
+}
+
+.study-outer-frame .secret-phase-card.character-card-selected:nth-of-type(2) {
+  animation: secret-phase-glow-pulse-red 1.6s ease-in-out infinite;
+}
+
+.study-outer-frame .secret-phase-card:nth-of-type(1) .secret-phase-arrow {
+  color: var(--neon-green);
+}
+
+.study-outer-frame .secret-phase-card:nth-of-type(2) .secret-phase-arrow {
+  color: var(--neon-red);
+}
+
+/* Hint "ENTER PARA ENTRAR" (IDCLIPV14-15) — mesma paleta por `:nth-of-type`
+   já usada pras setas/label/glow. Fallback ciano pras 6 fases sem cor
+   própria ainda definida. */
+.study-outer-frame .secret-phase-enter-hint {
+  color: var(--neon-cyan);
+}
+
+.study-outer-frame .secret-phase-card:nth-of-type(1) .secret-phase-enter-hint {
+  color: var(--neon-green);
+}
+
+.study-outer-frame .secret-phase-card:nth-of-type(2) .secret-phase-enter-hint {
+  color: var(--neon-red);
+}
+
+@keyframes secret-phase-glow-pulse-green {
+  0%, 100% { box-shadow: 0 0 4px var(--neon-green); }
+  50% { box-shadow: 0 0 18px var(--neon-green); }
+}
+
+@keyframes secret-phase-glow-pulse-red {
+  0%, 100% { box-shadow: 0 0 4px var(--neon-red); }
+  50% { box-shadow: 0 0 18px var(--neon-red); }
+}
+
+/* prefers-reduced-motion (IDCLIPMENU-25, fix1) — neutraliza o glow pulsante
+   do card selecionado. Mesmos seletores (mesma especificidade) do bloco
+   acima pra garantir que a sobrescrita vence. */
+@media (prefers-reduced-motion: reduce) {
+  .study-outer-frame .secret-phase-card.character-card-selected:nth-of-type(1),
+  .study-outer-frame .secret-phase-card.character-card-selected:nth-of-type(2) {
+    animation: none;
+  }
+}
+
+.study-outer-frame .secret-phase-card.secret-phase-locked .secret-phase-status {
+  color: var(--neon-red);
+}
+
+.study-outer-frame .secret-phase-tags li {
+  border-color: var(--neon-cyan);
+  color: var(--text-dim);
+}
+
+.study-outer-frame .secret-phase-pip-filled {
+  background: var(--neon-amber);
+  border-color: var(--neon-amber);
+}
+
+.study-outer-frame .secret-phase-toast {
+  border-color: var(--neon-red);
+  color: var(--text-highlight);
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.55);
+}
+
+/* Palavras flutuantes (IDCLIPMENU-20, fix1) — cor/tema neon. */
+.study-outer-frame .secret-phase-float-layer span {
+  color: var(--neon-cyan);
+}
+
+/* fix-cycle-1 (IDCLIPV14-02/03, achado (a) do code-review): scrollbar nativa
+   escondida só faz sentido no tema neon, que desenha o thumb decorativo
+   (Opção C do design.md) — no clássico a scrollbar nativa é a ÚNICA pista
+   visual de que a lista rola, então precisa continuar aparecendo (AC20,
+   emenda aprovada pelo usuário). Escopado igual ao resto das regras
+   neon-only deste arquivo (antes vivia sem escopo em `globals.css`). */
+.study-outer-frame .secret-phase-viewport {
+  scrollbar-width: none;
+}
+
+.study-outer-frame .secret-phase-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+/* fix-cycle-1 (IDCLIPV14-02/03/04/06, achado (a) do code-review — bug real
+   confirmado por repro no Chromium: com `scrollTop=400` a track ficava
+   400px acima do topo visível): a track/thumb decorativos e o fade de
+   borda abaixo eram `position:absolute` DENTRO do próprio
+   `.secret-phase-viewport` (`overflow-y:auto`) — um absoluto cujo
+   containing block é o PRÓPRIO scroller faz parte do conteúdo rolável e
+   rola junto, sumindo da área visível assim que `scrollTop > 0`. Correção:
+   track/thumb e fade agora são posicionados relativos ao
+   `.secret-phase-scroll-area` (globals.css) — um wrapper NOVO, irmão do
+   `.secret-phase-viewport`, sem `overflow` própria — então ficam pinados
+   visualmente enquanto o viewport rola por baixo, como uma scrollbar de
+   verdade. O scroll real continua sendo o `overflow-y:auto` nativo do
+   viewport (T9); este thumb só espelha/comanda essa mesma posição. */
+.study-outer-frame .secret-phase-scrollbar-track {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  bottom: 0;
+  width: 4px;
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 2px;
+  z-index: 3;
+}
+
+.study-outer-frame .secret-phase-scrollbar-thumb {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  border-radius: 2px;
+  background: #3f6e5a;
+  cursor: grab;
+  touch-action: none;
+}
+
+.study-outer-frame .secret-phase-scrollbar-thumb.is-dragging {
+  background: #7dff6a;
+  cursor: grabbing;
+}
+
+/* fix-cycle-1 (IDCLIPV14-06, achado (a) do code-review — mesma causa raiz
+   do bug da track acima): o fade de borda topo/base era `::before`/`::after`
+   DO PRÓPRIO `.secret-phase-viewport` (`overflow-y:auto`) — rolava junto
+   com o conteúdo, então só existia visualmente com o scroll no topo.
+   Correção: os pseudo-elementos agora pertencem ao `.secret-phase-scroll-area`
+   (wrapper novo, sem overflow, globals.css) em vez do viewport — mesma
+   técnica de overlay já usada pro scanline/vinheta
+   (`.secret-phase-atmosphere-overlay` abaixo); efeito puramente visual, sem
+   asserção automatizada (mesma convenção já usada pro scanline/vinheta).
+   `z-index: 2` fica abaixo da track/thumb (`z-index: 3`, acima), que
+   precisa continuar clicável por cima do fade. */
+.study-outer-frame .secret-phase-scroll-area::before,
+.study-outer-frame .secret-phase-scroll-area::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 24px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.study-outer-frame .secret-phase-scroll-area::before {
+  top: 0;
+  background: linear-gradient(180deg, var(--bg-deep), transparent);
+}
+
+.study-outer-frame .secret-phase-scroll-area::after {
+  bottom: 0;
+  background: linear-gradient(0deg, var(--bg-deep), transparent);
+}
+
+/* Cabeçalho/rodapé próprios do painel secreto (IDCLIPV14-16/17) — título com
+   glow (mesma técnica de `text-shadow` já usada nos demais elementos neon
+   desta feature; nenhum título com glow idêntico existente no projeto pra
+   copiar 1:1, ver design.md § Reuses). */
+.study-outer-frame .secret-phase-title {
+  color: var(--neon-green);
+  text-shadow: 0 0 8px var(--neon-green), 0 0 18px rgba(61, 255, 124, 0.6);
+}
+
+.study-outer-frame .secret-phase-subtitle-header {
+  color: var(--neon-cyan);
+}
+
+.study-outer-frame .secret-phase-footer-hint {
+  color: var(--text-dim);
+}
+
+/* Scanline + vinheta (IDCLIPMENU-21, fix1) — decorativo, `pointer-events:
+   none` já vem da classe base (globals.css), então nunca bloqueia clique
+   nos cards/botões por baixo. */
+.study-outer-frame .secret-phase-atmosphere-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(15, 23, 42, 0.18) 0 1px,
+    transparent 1px 3px
+  );
+}
+
+.study-outer-frame .secret-phase-atmosphere-overlay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(2, 6, 23, 0.65) 100%);
+}
+
+/* Transição de carregamento (IDCLIPMENU-22) — mesma estrutura de
+   globals.css, só a paleta muda pro tema neon. */
+.study-outer-frame .secret-phase-loading-text {
+  color: var(--neon-cyan);
+}
+
+.study-outer-frame .secret-phase-loading-bar {
+  border-color: var(--neon-green);
+}
+
+.study-outer-frame .secret-phase-loading-bar-fill {
+  background: var(--neon-green);
+  box-shadow: 0 0 10px var(--neon-green);
+}
 
 /* ---------- Responsividade (Mobile) ---------- */
 @media (max-width: 860px) {
